@@ -94,8 +94,6 @@ scripts/              聚合、注入、启动、测试
 dist-bundle/          构建产物，不要提交
 ```
 
-更完整的内部说明见 [HANDOVER.md](HANDOVER.md)、领域词汇见 [CONTEXT.md](CONTEXT.md)。
-
 ## 测试
 
 ```bash

@@ -14,8 +14,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Internal construction notes (keep locally, do not publish)
+# Local-only docs (keep on disk, do not publish)
 CUT_PLAN.md
+HANDOVER.md
+CONTEXT.md
+AGENTS.md
+CLAUDE.md
 
 # Antigravity user data — never commit
 *.db

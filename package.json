@@ -1,7 +1,7 @@
 {
   "name": "antigravity-token-stats",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Unofficial token-usage dashboard for Google Antigravity 2.0",
   "license": "MIT",
   "engines": {

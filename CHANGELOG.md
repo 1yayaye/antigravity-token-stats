@@ -2,13 +2,23 @@
 
 All notable changes to Antigravity Token Stats will be documented in this file.
 
-## [Unreleased]
+## [1.1.0] - 2026-09-18
 
-- Removed ASAR patch path; unpatch remains
-- Removed sync daemon; launch spawns `inject:watch`
-- Removed preview DesktopShell
-- Activity heatmap is daily-only
-- Token breakdown is a table
+First public GitHub snapshot. CDP hot injection is the supported install path.
+
+### Changed
+- Removed the ASAR patch installer (`npm run patch`). Historical patches still roll back with `npm run unpatch`.
+- Removed the background sync daemon (PID file, WMI relaunch, log rotation). `npm run launch` now starts Antigravity and spawns `inject:watch`.
+- Removed the fake desktop chrome from the Vite preview. `npm run dev` renders the stats dashboard directly.
+- Activity heatmap is daily-only (weekly / cumulative views and spline overlays are gone).
+- Token breakdown is a table instead of dual-ring charts.
+- Dropped unused `clsx`, `tailwind-merge`, and `@phosphor-icons/react`. Icons stay as inline SVG.
+
+### Added
+- Public `README.md`, MIT license, and Windows CI (`build` → `build:bundle` → `npm test`).
+
+### Notes
+- Agent-only docs (`AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `HANDOVER.md`) stay on the local machine and are not published.
 
 ## [1.0.1] - 2026-09-07
 
