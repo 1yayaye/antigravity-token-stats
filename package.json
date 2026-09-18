@@ -1,0 +1,43 @@
+{
+  "name": "antigravity-token-stats",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Unofficial token-usage dashboard for Google Antigravity 2.0",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "build:bundle": "vite build --config vite.bundle.config.ts",
+    "preview": "vite preview",
+    "aggregate": "node scripts/aggregate-stats.cjs",
+    "benchmark": "node scripts/benchmark-overhead.cjs",
+    "test:realtime": "node scripts/test-realtime-feedback.cjs",
+    "test": "node scripts/test-all.cjs && node scripts/test-persistent-cache.cjs",
+    "unpatch": "node scripts/unpatch-antigravity.cjs",
+    "launch": "node scripts/launch-antigravity.cjs",
+    "setup:shortcut": "node scripts/setup-shortcut.cjs",
+    "inject:live": "node scripts/inject-live.cjs",
+    "inject:watch": "node scripts/inject-live.cjs --watch",
+    "test:persistent-cache": "node scripts/test-persistent-cache.cjs",
+    "test:integration": "node scripts/test-integration.cjs"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3",
+    "vite": "^6.2.0"
+  }
+}

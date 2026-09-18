@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-bundle/
+*.tsbuildinfo
+
+# Local scratch, logs, empty leftovers
+.scratch/
+err.txt
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Internal construction notes (keep locally, do not publish)
+CUT_PLAN.md
+
+# Antigravity user data — never commit
+*.db
+*.sqlite
+*.sqlite3
+*.asar
+*.asar.backup
+transcript.jsonl
+stats-cache.json
+stats-cache.json.lock
+
+# Secrets / env
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+.idea/
+.vscode/
+*.code-workspace

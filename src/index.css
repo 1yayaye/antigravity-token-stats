@@ -1,0 +1,204 @@
+@tailwind components;
+@tailwind utilities;
+
+/* Standalone Web Preview Baseline (Only applies to #root in local dev / test browser) */
+#root {
+  --background: #101010;
+  --foreground: #cccccc;
+  --card: #191919;
+  --card-border: #222222;
+  --muted: #151515;
+  --muted-foreground: #6e6e6e;
+  --pill-active: #272727;
+}
+
+#root.light {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-border: rgba(0, 0, 0, 0.08);
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --pill-active: #e2e8f0;
+}
+
+/* Base Tokens & Visual Indicators (strictly scoped to Stats containers, preserving host styles) */
+.antigravity-stats-container,
+.stats-view,
+#antigravity-stats-modal-overlay,
+.antigravity-stats-container.dark,
+.stats-view.dark,
+#antigravity-stats-modal-overlay.dark {
+  --accent-primary: #3b82f6;
+  --accent-primary-subtle: rgba(59, 130, 246, 0.12);
+  --color-cache: #34b8ac;
+  --color-input: #699ef5;
+  --color-thinking: #b791e8;
+  --color-response: #e8b867;
+
+  --heat-0: #212836;
+  --heat-1: #1d3f6d;
+  --heat-2: #2b568c;
+  --heat-3: #3b8df7;
+  --heat-4: #60a5fa;
+
+  --ring-track: #25272d;
+  --pill-active: var(--secondary, #272727);
+
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Explicit Light Theme within Stats container */
+.antigravity-stats-container.light,
+.stats-view.light,
+#antigravity-stats-modal-overlay.light {
+  --accent-primary: #2563eb;
+  --accent-primary-subtle: rgba(37, 99, 235, 0.08);
+  --ring-track: #e2e8f0;
+  --heat-0: #e2e8f0;
+  --heat-1: #badcff;
+  --heat-2: #74b3ff;
+  --heat-3: #3b8df7;
+  --heat-4: #1d4ed8;
+  --pill-active: #e2e8f0;
+}
+.stats-view *, .stats-view *::before, .stats-view *::after { box-sizing: border-box; }
+:where(.stats-view, .stats-view *) { border: 0 solid var(--card-border); }
+.stats-view dd, .stats-view dl { margin: 0; }
+.stats-view h1, .stats-view h2, .stats-view h3 { margin-top: 0; letter-spacing: 0; }
+.stats-view button, .stats-view select { font-family: inherit; cursor: pointer; }
+.stats-view :focus-visible { outline: 2px solid #80b0fa; outline-offset: 3px; }
+.stats-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  padding: 0;
+  color: var(--foreground);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.stats-icon-button:hover { background: var(--muted); }
+.stats-icon-button:disabled { opacity: 0.5; cursor: default; }
+.stats-detail { position: relative; display: inline-block; cursor: help; }
+.stats-detail > [role="tooltip"] {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  width: max-content;
+  max-width: min(240px, 70vw);
+  padding: 8px 10px;
+  background: #25272d;
+  border: 1px solid #555860;
+  border-radius: 6px;
+  color: #f1f4f9;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.stats-detail:hover > [role="tooltip"],
+.stats-detail:focus-visible > [role="tooltip"],
+.stats-detail:focus-within > [role="tooltip"] {
+  display: block;
+}
+.stats-view header .stats-detail > [role="tooltip"] { left: 0; right: auto; }
+.stats-view section:first-of-type .stats-detail > [role="tooltip"],
+.stats-view .kpi-banner .stats-detail > [role="tooltip"] {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  text-align: center;
+}
+
+/* Custom Scrollbar - strictly scoped to Stats views & containers */
+.stats-view::-webkit-scrollbar,
+.stats-view ::-webkit-scrollbar,
+.antigravity-stats-container::-webkit-scrollbar,
+.antigravity-stats-container ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.stats-view::-webkit-scrollbar-track,
+.stats-view ::-webkit-scrollbar-track,
+.antigravity-stats-container::-webkit-scrollbar-track,
+.antigravity-stats-container ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.stats-view::-webkit-scrollbar-thumb,
+.stats-view ::-webkit-scrollbar-thumb,
+.antigravity-stats-container::-webkit-scrollbar-thumb,
+.antigravity-stats-container ::-webkit-scrollbar-thumb {
+  background: rgba(150, 150, 150, 0.25);
+  border-radius: 9999px;
+}
+.stats-view::-webkit-scrollbar-thumb:hover,
+.stats-view ::-webkit-scrollbar-thumb:hover,
+.antigravity-stats-container::-webkit-scrollbar-thumb:hover,
+.antigravity-stats-container ::-webkit-scrollbar-thumb:hover {
+  background: rgba(150, 150, 150, 0.45);
+}
+
+/* Micro-interaction Animation Utilities */
+@keyframes number-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-number-ticker {
+  animation: number-fade-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Cell hover glow & micro-physics */
+.cell-interactive {
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), filter 0.15s ease, box-shadow 0.15s ease;
+}
+.cell-interactive:hover, .cell-interactive:focus-visible {
+  transform: scale(1.35);
+  z-index: 20;
+  filter: brightness(1.2);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.55);
+}
+.cell-interactive.is-selected {
+  outline: 2px solid var(--accent-primary, #3b82f6);
+  outline-offset: 1px;
+  transform: scale(1.28);
+  z-index: 15;
+}
+
+/* Heatmap tier background classes */
+.heat-cell-0 { background-color: var(--heat-0); }
+.heat-cell-1 { background-color: var(--heat-1); }
+.heat-cell-2 { background-color: var(--heat-2); }
+.heat-cell-3 { background-color: var(--heat-3); }
+.heat-cell-4 { background-color: var(--heat-4); }
+
+/* Appica Popover Glassmorphism Card */
+.appica-popover {
+  background-color: rgba(22, 26, 34, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  color: var(--foreground, #f1f4f9);
+}
+.antigravity-stats-container.light .appica-popover,
+.stats-view.light .appica-popover {
+  background-color: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  color: var(--foreground, #0f172a);
+}
