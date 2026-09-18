@@ -25,7 +25,7 @@ Unofficial, non-invasive token-usage dashboard for **Google Antigravity 2.0**.
 ## 快速开始
 
 ```bash
-git clone https://github.com/<your-username>/antigravity-token-stats.git
+git clone https://github.com/1yayaye/antigravity-token-stats.git
 cd antigravity-token-stats
 npm install
 npm run build:bundle
