@@ -2,6 +2,12 @@
 
 All notable changes to Antigravity Token Stats will be documented in this file.
 
+## [1.1.1] - 2026-09-28
+
+### Added
+- Windows installer scripts that install dependencies, build the injection bundle, and create the desktop shortcut.
+- `npm run setup` as the command-line installer entry point.
+
 ## [1.1.0] - 2026-09-18
 
 First public GitHub snapshot. CDP hot injection is the supported install path.
