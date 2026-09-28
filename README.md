@@ -23,12 +23,23 @@ Injects directly into the UI (**Settings → Usage Stats** or `Alt+T`) via Chrom
 
 ### Quick Start
 
+**Windows (recommended):** download or clone this repository, then double-click `install.cmd`. The installer checks Node.js, installs dependencies, builds the injection bundle, and creates an **Antigravity (with Stats)** shortcut.
+
+PowerShell alternative:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+Command-line alternative:
+
 ```bash
 git clone https://github.com/1yayaye/antigravity-token-stats.git
-cd antigravity-token-stats && npm install
-npm run build:bundle
-npm run launch
+cd antigravity-token-stats
+npm run setup
 ```
+
+After installation, open Antigravity with the new shortcut. The shortcut launches the client and injects the dashboard automatically.
 
 **Open Dashboard**:
 1. Shortcut: **`Alt+T`** (macOS: `⌥T`)
@@ -44,6 +55,7 @@ npm run launch
 | `npm run dev` | Standalone browser preview (<http://localhost:5173>) |
 | `npm run aggregate` | Print aggregated metrics in terminal |
 | `npm run setup:shortcut` | Create desktop shortcut |
+| `npm run setup` | Run the Windows installer (dependencies, bundle, shortcut) |
 | `npm run unpatch` | Roll back legacy `app.asar` modifications |
 
 ### Disclaimer

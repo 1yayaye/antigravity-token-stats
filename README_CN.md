@@ -23,14 +23,23 @@
 
 ### 快速开始
 
-```bash
-git clone https://github.com/1yayaye/antigravity-token-stats.git
-cd antigravity-token-stats && npm install
-npm run build:bundle
-npm run launch
+**Windows（推荐）：** 下载或克隆本项目后，双击 `install.cmd`。安装程序会检查 Node.js、安装依赖、构建注入包，并创建「Antigravity (with Stats)」快捷方式。
+
+也可以在 PowerShell 中运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-> `npm run launch` 会启动客户端，并在界面就绪后自动注入看板与热监听。
+命令行方式：
+
+```bash
+git clone https://github.com/1yayaye/antigravity-token-stats.git
+cd antigravity-token-stats
+npm run setup
+```
+
+安装完成后，使用新建的快捷方式打开 Antigravity，客户端会自动注入看板。
 
 **呼出方式**：
 1. 快捷键 **`Alt+T`**（macOS 为 `⌥T`）
@@ -46,6 +55,7 @@ npm run launch
 | `npm run dev` | 网页端预览看板 (<http://localhost:5173>) |
 | `npm run aggregate` | 终端直接打印汇总指标 |
 | `npm run setup:shortcut` | 创建「Antigravity (with Stats)」桌面快捷方式 |
+| `npm run setup` | 运行 Windows 安装流程（依赖、注入包、快捷方式） |
 | `npm run unpatch` | 回滚早期版本修改过的 `app.asar` 补丁 |
 
 ### 免责声明

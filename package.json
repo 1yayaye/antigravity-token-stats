@@ -20,6 +20,7 @@
     "unpatch": "node scripts/unpatch-antigravity.cjs",
     "launch": "node scripts/launch-antigravity.cjs",
     "setup:shortcut": "node scripts/setup-shortcut.cjs",
+    "setup": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./install.ps1",
     "inject:live": "node scripts/inject-live.cjs",
     "inject:watch": "node scripts/inject-live.cjs --watch",
     "test:persistent-cache": "node scripts/test-persistent-cache.cjs",
