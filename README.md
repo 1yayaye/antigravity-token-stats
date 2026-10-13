@@ -10,6 +10,7 @@ Injects directly into the UI (**Settings → Usage Stats** or `Alt+T`) via Chrom
 
 ### Features
 
+- **Subscription Quota & Value**: Live tracking of weekly/monthly quota usage, reset countdowns, and subscription capacity evaluated at official Google API rates.
 - **Exact Breakdown**: Granular stats for Input, Cache Read, Thinking, and Output tokens.
 - **Activity Heatmap**: GitHub-style daily calendar with single-day drilldown and streaks.
 - **Zero-Invasive Injection**: Runtime CDP injection without modifying `app.asar`.

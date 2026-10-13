@@ -69,6 +69,32 @@ export const translations = {
 
     // Theme & Window
     switchLanguage: 'Switch language',
+
+    // Subscription & Quota
+    subscriptionQuotaTitle: 'Subscription Quota & API Value',
+    liveQuotaDetected: 'Official Quota Synced',
+    weeklyQuota: 'Weekly Quota',
+    monthlyQuota: 'Monthly Value & ROI',
+    usedPercent: 'Used',
+    remainingPercent: 'Remaining',
+    weeklyCapEst: 'Est. Weekly Quota Allowance',
+    weeklyCostConsumed: 'This Week Consumed Value',
+    monthlyCostConsumed: 'This Month Consumed Value',
+    monthlyCapEst: 'Est. Monthly Allowance',
+    planFee: 'Subscription Plan',
+    roiMultiple: 'Value ROI',
+    resetCountdown: 'Resets in',
+    resetAt: 'Reset time',
+    selectPlan: 'Subscription Plan',
+    officialRatesBadge: 'Official API Rates',
+    pricingFormulaNote: 'Prices computed from official Gemini Flash rates ($0.75 input, $0.075 cache read, $3.75 output per 1M tokens)',
+    cnyEquivalent: 'CNY Approx',
+    tierFree: 'Free ($0/mo)',
+    tierPro: 'Google AI Pro ($19.99/mo)',
+    tierUltra5x: 'Google AI Ultra 5x ($99.99/mo)',
+    tierUltra20x: 'Google AI Ultra 20x ($199.99/mo)',
+    tierCustom: 'Custom Plan',
+    claudeQuotaTitle: 'Claude & 3P Models',
   },
   zh: {
     // Header
@@ -138,6 +164,32 @@ export const translations = {
 
     // Theme & Window
     switchLanguage: '切换语言',
+
+    // Subscription & Quota
+    subscriptionQuotaTitle: '订阅额度与官方 API 价值',
+    liveQuotaDetected: '官方配额已实时同步',
+    weeklyQuota: '周额度 (Weekly Quota)',
+    monthlyQuota: '月额度与回本 (Monthly Value)',
+    usedPercent: '已消耗',
+    remainingPercent: '剩余',
+    weeklyCapEst: '订阅周总额度容量',
+    weeklyCostConsumed: '本周已用 API 价值',
+    monthlyCostConsumed: '本月已用 API 价值',
+    monthlyCapEst: '预计月度总额度容量',
+    planFee: '订阅级别',
+    roiMultiple: '回本倍数',
+    resetCountdown: '距离刷新还剩',
+    resetAt: '刷新时间',
+    selectPlan: '选择订阅层级',
+    officialRatesBadge: '官方 API 计价标准',
+    pricingFormulaNote: '价格完全按官方 Gemini Flash 标准 ($0.75 输入 / $0.075 缓存读取 / $3.75 输出每百万 Token) 进行精确核算',
+    cnyEquivalent: '折合人民币',
+    tierFree: 'Free 免费层',
+    tierPro: 'Google AI Pro ($19.99/月)',
+    tierUltra5x: 'Google AI Ultra 5x ($99.99/月)',
+    tierUltra20x: 'Google AI Ultra 20x ($199.99/月)',
+    tierCustom: '自定义计划',
+    claudeQuotaTitle: 'Claude / 第三方模型周配额',
   },
 };
 

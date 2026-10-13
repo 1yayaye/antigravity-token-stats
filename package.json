@@ -1,7 +1,7 @@
 {
   "name": "antigravity-token-stats",
   "private": true,
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Unofficial token-usage dashboard for Google Antigravity 2.0",
   "license": "MIT",
   "engines": {
@@ -16,7 +16,7 @@
     "aggregate": "node scripts/aggregate-stats.cjs",
     "benchmark": "node scripts/benchmark-overhead.cjs",
     "test:realtime": "node scripts/test-realtime-feedback.cjs",
-    "test": "node scripts/test-all.cjs && node scripts/test-persistent-cache.cjs",
+    "test": "node scripts/test-all.cjs && node scripts/test-persistent-cache.cjs && node scripts/test-subscription-pricing.cjs",
     "unpatch": "node scripts/unpatch-antigravity.cjs",
     "launch": "node scripts/launch-antigravity.cjs",
     "setup:shortcut": "node scripts/setup-shortcut.cjs",

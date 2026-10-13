@@ -2,6 +2,17 @@
 
 All notable changes to Antigravity Token Stats will be documented in this file.
 
+## [1.2.0] - 2026-10-14
+
+### Added
+- **Subscription Quota & Value Card (`SubscriptionQuotaCard`)**: Weekly and monthly quota tracking and capacity valuation based on official Google API pricing.
+- **Runtime Quota Auto-Capture**: Automatically captures live quota remaining fractions and reset countdowns directly from Antigravity's host `cloudCodeService.retrieveUserQuotaSummary`. Gracefully hides if uncaptured.
+- **Official API Pricing Engine (`pricing-service.ts`)**: Evaluates token consumption with exact Google rates ($0.75 / 1M uncached input, $0.075 / 1M cache read with 90% discount, $3.75 / 1M thinking & output).
+- **Subscription Capacity Back-Calculation**: Reverses weekly capacity (`consumed / usedFraction`) and monthly value from actual consumption.
+- **Subscription Tier Selector**: Switch between Pro ($19.99/mo), Ultra 5x ($99.99/mo), Ultra 20x ($199.99/mo), Free, and Custom plans with live ROI multiplier computation and localStorage persistence.
+- **Claude / 3P Weekly Pool**: Real-time display of Claude/third-party model weekly quota and reset timer.
+- **Automated Pricing & Real-Device Tests**: Regression suites in `scripts/test-subscription-pricing.cjs` and real-device CDP verification in `scripts/verify-real-device.cjs`.
+
 ## [1.1.1] - 2026-09-28
 
 ### Added

@@ -442,16 +442,38 @@ export function initAntigravitySettingsInjector() {
   scanAndInject();
 }
 
+export const openModal = openStatsModal;
+export const closeModal = closeStatsModal;
+export const mount = mountStats;
+export const unmount = unmountStats;
+export const showToast = showStatsToast;
+export const closeToast = removeStatsToast;
+export const init = initAntigravitySettingsInjector;
+
 // Automatically initialize when loaded into the renderer
 if (typeof window !== 'undefined') {
-  window.AntigravityStats = {
+  const api = {
     mount: mountStats,
+    mountStats,
     unmount: unmountStats,
+    unmountStats,
     openModal: openStatsModal,
+    openStatsModal,
     closeModal: closeStatsModal,
+    closeStatsModal,
     showToast: showStatsToast,
+    showStatsToast,
     closeToast: removeStatsToast,
+    removeStatsToast,
     init: initAntigravitySettingsInjector,
+    initAntigravitySettingsInjector,
   };
+  window.AntigravityStats = api;
+  // Delay assignment after module evaluation in case Rollup re-assigns global
+  setTimeout(() => {
+    if (window.AntigravityStats) {
+      Object.assign(window.AntigravityStats, api);
+    }
+  }, 0);
   initAntigravitySettingsInjector();
 }

@@ -4,6 +4,7 @@ import { KpiBanner } from './KpiBanner';
 import { TokenActivityHeatmap } from './TokenActivityHeatmap';
 import { ActivityInsightsCard } from './ActivityInsightsCard';
 import { TokenBreakdownCard } from './TokenBreakdownCard';
+import { SubscriptionQuotaCard } from './SubscriptionQuotaCard';
 import { AggregatedStats, TimeRange } from '../../domain/stats.types';
 import { fetchRawStats, filterStatsByRange, EMPTY_STATS, detectAntigravityTheme, syncThemeToElement } from '../../services/stats-service';
 
@@ -118,6 +119,7 @@ export const StatsView: React.FC = () => {
         />
 
         <KpiBanner stats={stats} />
+        <SubscriptionQuotaCard stats={rawStats} />
         <TokenBreakdownCard breakdown={stats.tokenBreakdown} />
         <TokenActivityHeatmap cells={rawStats.activity.heatmap} dailyStats={rawStats.activity.dailyStats} />
         <ActivityInsightsCard insights={rawStats.insights} kpis={rawStats.kpis} />
