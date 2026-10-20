@@ -13,7 +13,7 @@ const transcriptCache = new Map();
 let lastScanTime = 0;
 let lastAggregatedStats = null;
 const FAST_SCAN_TTL = 300; // 300ms throttle for back-to-back incremental calls
-const PERSIST_CACHE_VERSION = 3;
+const PERSIST_CACHE_VERSION = 6;
 const CACHE_FLUSH_DELAY_MS = 50;
 const CACHE_LOCK_MAX_AGE_MS = 10000;
 let cacheDirty = false;
@@ -25,7 +25,11 @@ function isPersistentCacheDisabled() {
 }
 
 function getCacheFilePath() {
-  return process.env.ANTIGRAVITY_STATS_CACHE_PATH || path.join(getAntigravityDir(), 'stats-cache.json');
+  if (process.env.ANTIGRAVITY_STATS_CACHE_PATH) return process.env.ANTIGRAVITY_STATS_CACHE_PATH;
+  const stateDir = process.env.LOCALAPPDATA
+    ? path.join(process.env.LOCALAPPDATA, 'AntiToken')
+    : path.join(os.homedir(), '.antigravity-token-stats');
+  return path.join(stateDir, 'stats-cache.json');
 }
 
 function normalizePath(value) {
@@ -84,6 +88,10 @@ function hydrateCacheFromDisk() {
       if (path.relative(conversationsDir, filePath).startsWith('..') || !filePath.endsWith('.db')) continue;
       dbCache.set(filePath, {
         ...entry.metrics,
+        generationDates: entry.metrics.generationDates || [],
+        generationTimestampsMs: entry.metrics.generationTimestampsMs || [],
+        dailyTasks: new Map(entry.metrics.dailyTasks || []),
+        duration: entry.metrics.duration || 0,
         fingerprint: entry.fingerprint,
         mtimeMs: entry.fingerprint.db?.mtimeMs,
       });
@@ -101,6 +109,7 @@ function hydrateCacheFromDisk() {
         dailyMap: new Map(metrics.dailyMap || []),
         skills: new Set(metrics.skills || []),
         generationDates: metrics.generationDates || [],
+        generationTimestampsMs: metrics.generationTimestampsMs || [],
         duration: metrics.duration || 0,
       });
     }
@@ -139,6 +148,10 @@ function serializeCache() {
         sessionSkillsCount: entry.sessionSkillsCount,
         sessionModels: entry.sessionModels,
         generationUsages: entry.generationUsages,
+        generationDates: entry.generationDates || [],
+        generationTimestampsMs: entry.generationTimestampsMs || [],
+        dailyTasks: entry.dailyTasks ? Array.from((entry.dailyTasks instanceof Map ? entry.dailyTasks : new Map(entry.dailyTasks)).entries()) : [],
+        duration: entry.duration || 0,
       },
     };
   }
@@ -155,6 +168,7 @@ function serializeCache() {
         dailyMap: Array.from(entry.dailyMap.entries()),
         skills: Array.from(entry.skills),
         generationDates: entry.generationDates,
+        generationTimestampsMs: entry.generationTimestampsMs || [],
         duration: entry.duration,
       },
     };
@@ -318,18 +332,68 @@ function decodeGenMetadata(buf) {
   }
 }
 
-function pairGenerationDates(generationUsages, generationDates, fallbackDateKey) {
+const OFFICIAL_MODEL_PRICING = {
+  flash: { inputPerM: 0.75, cacheReadPerM: 0.075, outputPerM: 3.75 },
+  pro: { inputPerM: 2.00, cacheReadPerM: 0.20, outputPerM: 12.00 },
+  opus: { inputPerM: 4.00, cacheReadPerM: 0.40, outputPerM: 20.00 },
+  sonnet: { inputPerM: 2.00, cacheReadPerM: 0.20, outputPerM: 10.00 },
+};
+
+function computeGenerationCostUsd(modelName, inputTokens, cacheReadTokens, outputTokens) {
+  const m = String(modelName || '').toLowerCase();
+  const rate = m.includes('opus')
+    ? OFFICIAL_MODEL_PRICING.opus
+    : m.includes('sonnet') || m.includes('claude')
+      ? OFFICIAL_MODEL_PRICING.sonnet
+      : m.includes('pro')
+        ? OFFICIAL_MODEL_PRICING.pro
+        : OFFICIAL_MODEL_PRICING.flash;
+  return (
+    (Math.max(0, inputTokens || 0) / 1e6) * rate.inputPerM +
+    (Math.max(0, cacheReadTokens || 0) / 1e6) * rate.cacheReadPerM +
+    (Math.max(0, outputTokens || 0) / 1e6) * rate.outputPerM
+  );
+}
+
+function decodeStepTimestamp(buf) {
+  if (!buf || buf.length < 4) return null;
+  try {
+    const top = parseProtoFields(buf);
+    const msg1 = top.get(1);
+    if (!msg1 || !msg1[0]) return null;
+    const inner = parseProtoFields(msg1[0]);
+    const seconds = inner.get(1);
+    if (typeof seconds === 'number' && seconds > 1.6e9 && seconds < 2.5e9) {
+      return new Date(seconds * 1000);
+    }
+  } catch {}
+  return null;
+}
+
+function classifyQuotaPool(modelName) {
+  const m = String(modelName || '').toLowerCase();
+  return (m.includes('claude') || m.includes('opus') || m.includes('sonnet') || m.includes('gpt') || m.includes('o1') || m.includes('o3'))
+    ? 'claude'
+    : 'gemini';
+}
+
+function pairGenerationDates(generationUsages, generationDates, fallbackDateKey, generationTimestampsMs = [], fallbackTimestampMs = null) {
   if (!generationUsages || generationUsages.length === 0) {
     return [];
   }
 
   const hasDates = Array.isArray(generationDates) && generationDates.length > 0;
   const lastDate = hasDates ? generationDates[generationDates.length - 1] : fallbackDateKey;
+  const hasTimestamps = Array.isArray(generationTimestampsMs) && generationTimestampsMs.length > 0;
+  const lastTimestamp = hasTimestamps ? generationTimestampsMs[generationTimestampsMs.length - 1] : fallbackTimestampMs;
   return generationUsages.map((usage, index) => ({
     usage,
     date: (hasDates && index < generationDates.length)
       ? generationDates[index]
       : (lastDate || fallbackDateKey),
+    tsMs: (hasTimestamps && index < generationTimestampsMs.length)
+      ? generationTimestampsMs[index]
+      : (lastTimestamp || fallbackTimestampMs),
   }));
 }
 
@@ -437,6 +501,7 @@ function computeStats(force = false) {
   let longestDurationMs = 0;
 
   const realDailyMap = new Map();
+  const realCostTimelineMap = new Map();
   const realActiveDates = new Set();
   const uniqueSkills = new Set();
   let totalSkillsInvoked = 0;
@@ -464,6 +529,10 @@ function computeStats(force = false) {
       let sessionSkillsCount = 0;
       let sessionModels = new Map();
       let sessionGenerationUsages = [];
+      let sessionGenerationDates = [];
+      let sessionGenerationTimestampsMs = [];
+      let sessionDailyTasks = new Map();
+      let sessionStepDuration = 0;
       let parsedCacheEntry = null;
 
       if (cached && fingerprintsEqual(cached.fingerprint, fingerprint)) {
@@ -480,6 +549,10 @@ function computeStats(force = false) {
         sessionSkillsCount = cached.sessionSkillsCount;
         sessionModels = new Map(cached.sessionModels);
         sessionGenerationUsages = (cached.generationUsages || []).map(usage => ({ ...usage }));
+        sessionGenerationDates = cached.generationDates || [];
+        sessionGenerationTimestampsMs = cached.generationTimestampsMs || [];
+        sessionDailyTasks = cached.dailyTasks instanceof Map ? cached.dailyTasks : new Map(cached.dailyTasks || []);
+        sessionStepDuration = cached.duration || 0;
       } else {
         let db = null;
         try {
@@ -499,12 +572,14 @@ function computeStats(force = false) {
             sessionThinkingTokens += usage.thinkingTokens;
             sessionResponseTokens += usage.responseTokens;
             sessionGenerationUsages.push({
+              modelName: usage.modelName,
               inputTokens: usage.inputTokens,
               cacheReadTokens: usage.cacheReadTokens,
               outputTokens: usage.outputTokens,
               thinkingTokens: usage.thinkingTokens,
               responseTokens: usage.responseTokens,
               totalTokens: usage.inputTokens + usage.cacheReadTokens + usage.outputTokens,
+              costUsd: computeGenerationCostUsd(usage.modelName, usage.inputTokens, usage.cacheReadTokens, usage.outputTokens),
             });
 
             if (usage.thinkingTokens === 0) {
@@ -516,8 +591,20 @@ function computeStats(force = false) {
             }
           }
 
-          // Step 1.2: Tool execution steps & Skill distinction from steps table
-          const steps = db.prepare('SELECT idx, step_type, step_payload FROM steps').all();
+          // Step 1.2: Tool execution steps, Skill distinction & native step timestamps from steps table
+          let steps = [];
+          try {
+            steps = db.prepare('SELECT idx, step_type, step_payload, metadata FROM steps ORDER BY idx').all();
+          } catch (e) {
+            if (e.message && e.message.includes('no such column: metadata')) {
+              steps = db.prepare('SELECT idx, step_type, step_payload FROM steps ORDER BY idx').all();
+            } else {
+              throw e;
+            }
+          }
+          let firstStepTime = null;
+          let lastStepTime = null;
+
           for (const step of steps) {
             if (step.step_type === 132) { // Tool execution primitive
               toolCalls++;
@@ -531,7 +618,23 @@ function computeStats(force = false) {
                 }
               }
             }
+
+            const stepDate = step.metadata ? decodeStepTimestamp(Buffer.from(step.metadata)) : null;
+            if (stepDate) {
+              const t = stepDate.getTime();
+              if (!firstStepTime || t < firstStepTime) firstStepTime = t;
+              if (!lastStepTime || t > lastStepTime) lastStepTime = t;
+              const dKey = toLocalDateKey(stepDate);
+              if (step.step_type === 14) {
+                sessionDailyTasks.set(dKey, (sessionDailyTasks.get(dKey) || 0) + 1);
+              }
+              if (step.step_type === 15) {
+                sessionGenerationDates.push(dKey);
+                sessionGenerationTimestampsMs.push(t);
+              }
+            }
           }
+          sessionStepDuration = firstStepTime && lastStepTime ? lastStepTime - firstStepTime : 0;
 
           parsedCacheEntry = {
             mtimeMs: effectiveMtimeMs,
@@ -548,6 +651,10 @@ function computeStats(force = false) {
             sessionSkillsCount,
             sessionModels: Array.from(sessionModels.entries()),
             generationUsages: sessionGenerationUsages,
+            generationDates: sessionGenerationDates,
+            generationTimestampsMs: sessionGenerationTimestampsMs,
+            dailyTasks: sessionDailyTasks,
+            duration: sessionStepDuration,
           };
         } catch (dbErr) {
           const isTemporaryLock =
@@ -569,6 +676,10 @@ function computeStats(force = false) {
             sessionSkillsCount = cached.sessionSkillsCount;
             sessionModels = new Map(cached.sessionModels);
             sessionGenerationUsages = (cached.generationUsages || []).map(usage => ({ ...usage }));
+            sessionGenerationDates = cached.generationDates || [];
+            sessionGenerationTimestampsMs = cached.generationTimestampsMs || [];
+            sessionDailyTasks = cached.dailyTasks instanceof Map ? cached.dailyTasks : new Map(cached.dailyTasks || []);
+            sessionStepDuration = cached.duration || 0;
             hasStaleSessions = true;
           } else {
             if (isTemporaryLock) {
@@ -605,6 +716,10 @@ function computeStats(force = false) {
         skillNames: Array.from(sessionSkills),
         tokensFromDb: sessionTotalTokens,
         generationUsages: sessionGenerationUsages,
+        generationDates: sessionGenerationDates,
+        generationTimestampsMs: sessionGenerationTimestampsMs,
+        dailyTasks: sessionDailyTasks,
+        duration: sessionStepDuration,
         mtimeMs: effectiveMtimeMs,
       });
 
@@ -636,6 +751,7 @@ function computeStats(force = false) {
   }
 
   // Phase 2: Scan transcript logs for timestamps, calendar distribution, and task durations
+  const processedSessions = new Set();
   if (brainFolders.length > 0) {
     for (const folder of brainFolders) {
       const sessionId = folder; // brain folder name is session ID
@@ -647,16 +763,18 @@ function computeStats(force = false) {
           let fileDailyMap = new Map();
           let fileSkills = new Set();
           let generationDates = [];
+          let generationTimestampsMs = [];
           let duration = 0;
 
           if (cached && fingerprintsEqual(cached.fingerprint, fingerprint)) {
             fileDailyMap = cached.dailyMap;
             fileSkills = cached.skills;
             generationDates = cached.generationDates || [];
+            generationTimestampsMs = cached.generationTimestampsMs || [];
             duration = cached.duration;
 
             for (const [k, v] of fileDailyMap) {
-              if (!realDailyMap.has(k)) realDailyMap.set(k, { tokens: 0, tasks: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, thinkingTokens: 0, responseTokens: 0 });
+              if (!realDailyMap.has(k)) realDailyMap.set(k, { tokens: 0, tasks: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, thinkingTokens: 0, responseTokens: 0, costUsd: 0 });
               const e = realDailyMap.get(k);
               e.tasks += v.tasks;
               realActiveDates.add(k);
@@ -675,24 +793,27 @@ function computeStats(force = false) {
                 const item = JSON.parse(line);
                 if (item.created_at) {
                   const dt = new Date(item.created_at);
-                  const dateKey = toLocalDateKey(dt);
-                  realActiveDates.add(dateKey);
-
-                  if (!fileDailyMap.has(dateKey)) {
-                    fileDailyMap.set(dateKey, { tasks: 0 });
-                  }
-                  const entry = fileDailyMap.get(dateKey);
-                  if (item.source === 'USER_EXPLICIT' || item.type === 'USER_INPUT') {
-                    entry.tasks += 1;
-                  }
-
-                  if (item.type === 'PLANNER_RESPONSE') {
-                    generationDates.push(dateKey);
-                  }
-
                   const t = dt.getTime();
-                  if (!firstTime || t < firstTime) firstTime = t;
-                  if (!lastTime || t > lastTime) lastTime = t;
+                  if (Number.isFinite(t)) {
+                    const dateKey = toLocalDateKey(dt);
+                    realActiveDates.add(dateKey);
+
+                    if (!fileDailyMap.has(dateKey)) {
+                      fileDailyMap.set(dateKey, { tasks: 0 });
+                    }
+                    const entry = fileDailyMap.get(dateKey);
+                    if (item.source === 'USER_EXPLICIT' || item.type === 'USER_INPUT') {
+                      entry.tasks += 1;
+                    }
+
+                    if (item.type === 'PLANNER_RESPONSE') {
+                      generationDates.push(dateKey);
+                      generationTimestampsMs.push(t);
+                    }
+
+                    if (!firstTime || t < firstTime) firstTime = t;
+                    if (!lastTime || t > lastTime) lastTime = t;
+                  }
                 }
 
                 // Check tool_calls for Agent Skills vs built-in primitives
@@ -722,6 +843,7 @@ function computeStats(force = false) {
               dailyMap: fileDailyMap,
               skills: fileSkills,
               generationDates,
+              generationTimestampsMs,
               duration,
             };
             const afterFingerprint = getFileFingerprint(transcriptPath);
@@ -731,7 +853,7 @@ function computeStats(force = false) {
             }
 
             for (const [k, v] of fileDailyMap) {
-              if (!realDailyMap.has(k)) realDailyMap.set(k, { tokens: 0, tasks: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, thinkingTokens: 0, responseTokens: 0 });
+              if (!realDailyMap.has(k)) realDailyMap.set(k, { tokens: 0, tasks: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, thinkingTokens: 0, responseTokens: 0, costUsd: 0 });
               const e = realDailyMap.get(k);
               e.tasks += v.tasks;
             }
@@ -741,18 +863,42 @@ function computeStats(force = false) {
           // to the latest known date or the session's database modification date.
           const sessionData = sessionMetrics.get(sessionId);
           if (sessionData) {
-            const fallbackDateKey = toLocalDateKey(sessionData.mtimeMs || Date.now());
-            for (const { usage, date: dKey } of pairGenerationDates(sessionData.generationUsages, generationDates, fallbackDateKey)) {
-              if (!realDailyMap.has(dKey)) realDailyMap.set(dKey, { tokens: 0, tasks: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, thinkingTokens: 0, responseTokens: 0 });
+            const fallbackTs = sessionData.mtimeMs || Date.now();
+            const fallbackDateKey = toLocalDateKey(fallbackTs);
+            const dbDates = sessionData.generationDates || [];
+            const dbTimestamps = sessionData.generationTimestampsMs || [];
+            // Exact per-generation step timestamps win whenever they cover every usage row; a
+            // transcript trimmed by the auto-cleaner only knows its own tail and would clamp the rest.
+            const dbComplete = dbDates.length >= sessionData.generationUsages.length && dbTimestamps.length >= sessionData.generationUsages.length;
+            const effectiveDates = dbComplete ? dbDates : generationDates.length > 0 ? generationDates : dbDates;
+            const effectiveTimestamps = dbComplete ? dbTimestamps : generationTimestampsMs.length > 0 ? generationTimestampsMs : dbTimestamps;
+            for (const { usage, date: dKey, tsMs } of pairGenerationDates(sessionData.generationUsages, effectiveDates, fallbackDateKey, effectiveTimestamps, fallbackTs)) {
+              if (!realDailyMap.has(dKey)) realDailyMap.set(dKey, { tokens: 0, tasks: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, thinkingTokens: 0, responseTokens: 0, costUsd: 0 });
               const e = realDailyMap.get(dKey);
+              const genCost = typeof usage.costUsd === 'number'
+                ? usage.costUsd
+                : computeGenerationCostUsd(usage.modelName, usage.inputTokens, usage.cacheReadTokens, usage.outputTokens);
               e.tokens += usage.totalTokens;
               e.inputTokens = (e.inputTokens || 0) + usage.inputTokens;
               e.cacheReadTokens = (e.cacheReadTokens || 0) + usage.cacheReadTokens;
               e.outputTokens = (e.outputTokens || 0) + usage.outputTokens;
               e.thinkingTokens = (e.thinkingTokens || 0) + usage.thinkingTokens;
               e.responseTokens = (e.responseTokens || 0) + usage.responseTokens;
+              e.costUsd = (e.costUsd || 0) + genCost;
+              if (genCost > 0 && typeof tsMs === 'number' && !isNaN(tsMs)) {
+                const bucketTs = Math.floor(tsMs / 60000) * 60000;
+                const pool = classifyQuotaPool(usage.modelName);
+                const key = `${bucketTs}:${pool}`;
+                const existing = realCostTimelineMap.get(key);
+                if (existing) {
+                  existing.costUsd += genCost;
+                } else {
+                  realCostTimelineMap.set(key, { ts: bucketTs, costUsd: genCost, pool });
+                }
+              }
             }
           }
+          processedSessions.add(sessionId);
 
         } catch (err) {
           const isTemporaryLock =
@@ -765,6 +911,59 @@ function computeStats(force = false) {
         }
       }
     }
+
+  // Phase 2.5: Resilient fallback for sessions whose transcript logs were cleared by auto-cleaner
+  for (const [sessionId, sessionData] of sessionMetrics) {
+    if (processedSessions.has(sessionId)) continue;
+
+    const fallbackTs = sessionData.mtimeMs || Date.now();
+    const fallbackDateKey = toLocalDateKey(fallbackTs);
+    const finalDates = (sessionData.generationDates && sessionData.generationDates.length > 0)
+      ? sessionData.generationDates
+      : [fallbackDateKey];
+    const finalTimestamps = (sessionData.generationTimestampsMs && sessionData.generationTimestampsMs.length > 0)
+      ? sessionData.generationTimestampsMs
+      : [fallbackTs];
+
+    if (sessionData.dailyTasks) {
+      for (const [dKey, count] of sessionData.dailyTasks) {
+        realActiveDates.add(dKey);
+        if (!realDailyMap.has(dKey)) realDailyMap.set(dKey, { tokens: 0, tasks: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, thinkingTokens: 0, responseTokens: 0, costUsd: 0 });
+        realDailyMap.get(dKey).tasks += count;
+      }
+    }
+
+    for (const { usage, date: dKey, tsMs } of pairGenerationDates(sessionData.generationUsages, finalDates, fallbackDateKey, finalTimestamps, fallbackTs)) {
+      realActiveDates.add(dKey);
+      if (!realDailyMap.has(dKey)) realDailyMap.set(dKey, { tokens: 0, tasks: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, thinkingTokens: 0, responseTokens: 0, costUsd: 0 });
+      const e = realDailyMap.get(dKey);
+      const genCost = typeof usage.costUsd === 'number'
+        ? usage.costUsd
+        : computeGenerationCostUsd(usage.modelName, usage.inputTokens, usage.cacheReadTokens, usage.outputTokens);
+      e.tokens += usage.totalTokens;
+      e.inputTokens = (e.inputTokens || 0) + usage.inputTokens;
+      e.cacheReadTokens = (e.cacheReadTokens || 0) + usage.cacheReadTokens;
+      e.outputTokens = (e.outputTokens || 0) + usage.outputTokens;
+      e.thinkingTokens = (e.thinkingTokens || 0) + usage.thinkingTokens;
+      e.responseTokens = (e.responseTokens || 0) + usage.responseTokens;
+      e.costUsd = (e.costUsd || 0) + genCost;
+      if (genCost > 0 && typeof tsMs === 'number' && !isNaN(tsMs)) {
+        const bucketTs = Math.floor(tsMs / 60000) * 60000;
+        const pool = classifyQuotaPool(usage.modelName);
+        const key = `${bucketTs}:${pool}`;
+        const existing = realCostTimelineMap.get(key);
+        if (existing) {
+          existing.costUsd += genCost;
+        } else {
+          realCostTimelineMap.set(key, { ts: bucketTs, costUsd: genCost, pool });
+        }
+      }
+    }
+
+    if (sessionData.duration && sessionData.duration > longestDurationMs) {
+      longestDurationMs = sessionData.duration;
+    }
+  }
 
   // Phase 3: Aggregate final lifetime metrics from SQLite usage rows.
   let realTotalTokens = 0;
@@ -929,8 +1128,22 @@ function computeStats(force = false) {
       outputTokens: val.outputTokens || 0,
       thinkingTokens: val.thinkingTokens || 0,
       responseTokens: val.responseTokens || 0,
+      costUsd: Math.round(((val.costUsd || 0) + Number.EPSILON) * 100) / 100,
     };
   }
+
+  const costTimeline = Array.from(realCostTimelineMap.values())
+    .map(item => ({
+      ts: item.ts,
+      costUsd: Math.round((item.costUsd + Number.EPSILON) * 10000) / 10000,
+      pool: item.pool,
+    }))
+    .sort((a, b) => a.ts - b.ts);
+  // shortcut: deleted conversation files are invisible; add per-source coverage markers if that becomes a supported case.
+  const earliestActivityDate = Array.from(realActiveDates).sort()[0];
+  const costTimelineCoverageStartMs = earliestActivityDate
+    ? new Date(`${earliestActivityDate}T00:00:00`).getTime() + 86400000
+    : null;
 
   const result = {
     kpis: {
@@ -946,13 +1159,18 @@ function computeStats(force = false) {
       activeDaysCount: realActiveDates.size,
       totalTasks: Object.values(dailyStatsObj).reduce((sum, entry) => sum + entry.tasks, 0),
       dailyStats: dailyStatsObj,
+      costTimeline,
+      costTimelineCoverageStartMs,
     },
     insights: {
       fastMode: fastModeRate,
       mostUsedReasoning: mostUsedReasoningFormatted,
       skillsExplored: uniqueSkills.size,
       totalSkillsUsed: totalSkillsInvoked,
-      totalThreads: dbFiles.length,
+      totalThreads: new Set([
+        ...dbFiles.map(file => path.basename(file, '.db')),
+        ...brainFolders,
+      ]).size,
       cacheHitRate: promptCacheHitRatePct,
       toolPrimitivesUsed: totalToolCalls,
     },
@@ -991,6 +1209,8 @@ module.exports = {
   decodeVarint,
   parseProtoFields,
   decodeGenMetadata,
+  decodeStepTimestamp,
+  computeGenerationCostUsd,
   FAST_SCAN_TTL,
   getCacheFilePath,
 };

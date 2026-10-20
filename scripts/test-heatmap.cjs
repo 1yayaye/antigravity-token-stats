@@ -212,8 +212,8 @@ const popoverHtml = renderToStaticMarkup(
 );
 assert(popoverHtml.includes('role="tooltip"'), 'Popover must have role tooltip');
 assert(popoverHtml.includes('appica-popover'), 'Popover must have appica-popover class');
-assert(popoverHtml.includes('Prompt Channel') || popoverHtml.includes('promptChannel'), 'Popover must show prompt channel');
-assert(popoverHtml.includes('Generation Channel') || popoverHtml.includes('generationChannel'), 'Popover must show generation channel');
+assert(popoverHtml.includes('Prompt Channel') || popoverHtml.includes('输入'), 'Popover must show prompt channel');
+assert(popoverHtml.includes('Generation Channel') || popoverHtml.includes('输出'), 'Popover must show generation channel');
 assert(popoverHtml.includes('✕'), 'Pinned popover must render close button');
 
 // Edge case: defensive rate clamping with anomalous data (thinkingTokens > outputTokens)

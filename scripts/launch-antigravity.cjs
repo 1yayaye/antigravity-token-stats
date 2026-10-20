@@ -14,7 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const child_process = require('child_process');
-const { inject, getDevToolsPort } = require('./inject-live.cjs');
+const { inject, getDevToolsPort, getWatchLockPath } = require('./inject-live.cjs');
 
 function findAntigravityExe() {
   const candidates = [
@@ -196,6 +196,17 @@ async function launch() {
 }
 
 function spawnWatch() {
+  const lockPath = getWatchLockPath();
+  try {
+    const pid = Number(fs.readFileSync(lockPath, 'utf8').trim());
+    if (Number.isInteger(pid) && pid > 0) {
+      try {
+        process.kill(pid, 0);
+        return null;
+      } catch {}
+    }
+  } catch {}
+
   const scriptPath = path.join(__dirname, 'inject-live.cjs');
   const projectRoot = path.join(__dirname, '..');
   const child = child_process.spawn(
@@ -209,6 +220,7 @@ function spawnWatch() {
     }
   );
   child.unref();
+  return child;
 }
 
 if (require.main === module) {

@@ -8,6 +8,7 @@ dist-bundle/
 
 # Local scratch, logs, empty leftovers
 .scratch/
+image/
 err.txt
 *.log
 npm-debug.log*

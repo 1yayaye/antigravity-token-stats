@@ -4,6 +4,7 @@ import './index.css';
 import { StatsView } from './components/stats/StatsView';
 import { LanguageProvider } from './i18n/LanguageContext';
 import { detectAntigravityTheme, syncThemeToElement } from './services/stats-service';
+import { antigravityI18n } from './i18n/antigravity-ui-i18n';
 import './domain/stats.types';
 
 let toastTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -35,7 +36,7 @@ export function removeStatsToast(immediate: boolean = false) {
 }
 
 // Non-intrusive floating Toast notification (Antigravity 2.0 Glassmorphism)
-export function showStatsToast(message: string = '✦ Token Stats 已就绪', durationMs: number = 4000) {
+export function showStatsToast(message: string = '✦ Token Stats & 汉化增强已就绪', durationMs: number = 4000) {
   if (toastTimeout) clearTimeout(toastTimeout);
   if (toastFadeTimeout) clearTimeout(toastFadeTimeout);
   const oldToast = document.getElementById('antigravity-stats-toast');
@@ -83,7 +84,7 @@ export function showStatsToast(message: string = '✦ Token Stats 已就绪', du
       <span style="position: absolute; top: -2px; right: -2px; width: 6px; height: 6px; border-radius: 9999px; background-color: #10b981; box-shadow: 0 0 6px #10b981;"></span>
     </div>
     <div style="display: flex; flex-direction: column; gap: 1px; min-width: 0;">
-      <span style="font-weight: 600; color: #f1f4f9; letter-spacing: -0.01em; white-space: nowrap;">${message}</span>
+      <span data-toast-message style="font-weight: 600; color: #f1f4f9; letter-spacing: -0.01em; white-space: nowrap;"></span>
       <span style="font-size: 11px; color: #94a3b8; letter-spacing: 0.01em; white-space: nowrap;">按 <kbd style="font-family: inherit; padding: 1px 4px; border-radius: 4px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #cbd5e1;">${shortcutLabel}</kbd> 或点击查看看板</span>
     </div>
     <button id="antigravity-stats-toast-close" style="margin-left: 6px; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 6px; border: none; background: transparent; color: rgba(255,255,255,0.4); cursor: pointer; padding: 0; outline: none; transition: color 0.15s, background-color 0.15s;" title="关闭">
@@ -93,6 +94,8 @@ export function showStatsToast(message: string = '✦ Token Stats 已就绪', du
       </svg>
     </button>
   `;
+  const messageNode = toast.querySelector('[data-toast-message]');
+  if (messageNode) messageNode.textContent = message;
 
   toast.addEventListener('click', (e) => {
     const closeBtn = toast.querySelector('#antigravity-stats-toast-close');
@@ -264,6 +267,13 @@ export function openStatsModal() {
 export function closeStatsModal() {
   unmountStats();
   document.querySelectorAll('#antigravity-stats-modal-overlay').forEach(el => el.remove());
+
+  // Re-mount Settings inline view if Settings modal is still open on the Usage Stats tab
+  const settingsModal = document.querySelector('.settings-modal-container');
+  const settingsContainer = document.getElementById('antigravity-stats-settings-content');
+  if (settingsModal && settingsContainer && settingsContainer.style.display !== 'none') {
+    mountStats(settingsContainer);
+  }
 }
 
 // Auto-injection DOM observer for Antigravity 2.0 Settings Modal & Sidebar Shortcut
@@ -306,7 +316,10 @@ export function initAntigravitySettingsInjector() {
     // 1. Hook into Settings Modal tabs
     const modal = document.querySelector('.settings-modal-container') as HTMLElement | null;
     if (modal) {
-      const modelsBtn = Array.from(modal.querySelectorAll('button')).find((b) => (b.innerText || '').trim() === 'Models');
+      const modelsBtn = Array.from(modal.querySelectorAll('button')).find((b) => {
+        const text = (b.innerText || '').trim();
+        return text === 'Models' || text === '模型' || text === '模型配置';
+      });
       if (modelsBtn && modelsBtn.parentElement && !modal.querySelector('#antigravity-stats-nav-btn')) {
         const parent = modelsBtn.parentElement;
 
@@ -438,6 +451,11 @@ export function initAntigravitySettingsInjector() {
   window.__ANTIGRAVITY_OBSERVER__ = observer;
   observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
 
+  // Start UI translation if Chinese is selected
+  if (antigravityI18n.getLanguage() === 'zh') {
+    antigravityI18n.start();
+  }
+
   // Run immediate scan on load
   scanAndInject();
 }
@@ -449,6 +467,7 @@ export const unmount = unmountStats;
 export const showToast = showStatsToast;
 export const closeToast = removeStatsToast;
 export const init = initAntigravitySettingsInjector;
+export const i18n = antigravityI18n;
 
 // Automatically initialize when loaded into the renderer
 if (typeof window !== 'undefined') {
@@ -467,6 +486,7 @@ if (typeof window !== 'undefined') {
     removeStatsToast,
     init: initAntigravitySettingsInjector,
     initAntigravitySettingsInjector,
+    i18n: antigravityI18n,
   };
   window.AntigravityStats = api;
   // Delay assignment after module evaluation in case Rollup re-assigns global

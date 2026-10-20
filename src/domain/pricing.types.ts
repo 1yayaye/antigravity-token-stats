@@ -9,11 +9,10 @@ export interface CapturedQuotaBucket {
 export interface LiveQuotaSummary {
   capturedAt: string;
   weeklyGemini?: CapturedQuotaBucket;
-  weeklyClaude?: CapturedQuotaBucket;
   description?: string;
 }
 
-export type SubscriptionTierId = 'free' | 'pro' | 'ultra_5x' | 'ultra_20x' | 'custom';
+export type SubscriptionTierId = 'free' | 'pro' | 'ultra_5x' | 'ultra_20x';
 
 export interface SubscriptionTierConfig {
   id: SubscriptionTierId;

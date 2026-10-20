@@ -14,7 +14,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { computeStats, decodeGenMetadata, decodeVarint, parseProtoFields } = require('./aggregate-stats.cjs');
+
+const LIVE_GROUND_TRUTH = process.env.ANTIGRAVITY_GROUND_TRUTH_LIVE === '1';
 
 const TESTS = [];
 let passCount = 0;
@@ -22,6 +25,15 @@ let failCount = 0;
 
 function test(name, fn) {
   TESTS.push({ name, fn });
+}
+
+const SKIPPED = Symbol('skipped');
+
+function liveTest(name, fn) {
+  test(name, () => {
+    if (!LIVE_GROUND_TRUTH) return SKIPPED;
+    fn();
+  });
 }
 
 function assert(condition, message) {
@@ -97,7 +109,7 @@ test('No estimation heuristics (chars/3.5, bytes/3.8) in aggregate-stats.cjs', (
   assert(!content.includes('Math.ceil(chars /'), 'Must not contain chars division');
 });
 
-test('computeStats computes ground truth Lifetime Tokens and Cache Hit Rate', () => {
+liveTest('computeStats computes ground truth Lifetime Tokens and Cache Hit Rate', () => {
   const stats = computeStats();
   assert(stats.kpis.lifetimeTokensRaw > 1000000000, `Lifetime tokens should be > 1B, got ${stats.kpis.lifetimeTokensRaw}`);
   assert(stats.kpis.lifetimeTokens.endsWith('B'), `Lifetime tokens should be formatted in B, got ${stats.kpis.lifetimeTokens}`);
@@ -110,7 +122,7 @@ test('computeStats computes ground truth Lifetime Tokens and Cache Hit Rate', ()
   assert(stats.insights.mostUsedReasoning.includes('Flash'), `Most used model should be Flash, got ${stats.insights.mostUsedReasoning}`);
 });
 
-test('Incremental scan speed is fast (<20ms in Node)', () => {
+liveTest('Incremental scan speed is fast (<20ms in Node)', () => {
   // Prime cache
   computeStats();
   const t0 = performance.now();
@@ -120,7 +132,7 @@ test('Incremental scan speed is fast (<20ms in Node)', () => {
   assert(elapsed < 20, `Incremental scan should be < 20ms, was ${elapsed.toFixed(2)}ms`);
 });
 
-test('Token breakdown contains ground truth fields without artificial heuristics', () => {
+liveTest('Token breakdown contains ground truth fields without artificial heuristics', () => {
   const stats = computeStats(true);
   assert(stats.tokenBreakdown, 'Should have tokenBreakdown object');
   assert(typeof stats.tokenBreakdown.reasoningPct === 'number', 'reasoningPct should be a number');
@@ -131,10 +143,13 @@ test('Token breakdown contains ground truth fields without artificial heuristics
 
 test('WAL cache invalidation detects updates to open databases', () => {
   const { DatabaseSync } = require('node:sqlite');
-  const os = require('os');
-  const convDir = path.join(os.homedir(), '.gemini', 'antigravity', 'conversations');
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antigravity-ground-truth-wal-'));
+  const convDir = path.join(tmpRoot, 'conversations');
+  fs.mkdirSync(convDir, { recursive: true });
   const testDbPath = path.join(convDir, '00000000-0000-0000-0000-000000000099.db');
   const walPath = testDbPath + '-wal';
+  const previousDataDir = process.env.ANTIGRAVITY_DATA_DIR;
+  process.env.ANTIGRAVITY_DATA_DIR = tmpRoot;
 
   try {
     const agConn = new DatabaseSync(testDbPath);
@@ -164,15 +179,14 @@ test('WAL cache invalidation detects updates to open databases', () => {
     assert(diff >= 5100, `Incremental scan must detect at least 5100 tokens from WAL, got ${diff}`);
   } finally {
     try {
-      if (fs.existsSync(testDbPath)) fs.rmSync(testDbPath, { force: true });
-      if (fs.existsSync(walPath)) fs.rmSync(walPath, { force: true });
-      const shm = testDbPath + '-shm';
-      if (fs.existsSync(shm)) fs.rmSync(shm, { force: true });
+      try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch (e) {}
+      if (previousDataDir === undefined) delete process.env.ANTIGRAVITY_DATA_DIR;
+      else process.env.ANTIGRAVITY_DATA_DIR = previousDataDir;
     } catch (e) {}
   }
 });
 
-test('Time range filtering behaves correctly on AggregatedStats', () => {
+liveTest('Time range filtering behaves correctly on AggregatedStats', () => {
   const stats = computeStats(true);
   // Filter for today
   const todayKey = toLocalDateKey(new Date());
@@ -209,7 +223,7 @@ test('Frontend StatsView listens to antigravity:stats-updated and calls __ANTIGR
   assert(viewCode.includes('TokenBreakdownCard'), 'StatsView must render TokenBreakdownCard');
 });
 
-test('TokenBreakdown computes accurate input, output, cache, and thinking breakdown', () => {
+liveTest('TokenBreakdown computes accurate input, output, cache, and thinking breakdown', () => {
   const stats = computeStats(true);
   assert(stats.tokenBreakdown, 'stats must include tokenBreakdown');
   const tb = stats.tokenBreakdown;
@@ -275,10 +289,21 @@ test('Protobuf decoder handles non-standard Unicode, emojis, and corrupted varin
 
 test('Multiple DB sessions on the same calendar day accumulate tokens and tasks without dropping', () => {
   const { DatabaseSync } = require('node:sqlite');
-  const os = require('os');
-  const convDir = path.join(os.homedir(), '.gemini', 'antigravity', 'conversations');
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antigravity-ground-truth-multi-'));
+  const convDir = path.join(tmpRoot, 'conversations');
+  fs.mkdirSync(convDir, { recursive: true });
   const db1Path = path.join(convDir, '00000000-0000-0000-0000-000000000091.db');
   const db2Path = path.join(convDir, '00000000-0000-0000-0000-000000000092.db');
+  const writeTranscript = (sessionId) => {
+    const transcriptPath = path.join(tmpRoot, 'brain', sessionId, '.system_generated', 'logs', 'transcript.jsonl');
+    fs.mkdirSync(path.dirname(transcriptPath), { recursive: true });
+    fs.writeFileSync(transcriptPath, JSON.stringify({
+      created_at: new Date().toISOString(),
+      type: 'USER_INPUT',
+    }) + '\n');
+  };
+  const previousDataDir = process.env.ANTIGRAVITY_DATA_DIR;
+  process.env.ANTIGRAVITY_DATA_DIR = tmpRoot;
 
   try {
     const payload = Buffer.concat([
@@ -296,6 +321,8 @@ test('Multiple DB sessions on the same calendar day accumulate tokens and tasks 
     conn2.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB);');
     conn2.prepare('INSERT INTO gen_metadata (idx, data, size) VALUES (1, ?, ?)').run(payload, payload.length);
     conn2.close();
+    writeTranscript('00000000-0000-0000-0000-000000000091');
+    writeTranscript('00000000-0000-0000-0000-000000000092');
 
     // Set same mtime on both files to ensure they share the same calendar day
     const now = new Date();
@@ -310,8 +337,9 @@ test('Multiple DB sessions on the same calendar day accumulate tokens and tasks 
     assert(todayEntry.tasks >= 2, `Tasks from both sessions must accumulate (>= 2), got ${todayEntry.tasks}`);
   } finally {
     try {
-      if (fs.existsSync(db1Path)) fs.rmSync(db1Path, { force: true });
-      if (fs.existsSync(db2Path)) fs.rmSync(db2Path, { force: true });
+      try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch (e) {}
+      if (previousDataDir === undefined) delete process.env.ANTIGRAVITY_DATA_DIR;
+      else process.env.ANTIGRAVITY_DATA_DIR = previousDataDir;
     } catch (e) {}
   }
 });
@@ -323,7 +351,10 @@ console.log('='.repeat(60) + '\n');
 
 for (const { name, fn } of TESTS) {
   try {
-    fn();
+    if (fn() === SKIPPED) {
+      console.log('⏭', name);
+      continue;
+    }
     console.log('✅', name);
     passCount++;
   } catch (err) {

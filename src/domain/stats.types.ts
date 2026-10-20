@@ -35,6 +35,13 @@ export interface DailyStatEntry {
   cacheReadTokens?: number;
   thinkingTokens?: number;
   responseTokens?: number;
+  costUsd?: number;
+}
+
+export interface CostTimelineEntry {
+  ts: number;
+  costUsd: number;
+  pool: 'gemini' | 'claude';
 }
 
 export interface TokenBreakdown {
@@ -64,6 +71,8 @@ export interface AggregatedStats {
     activeDaysCount: number;
     totalTasks: number;
     dailyStats?: Record<string, DailyStatEntry>;
+    costTimeline?: CostTimelineEntry[];
+    costTimelineCoverageStartMs?: number | null;
   };
   insights: ActivityInsights;
   tokenBreakdown?: TokenBreakdown;

@@ -7,6 +7,56 @@ function getAntigravityDir() {
   return process.env.ANTIGRAVITY_DATA_DIR || path.join(os.homedir(), '.gemini', 'antigravity');
 }
 
+function getWatchLockPath() {
+  const stateDir = process.env.LOCALAPPDATA
+    ? path.join(process.env.LOCALAPPDATA, 'AntiToken')
+    : path.join(os.homedir(), '.antigravity-token-stats');
+  return path.join(stateDir, 'live-watch.lock');
+}
+
+function acquireWatchLock() {
+  const lockPath = getWatchLockPath();
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+
+  let fd = null;
+  try {
+    fd = fs.openSync(lockPath, 'wx');
+    fs.writeFileSync(fd, String(process.pid), 'utf8');
+    const release = () => {
+      try { fs.closeSync(fd); } catch {}
+      try {
+        // Never unlink a lock another process has since taken over.
+        if (Number(fs.readFileSync(lockPath, 'utf8').trim()) === process.pid) fs.unlinkSync(lockPath);
+      } catch {}
+    };
+    process.once('exit', release);
+    process.once('SIGINT', () => process.exit(0));
+    process.once('SIGTERM', () => process.exit(0));
+    return { lockPath, release };
+  } catch (err) {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch {}
+    }
+    if (err.code !== 'EEXIST') throw err;
+    let pid = null;
+    try { pid = Number(fs.readFileSync(lockPath, 'utf8').trim()); } catch {}
+    const validPid = Number.isInteger(pid) && pid > 0;
+    let running = false;
+    if (validPid) {
+      try { process.kill(pid, 0); running = true; } catch {}
+    }
+    if (running) return null;
+    if (!validPid) {
+      // The winner may still be writing its PID; a fresh empty lock is busy, not stale.
+      let ageMs = 0;
+      try { ageMs = Date.now() - fs.statSync(lockPath).mtimeMs; } catch { ageMs = 0; }
+      if (ageMs < 1000) return null;
+    }
+    try { fs.unlinkSync(lockPath); } catch { return null; }
+    return acquireWatchLock();
+  }
+}
+
 function getDevToolsPortPath() {
   if (process.env.ANTIGRAVITY_DEVTOOLS_PATH) {
     return process.env.ANTIGRAVITY_DEVTOOLS_PATH;
@@ -148,7 +198,7 @@ async function inject(options = {}) {
         while (Date.now() < readyDeadline) {
           try {
             const readiness = await sendCDP('Runtime.evaluate', {
-              expression: `document.readyState === 'complete' && !!document.querySelector('[aria-label="Sidebar"]')`,
+              expression: `document.readyState === 'complete' && !!document.querySelector('[aria-label="Sidebar"], [aria-label="侧边栏"]')`,
               returnByValue: true,
             }, 2000);
             if (readiness?.result?.value === true) {
@@ -168,6 +218,10 @@ async function inject(options = {}) {
             if (window.__ANTIGRAVITY_OBSERVER__) {
               try { window.__ANTIGRAVITY_OBSERVER__.disconnect(); } catch (e) {}
               window.__ANTIGRAVITY_OBSERVER__ = null;
+            }
+            if (window.AntigravityI18n && typeof window.AntigravityI18n.stop === 'function') {
+              try { window.AntigravityI18n.stop(); } catch (e) {}
+              window.AntigravityI18n = null;
             }
             if (window.__ANTIGRAVITY_STATS_ROOT__) {
               try { window.__ANTIGRAVITY_STATS_ROOT__.unmount(); } catch (e) {}
@@ -270,6 +324,12 @@ async function inject(options = {}) {
 
 // Watch Mode: Keeps CDP connection open, watches database & transcript files, pushes live updates
 async function watchLive() {
+  const watchLock = acquireWatchLock();
+  if (!watchLock) {
+    console.log('[Live Sync] Watcher already running; exiting duplicate watcher.');
+    return;
+  }
+
   const log = (...args) => console.log(...args);
   log('=== Running in Watch Mode (auto-synchronize on SQLite & transcript changes) ===');
 
@@ -283,6 +343,7 @@ async function watchLive() {
   let pendingAfterFlight = false;
   let watchers = [];
   let consecutiveDisconnects = 0;
+  let reconnectTimer = null;
 
   function setupWatchers() {
     for (const w of watchers) {
@@ -422,7 +483,7 @@ async function watchLive() {
       if (!mainPage) {
         log('[Live Sync] Main application page not ready yet (waiting for Antigravity app load)...');
         consecutiveDisconnects++;
-        setTimeout(() => { isConnecting = false; connectAndWatch(); }, 2000);
+        scheduleReconnect(2000);
         return;
       }
 
@@ -444,17 +505,17 @@ async function watchLive() {
       log('[Live Sync] Opening persistent WebSocket to:', mainPage.webSocketDebuggerUrl);
       let wsClosed = false;
       const ws = new WebSocket(mainPage.webSocketDebuggerUrl);
+      activeWs = ws;
 
       const safeClose = () => {
         if (wsClosed) return;
         wsClosed = true;
         try {
-          if (ws.readyState === WebSocket.OPEN) ws.close();
+          if (ws.readyState !== WebSocket.CLOSED) ws.close();
         } catch (e) {}
       };
 
       ws.onopen = async () => {
-        activeWs = ws;
         isConnecting = false;
         consecutiveDisconnects = 0;
         log(`[Live Sync] Connected persistent CDP session on port ${port}`);
@@ -500,9 +561,9 @@ async function watchLive() {
           retryBusyTimer = null;
         }
         log('[Live Sync] CDP WebSocket closed. Reconnecting...');
-        activeWs = null;
+        if (activeWs === ws) activeWs = null;
         consecutiveDisconnects++;
-        setTimeout(() => { isConnecting = false; connectAndWatch(); }, 2000);
+        scheduleReconnect(2000);
       };
 
       ws.onerror = (err) => {
@@ -513,9 +574,18 @@ async function watchLive() {
     } catch (err) {
       log('[Live Sync] connectAndWatch error:', err?.stack || err?.message || err);
       consecutiveDisconnects++;
-      setTimeout(() => { isConnecting = false; connectAndWatch(); }, 3000);
+      scheduleReconnect(3000);
     }
   };
+
+  function scheduleReconnect(delayMs) {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      isConnecting = false;
+      connectAndWatch();
+    }, delayMs);
+  }
 
 
   connectAndWatch();
@@ -536,6 +606,8 @@ if (require.main === module) {
 module.exports = {
   getDevToolsPort,
   getDevToolsPortPath,
+  getWatchLockPath,
+  acquireWatchLock,
   inject,
   watchLive,
 };

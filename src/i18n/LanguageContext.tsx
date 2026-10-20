@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Language, TranslationKey, translations } from './translations';
+import { antigravityI18n } from './antigravity-ui-i18n';
 
 interface LanguageContextType {
   lang: Language;
@@ -27,14 +28,24 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode; initialLang
 
   const setLang = (newLang: Language) => {
     setLangState(newLang);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY, newLang);
-    }
+    antigravityI18n.setLanguage(newLang);
   };
 
   const toggleLang = () => {
     setLang(lang === 'en' ? 'zh' : 'en');
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onExternalChange = (e: Event) => {
+      const detail = (e as CustomEvent<{ lang: Language }>).detail;
+      if (detail?.lang && (detail.lang === 'en' || detail.lang === 'zh') && detail.lang !== lang) {
+        setLangState(detail.lang);
+      }
+    };
+    window.addEventListener('antigravity:language-changed', onExternalChange);
+    return () => window.removeEventListener('antigravity:language-changed', onExternalChange);
+  }, [lang]);
 
   const t = (key: TranslationKey): string => {
     const dict = translations[lang] || translations.en;

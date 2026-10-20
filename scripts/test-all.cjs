@@ -10,6 +10,7 @@ require('./test-stats-filter.cjs');
 require('./test-token-breakdown.cjs');
 require('./test-heatmap.cjs');
 require('./test-theme.cjs');
+require('./test-i18n-engine.cjs');
 
 const TESTS = [];
 let passCount = 0;
@@ -100,6 +101,54 @@ test('Inject-live script fixed WebSocket leak', () => {
   const onerrorMatch = injectScript.match(/ws\.onerror\s*=\s*\(\)\s*=>\s*\{[^}]*\}/s);
   assert(onerrorMatch, 'Should have onerror handler');
   assert(onerrorMatch[0].includes('ws.close()'), 'onerror should call ws.close()');
+  assert(injectScript.includes('acquireWatchLock'), 'watch mode should enforce a single process');
+  assert(injectScript.includes('activeWs = ws'), 'watch mode should register the socket before handlers run');
+  assert(injectScript.includes('scheduleReconnect'), 'watch mode should use one reconnect timer');
+});
+
+test('Watcher lock rejects a second live process', () => {
+  const os = require('node:os');
+  const { spawn, spawnSync } = require('node:child_process');
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antigravity-watch-lock-'));
+  const cwd = path.join(__dirname, '..');
+  const env = { ...process.env, LOCALAPPDATA: tmpRoot };
+  const holder = spawn(process.execPath, ['-e', "const { acquireWatchLock } = require('./scripts/inject-live.cjs'); if (!acquireWatchLock()) process.exit(2); setTimeout(() => {}, 10000);"], {
+    cwd,
+    env,
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  try {
+    const lockPath = path.join(tmpRoot, 'AntiToken', 'live-watch.lock');
+    const deadline = Date.now() + 2000;
+    while (!fs.existsSync(lockPath) && Date.now() < deadline) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    }
+    assert(fs.existsSync(lockPath), 'First watcher should acquire the lock');
+    const result = spawnSync(process.execPath, ['-e', "const { acquireWatchLock } = require('./scripts/inject-live.cjs'); console.log(acquireWatchLock() ? 'acquired' : 'busy');"], {
+      cwd,
+      env,
+      encoding: 'utf8',
+    });
+    assert(result.status === 0 && result.stdout.trim().endsWith('busy'), 'Second watcher should exit without acquiring the lock');
+  } finally {
+    holder.kill();
+    try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test('Toast messages are inserted as text', () => {
+  const standaloneCode = fs.readFileSync(path.join(__dirname, '..', 'src', 'standalone.tsx'), 'utf8');
+  assert(standaloneCode.includes('data-toast-message'), 'Toast should have a message node');
+  assert(standaloneCode.includes('messageNode.textContent = message'), 'Toast message must use textContent');
+  assert(!standaloneCode.includes('white-space: nowrap;">${message}</span>'), 'Toast must not interpolate message into HTML');
+});
+
+test('Subscription quota countdown refreshes while mounted', () => {
+  const cardCode = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'stats', 'SubscriptionQuotaCard.tsx'), 'utf8');
+  assert(cardCode.includes('setInterval(() => setNowMs(Date.now()), 60_000)'), 'Quota card should refresh its clock every minute');
+  assert(cardCode.includes('computeQuotaCycleMetrics(stats, liveQuota, selectedTier, nowMs)'), 'Quota card should recompute metrics against the refreshed clock');
+  assert(cardCode.includes('clearInterval(timer)'), 'Quota card should clear its clock on unmount');
 });
 
 test('Standalone has DOM race condition guards', () => {
@@ -212,6 +261,217 @@ test('SQLITE_BUSY fallback and auto-retry on busy lock exist', () => {
 
   const viewCode = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'stats', 'StatsView.tsx'), 'utf8');
   assert(viewCode.includes('Request sync on mount error'), 'StatsView must request sync on mount');
+});
+
+test('decodeStepTimestamp handles both short (<128B) and long (>=128B) protobuf messages', () => {
+  const { decodeStepTimestamp } = require('./aggregate-stats.cjs');
+  function encodeVarint(num) {
+    const bytes = [];
+    let v = BigInt(num);
+    while (v >= 0x80n) {
+      bytes.push(Number((v & 0x7fn) | 0x80n));
+      v >>= 7n;
+    }
+    bytes.push(Number(v));
+    return Buffer.from(bytes);
+  }
+
+  const targetSec = 1760000000;
+  const tsField = Buffer.concat([Buffer.from([0x08]), encodeVarint(targetSec)]);
+
+  // Short inner message (<128 bytes, 1-byte length prefix)
+  const shortMsg = Buffer.concat([Buffer.from([0x0a]), encodeVarint(tsField.length), tsField]);
+  const dShort = decodeStepTimestamp(shortMsg);
+  assert(dShort instanceof Date && dShort.getTime() === targetSec * 1000, 'Should decode short step timestamp');
+
+  // Long inner message (>=128 bytes, 2-byte varint length prefix)
+  const extraString = Buffer.alloc(140, 0x61);
+  const extraField = Buffer.concat([Buffer.from([0x12]), encodeVarint(extraString.length), extraString]);
+  const innerLong = Buffer.concat([tsField, extraField]);
+  const longMsg = Buffer.concat([Buffer.from([0x0a]), encodeVarint(innerLong.length), innerLong]);
+  const dLong = decodeStepTimestamp(longMsg);
+  assert(dLong instanceof Date && dLong.getTime() === targetSec * 1000, 'Should decode >=128B step timestamp with 2-byte length varint');
+});
+
+test('Phase 2.5 recovers daily stats, costUsd, and duration when transcript.jsonl is absent', () => {
+  const os = require('node:os');
+  const { DatabaseSync } = require('node:sqlite');
+  const { spawnSync } = require('node:child_process');
+
+  function encodeVarint(num) {
+    const bytes = [];
+    let v = BigInt(num);
+    while (v >= 0x80n) {
+      bytes.push(Number((v & 0x7fn) | 0x80n));
+      v >>= 7n;
+    }
+    bytes.push(Number(v));
+    return Buffer.from(bytes);
+  }
+
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antigravity-phase25-test-'));
+  try {
+    const convDir = path.join(tmpRoot, 'conversations');
+    fs.mkdirSync(convDir, { recursive: true });
+    const dbPath = path.join(convDir, 'no-transcript-session.db');
+    const db = new DatabaseSync(dbPath);
+    db.exec('CREATE TABLE gen_metadata (idx INTEGER, data BLOB); CREATE TABLE steps (idx INTEGER, step_type INTEGER, step_payload BLOB, metadata BLOB);');
+
+    // Insert 1M input tokens on gemini-2.5-pro ($2.00)
+    const usageBuf = Buffer.concat([Buffer.from([0x10]), encodeVarint(1000000)]);
+    const modelStr = Buffer.from('gemini-2.5-pro', 'utf8');
+    const msg1 = Buffer.concat([
+      Buffer.from([0x22, usageBuf.length]), usageBuf,
+      Buffer.from([0x9a, 0x01, modelStr.length]), modelStr,
+    ]);
+    const genBlob = Buffer.concat([Buffer.from([0x0a, msg1.length]), msg1]);
+    db.prepare('INSERT INTO gen_metadata (idx, data) VALUES (?, ?)').run(1, genBlob);
+
+    // Step 1: user input (step_type 14) at 1760000000
+    const inner1 = Buffer.concat([Buffer.from([0x08]), encodeVarint(1760000000)]);
+    const ts1 = Buffer.concat([Buffer.from([0x0a, inner1.length]), inner1]);
+    // Step 2: planner response (step_type 15) 30 minutes (1800s) later at 1760001800
+    const inner2 = Buffer.concat([Buffer.from([0x08]), encodeVarint(1760001800)]);
+    const ts2 = Buffer.concat([Buffer.from([0x0a, inner2.length]), inner2]);
+    db.prepare('INSERT INTO steps (idx, step_type, step_payload, metadata) VALUES (?, ?, ?, ?)').run(1, 14, null, ts1);
+    db.prepare('INSERT INTO steps (idx, step_type, step_payload, metadata) VALUES (?, ?, ?, ?)').run(2, 15, null, ts2);
+    db.close();
+
+    const res = spawnSync(process.execPath, ['-e', "const { computeStats } = require('./scripts/aggregate-stats.cjs'); console.log(JSON.stringify(computeStats(true)));"], {
+      cwd: path.join(__dirname, '..'),
+      encoding: 'utf8',
+      env: { ...process.env, ANTIGRAVITY_DATA_DIR: tmpRoot, ANTIGRAVITY_DISABLE_PERSIST_CACHE: '1' },
+    });
+    assert(res.status === 0, `Phase 2.5 subprocess failed: ${res.stderr}`);
+    const out = JSON.parse(res.stdout.trim().split(/\r?\n/).at(-1));
+    assert(out.activity.totalTasks === 1, `Expected 1 task from steps.metadata, got ${out.activity.totalTasks}`);
+    assert(out.kpis.longestTask === '0h 30m', `Expected 0h 30m duration, got ${out.kpis.longestTask}`);
+    const dayEntries = Object.values(out.activity.dailyStats || {});
+    assert(dayEntries.length === 1 && dayEntries[0].costUsd === 2, `Expected $2.00 Pro model cost, got ${JSON.stringify(dayEntries)}`);
+  } finally {
+    try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test('Exact DB step timestamps win when the transcript only knows part of the session', () => {
+  const os = require('node:os');
+  const { DatabaseSync } = require('node:sqlite');
+  const { spawnSync } = require('node:child_process');
+
+  function encodeVarint(num) {
+    const bytes = [];
+    let v = BigInt(num);
+    while (v >= 0x80n) {
+      bytes.push(Number((v & 0x7fn) | 0x80n));
+      v >>= 7n;
+    }
+    bytes.push(Number(v));
+    return Buffer.from(bytes);
+  }
+
+  const localKey = (sec) => {
+    const d = new Date(sec * 1000);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const dayA = 1790000000;
+  const dayB = dayA + 3 * 86400;
+  const transcriptDay = dayA + 86400;
+  const sessionId = 'partial-transcript-session';
+
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antigravity-db-timestamp-test-'));
+  try {
+    fs.mkdirSync(path.join(tmpRoot, 'conversations'), { recursive: true });
+
+    const db = new DatabaseSync(path.join(tmpRoot, 'conversations', `${sessionId}.db`));
+    db.exec('CREATE TABLE gen_metadata (idx INTEGER, data BLOB); CREATE TABLE steps (idx INTEGER, step_type INTEGER, step_payload BLOB, metadata BLOB);');
+    const usageBuf = Buffer.concat([Buffer.from([0x10]), encodeVarint(1000000)]);
+    const modelStr = Buffer.from('gemini-2.5-pro', 'utf8');
+    const msg = Buffer.concat([
+      Buffer.from([0x22, usageBuf.length]), usageBuf,
+      Buffer.from([0x9a, 0x01, modelStr.length]), modelStr,
+    ]);
+    const genBlob = Buffer.concat([Buffer.from([0x0a, msg.length]), msg]);
+    db.prepare('INSERT INTO gen_metadata (idx, data) VALUES (?, ?)').run(1, genBlob);
+    db.prepare('INSERT INTO gen_metadata (idx, data) VALUES (?, ?)').run(2, genBlob);
+    for (const [idx, ts] of [[1, dayA], [2, dayB]]) {
+      const inner = Buffer.concat([Buffer.from([0x08]), encodeVarint(ts)]);
+      const metadata = Buffer.concat([Buffer.from([0x0a, inner.length]), inner]);
+      db.prepare('INSERT INTO steps (idx, step_type, step_payload, metadata) VALUES (?, ?, ?, ?)').run(idx, 15, null, metadata);
+    }
+    db.close();
+
+    const transcriptPath = path.join(tmpRoot, 'brain', sessionId, '.system_generated', 'logs', 'transcript.jsonl');
+    fs.mkdirSync(path.dirname(transcriptPath), { recursive: true });
+    fs.writeFileSync(transcriptPath, JSON.stringify({
+      created_at: new Date(transcriptDay * 1000).toISOString(),
+      type: 'PLANNER_RESPONSE',
+      content: 'partial',
+    }) + '\n');
+
+    const res = spawnSync(process.execPath, ['-e', "const { computeStats } = require('./scripts/aggregate-stats.cjs'); console.log(JSON.stringify(computeStats(true)));"], {
+      cwd: path.join(__dirname, '..'),
+      encoding: 'utf8',
+      env: { ...process.env, ANTIGRAVITY_DATA_DIR: tmpRoot, ANTIGRAVITY_DISABLE_PERSIST_CACHE: '1' },
+    });
+    assert(res.status === 0, `DB timestamp subprocess failed: ${res.stderr}`);
+    const out = JSON.parse(res.stdout.trim().split(/\r?\n/).at(-1));
+    const daily = out.activity.dailyStats || {};
+    const a = daily[localKey(dayA)];
+    const b = daily[localKey(dayB)];
+    assert(a && a.costUsd === 2 && a.tokens === 1000000, `Expected first DB day to keep its $2, got ${JSON.stringify(a)}`);
+    assert(b && b.costUsd === 2 && b.tokens === 1000000, `Expected second DB day to keep its $2, got ${JSON.stringify(b)}`);
+    assert(daily[localKey(transcriptDay)]?.costUsd === 0, `Transcript day must not absorb DB cost, got ${JSON.stringify(daily[localKey(transcriptDay)])}`);
+  } finally {
+    try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test('Transcript aggregation rejects invalid dates and counts transcript-only sessions', () => {
+  const os = require('node:os');
+  const { spawnSync } = require('node:child_process');
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antigravity-transcript-edge-'));
+  try {
+    const transcriptPath = path.join(tmpRoot, 'brain', 'transcript-only', '.system_generated', 'logs', 'transcript.jsonl');
+    fs.mkdirSync(path.dirname(transcriptPath), { recursive: true });
+    fs.writeFileSync(transcriptPath, [
+      JSON.stringify({ created_at: 'not-a-date', type: 'USER_INPUT' }),
+      JSON.stringify({ created_at: '2026-10-15T00:00:00.000Z', type: 'USER_INPUT' }),
+    ].join('\n') + '\n');
+
+    const result = spawnSync(process.execPath, ['-e', "const { computeStats } = require('./scripts/aggregate-stats.cjs'); console.log(JSON.stringify(computeStats(true)));"], {
+      cwd: path.join(__dirname, '..'),
+      encoding: 'utf8',
+      env: { ...process.env, ANTIGRAVITY_DATA_DIR: tmpRoot, ANTIGRAVITY_DISABLE_PERSIST_CACHE: '1' },
+    });
+    assert(result.status === 0, `Transcript edge-case subprocess failed: ${result.stderr}`);
+    const stats = JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
+    assert(stats.insights.totalThreads === 1, 'Transcript-only session should count as one thread');
+    assert(stats.activity.totalTasks === 1, 'Only the valid timestamp should contribute a task');
+    assert(!Object.keys(stats.activity.dailyStats).some(key => key.includes('NaN')), 'Invalid timestamps must not create NaN dates');
+  } finally {
+    try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test('Persistent cache defaults outside the Antigravity data directory', () => {
+  const os = require('node:os');
+  const { spawnSync } = require('node:child_process');
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antigravity-cache-location-'));
+  try {
+    const env = { ...process.env, ANTIGRAVITY_DATA_DIR: tmpRoot };
+    delete env.ANTIGRAVITY_STATS_CACHE_PATH;
+    const result = spawnSync(process.execPath, ['-e', "console.log(require('./scripts/aggregate-stats.cjs').getCacheFilePath())"], {
+      cwd: path.join(__dirname, '..'),
+      encoding: 'utf8',
+      env,
+    });
+    assert(result.status === 0, `Cache path subprocess failed: ${result.stderr}`);
+    const cachePath = result.stdout.trim().split(/\r?\n/).at(-1);
+    assert(!cachePath.startsWith(tmpRoot), 'Default cache must not live under the Antigravity data directory');
+  } finally {
+    try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
+  }
 });
 
 

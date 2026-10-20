@@ -32,7 +32,7 @@ function prepareData() {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   fs.mkdirSync(path.dirname(transcriptPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
-  db.exec('CREATE TABLE gen_metadata (idx INTEGER, data BLOB); CREATE TABLE steps (idx INTEGER, step_type INTEGER, step_payload BLOB);');
+  db.exec('CREATE TABLE gen_metadata (idx INTEGER, data BLOB); CREATE TABLE steps (idx INTEGER, step_type INTEGER, step_payload BLOB, metadata BLOB);');
   db.prepare('INSERT INTO gen_metadata (idx, data) VALUES (?, ?)').run(1, makeUsagePayload());
   db.close();
   fs.writeFileSync(transcriptPath, [
@@ -68,7 +68,7 @@ try {
   const first = runAggregator();
   assert(fs.existsSync(cachePath), 'Process A should write the persistent cache');
   const firstCache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-  assert.strictEqual(firstCache.version, 3, 'Cache version should be 3');
+  assert.strictEqual(firstCache.version, 6, 'Cache version should be 6');
   assert(firstCache.dbs['cache-session'], 'Cache should contain database metrics');
   assert(firstCache.transcripts['cache-session'], 'Cache should contain transcript metrics');
 
