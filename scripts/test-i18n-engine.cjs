@@ -9,8 +9,13 @@ const fs = require('node:fs');
 
 console.log('--- Testing Antigravity 2.0 UI Localization (i18n) Engine ---');
 
-// 1. Verify bundle contains i18n symbols
+// 1. Verify bundle contains i18n symbols (auto-build bundle if missing)
 const bundlePath = path.join(__dirname, '..', 'dist-bundle', 'antigravity-stats-bundle.js');
+if (!fs.existsSync(bundlePath)) {
+  const { execFileSync } = require('node:child_process');
+  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  execFileSync(npmCmd, ['run', 'build:bundle'], { cwd: path.join(__dirname, '..'), stdio: 'inherit', shell: true });
+}
 assert(fs.existsSync(bundlePath), 'Bundle file should exist');
 const bundleContent = fs.readFileSync(bundlePath, 'utf8');
 
