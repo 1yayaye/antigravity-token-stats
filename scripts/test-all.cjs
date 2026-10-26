@@ -94,47 +94,29 @@ test('Aggregate script has improved error handling', () => {
   assert(aggregateScript.includes('console.warn'), 'Should warn on non-lock errors');
 });
 
-test('Inject-live script fixed WebSocket leak', () => {
-  const injectScript = fs.readFileSync(path.join(__dirname, 'inject-live.cjs'), 'utf8');
+test('Loader script exists and handles 127.0.0.1 origin filter', () => {
+  const loaderScript = fs.readFileSync(path.join(__dirname, 'loader.cjs'), 'utf8');
+  assert(loaderScript.includes('isAntigravityMainWindow'), 'Should define isAntigravityMainWindow');
+  assert(loaderScript.includes('127.0.0.1'), 'Should filter for 127.0.0.1 origin');
+  assert(loaderScript.includes('dev-bundle.path'), 'Should support dev-bundle.path DX redirect');
 
-  // Check that ws.onerror has ws.close()
-  const onerrorMatch = injectScript.match(/ws\.onerror\s*=\s*\(\)\s*=>\s*\{[^}]*\}/s);
-  assert(onerrorMatch, 'Should have onerror handler');
-  assert(onerrorMatch[0].includes('ws.close()'), 'onerror should call ws.close()');
-  assert(injectScript.includes('acquireWatchLock'), 'watch mode should enforce a single process');
-  assert(injectScript.includes('activeWs = ws'), 'watch mode should register the socket before handlers run');
-  assert(injectScript.includes('scheduleReconnect'), 'watch mode should use one reconnect timer');
+  const { isAntigravityMainWindow } = require('./loader.cjs');
+  assert(isAntigravityMainWindow({ webContents: { getURL: () => 'https://127.0.0.1:3901/main' }, isDestroyed: () => false }) === true, 'Must allow 127.0.0.1 https origin');
+  assert(isAntigravityMainWindow({ webContents: { getURL: () => 'http://127.0.0.1:8080/' }, isDestroyed: () => false }) === true, 'Must allow 127.0.0.1 http origin');
+  assert(isAntigravityMainWindow({ webContents: { getURL: () => 'https://accounts.google.com/o/oauth2/v2/auth' }, isDestroyed: () => false }) === false, 'Must reject OAuth popups');
+  assert(isAntigravityMainWindow({ webContents: { getURL: () => 'https://gemini.google.com/' }, isDestroyed: () => false }) === false, 'Must reject external web views');
+  assert(isAntigravityMainWindow({ webContents: { getURL: () => 'https://127.0.0.1:3901/main' }, isDestroyed: () => true }) === false, 'Must reject destroyed windows');
+  assert(isAntigravityMainWindow(null) === false, 'Must reject null window');
 });
 
-test('Watcher lock rejects a second live process', () => {
-  const os = require('node:os');
-  const { spawn, spawnSync } = require('node:child_process');
-  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'antigravity-watch-lock-'));
-  const cwd = path.join(__dirname, '..');
-  const env = { ...process.env, LOCALAPPDATA: tmpRoot };
-  const holder = spawn(process.execPath, ['-e', "const { acquireWatchLock } = require('./scripts/inject-live.cjs'); if (!acquireWatchLock()) process.exit(2); setTimeout(() => {}, 10000);"], {
-    cwd,
-    env,
-    stdio: 'ignore',
-    windowsHide: true,
-  });
-  try {
-    const lockPath = path.join(tmpRoot, 'AntiToken', 'live-watch.lock');
-    const deadline = Date.now() + 2000;
-    while (!fs.existsSync(lockPath) && Date.now() < deadline) {
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
-    }
-    assert(fs.existsSync(lockPath), 'First watcher should acquire the lock');
-    const result = spawnSync(process.execPath, ['-e', "const { acquireWatchLock } = require('./scripts/inject-live.cjs'); console.log(acquireWatchLock() ? 'acquired' : 'busy');"], {
-      cwd,
-      env,
-      encoding: 'utf8',
-    });
-    assert(result.status === 0 && result.stdout.trim().endsWith('busy'), 'Second watcher should exit without acquiring the lock');
-  } finally {
-    holder.kill();
-    try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
-  }
+test('Patch script has ASAR unpack and factory backup safeguards', () => {
+  const patchScript = fs.readFileSync(path.join(__dirname, 'patch-antigravity.cjs'), 'utf8');
+  assert(patchScript.includes('extractAll'), 'Must call asar.extractAll');
+  assert(patchScript.includes('createPackageWithOptions'), 'Must call asar.createPackageWithOptions');
+  assert(patchScript.includes('chrome-devtools-mcp'), 'Must unpack chrome-devtools-mcp');
+  assert(patchScript.includes('app.asar.backup'), 'Must manage factory backup');
+  assert(patchScript.includes('__ANTIGRAVITY_STATS_INJECTION__'), 'Must inject main hook');
+  assert(patchScript.includes('__ANTIGRAVITY_SYNC_BRIDGE__'), 'Must inject preload bridge');
 });
 
 test('Toast messages are inserted as text', () => {
@@ -212,16 +194,33 @@ test('Zero-dependency Protobuf decoder for SQLite gen_metadata ModelUsageStats',
 });
 
 test('No estimation heuristics (chars / 3.5, bytes / 3.8) in codebase', () => {
-  const content = fs.readFileSync(path.join(__dirname, 'aggregate-stats.cjs'), 'utf8');
-  assert(!content.includes('/ 3.5'), 'Must not contain / 3.5');
-  assert(!content.includes('/ 3.8'), 'Must not contain / 3.8');
-  assert(!content.includes('Math.ceil(bytes /'), 'Must not contain bytes division heuristic');
-  assert(!content.includes('Math.ceil(chars /'), 'Must not contain chars division heuristic');
+  // The renderer is scanned too: that is where character counting hid from this check.
+  const files = [path.join(__dirname, 'aggregate-stats.cjs')];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(ts|tsx|js|cjs)$/.test(entry.name)) files.push(full);
+    }
+  };
+  walk(path.join(__dirname, '..', 'src'));
+
+  for (const file of files) {
+    const content = fs.readFileSync(file, 'utf8');
+    for (const pattern of ['/ 3.5', '/ 3.8', 'Math.ceil(bytes /', 'Math.ceil(chars /']) {
+      assert(!content.includes(pattern), `${path.basename(file)} must not contain ${pattern}`);
+    }
+  }
 });
 
 test('Ground truth Lifetime Tokens (>1B) and Prompt Cache Hit Rate (~94%)', () => {
   const { computeStats } = require('./aggregate-stats.cjs');
   const stats = computeStats();
+  if (stats.meta.scannedConversations === 0) {
+    // In clean environments without local Antigravity session data (e.g. CI or external machines),
+    // skip local ground-truth assertions.
+    return;
+  }
   assert(stats.kpis.lifetimeTokensRaw > 1000000000, 'Lifetime tokens should be > 1B');
   const hitRate = parseFloat(stats.insights.cacheHitRate);
   assert(Math.round(hitRate) >= 92 && Math.round(hitRate) <= 95, `Cache hit rate should be ~94%, got ${stats.insights.cacheHitRate}`);
@@ -229,11 +228,14 @@ test('Ground truth Lifetime Tokens (>1B) and Prompt Cache Hit Rate (~94%)', () =
   assert(stats.insights.toolPrimitivesUsed > 5000, 'Should track built-in tool primitives separately');
 });
 
-test('Live Sync and manual refresh CDP hooks exist', () => {
-  const injectCode = fs.readFileSync(path.join(__dirname, 'inject-live.cjs'), 'utf8');
-  assert(injectCode.includes('__ANTIGRAVITY_CDP_SYNC__'), 'Must register CDP binding');
-  assert(injectCode.includes('__ANTIGRAVITY_REQUEST_SYNC__'), 'Must wire sync function');
-  assert(injectCode.includes('antigravity:stats-updated'), 'Must emit stats-updated event');
+test('Live Sync and manual refresh IPC hooks exist', () => {
+  const loaderCode = fs.readFileSync(path.join(__dirname, 'loader.cjs'), 'utf8');
+  assert(loaderCode.includes('antigravity:request-sync'), 'Must register IPC handler');
+  assert(loaderCode.includes('__ANTIGRAVITY_REQUEST_SYNC__'), 'Must wire sync function');
+  assert(loaderCode.includes('antigravity:stats-updated'), 'Must emit stats-updated event');
+
+  const patchCode = fs.readFileSync(path.join(__dirname, 'patch-antigravity.cjs'), 'utf8');
+  assert(patchCode.includes('__ANTIGRAVITY_SYNC_BRIDGE__'), 'Must define preload contextBridge');
 
   const viewCode = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'stats', 'StatsView.tsx'), 'utf8');
   assert(viewCode.includes('antigravity:stats-updated'), 'StatsView must listen for stats-updated');
@@ -241,13 +243,12 @@ test('Live Sync and manual refresh CDP hooks exist', () => {
 });
 
 test('Live Sync keeps debounce, in-flight, and busy-lock safeguards', () => {
-  const injectCode = fs.readFileSync(path.join(__dirname, 'inject-live.cjs'), 'utf8');
-  assert(injectCode.includes('__ANTIGRAVITY_CDP_SYNC__'), 'Must register CDP binding');
-  assert(injectCode.includes('antigravity:stats-updated'), 'Must emit stats-updated event');
-  assert(injectCode.includes('fs.watch'), 'Must watch data files');
-  assert(injectCode.includes('500'), 'Must debounce updates');
-  assert(injectCode.includes('pushInFlight'), 'Must serialize pushes');
-  assert(injectCode.includes('retry-after-busy'), 'Must retry after SQLITE_BUSY');
+  const loaderCode = fs.readFileSync(path.join(__dirname, 'loader.cjs'), 'utf8');
+  assert(loaderCode.includes('antigravity:stats-updated'), 'Must emit stats-updated event');
+  assert(loaderCode.includes('fs.watch'), 'Must watch data files');
+  assert(loaderCode.includes('debounce'), 'Must debounce updates');
+  assert(loaderCode.includes('pushInFlight'), 'Must serialize pushes');
+  assert(loaderCode.includes('retry-after-busy'), 'Must retry after SQLITE_BUSY');
 });
 
 test('SQLITE_BUSY fallback and auto-retry on busy lock exist', () => {
@@ -255,9 +256,9 @@ test('SQLITE_BUSY fallback and auto-retry on busy lock exist', () => {
   assert(aggregateCode.includes('hasStaleSessions'), 'aggregate-stats must track hasStaleSessions');
   assert(aggregateCode.includes('isTemporaryLock && cached'), 'aggregate-stats must fall back to cached data on active lock');
 
-  const injectCode = fs.readFileSync(path.join(__dirname, 'inject-live.cjs'), 'utf8');
-  assert(injectCode.includes('retry-after-busy'), 'inject-live must schedule push retry after busy lock');
-  assert(injectCode.includes('retryBusyTimer'), 'inject-live must manage retry timer');
+  const loaderCode = fs.readFileSync(path.join(__dirname, 'loader.cjs'), 'utf8');
+  assert(loaderCode.includes('retry-after-busy'), 'loader must schedule push retry after busy lock');
+  assert(loaderCode.includes('retryBusyTimer'), 'loader must manage retry timer');
 
   const viewCode = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'stats', 'StatsView.tsx'), 'utf8');
   assert(viewCode.includes('Request sync on mount error'), 'StatsView must request sync on mount');

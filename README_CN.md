@@ -6,14 +6,14 @@
 
 适用于 **Google Antigravity 2.0** 桌面端的本地 Token 用量看板。
 
-通过 Chrome DevTools 协议（CDP）直接热注入到客户端界面中（**Settings → Usage Stats** 或快捷键 `Alt+T`）。数据直接解析本地 SQLite `gen_metadata`（Protobuf）与 transcript 日志，**不按字符估算**，真实精确。
+原生集成到客户端界面中（**Settings → Usage Stats** 或快捷键 `Alt+T`）。数据直接解析本地 SQLite `gen_metadata`（Protobuf）与 transcript 日志，**不按字符估算**，真实精确。
 
 ### 特性
 
 - **订阅额度与价值评估**：实时捕获周/月官方配额用量与重置倒计时，按 Google 官方 API 价格反推订阅总容量与回本倍数。
 - **精准拆分**：Input、Cache Read、Thinking（思考模型消耗）、Response 独立统计。
 - **活跃看板**：GitHub 风格日度活跃热力图，支持单日下钻明细与连续打卡天数。
-- **零侵入注入**：纯内存注入，不改动 `app.asar`，客户端升级不损坏。
+- **原生集成与无损回滚**：原生集成进 `app.asar`，自动出厂备份，支持随时一键无损还原（`npm run unpatch`）。
 - **本地只读**：仅读取本机目录（`%USERPROFILE%\.gemini\antigravity`），零外发上报。
 
 ### 运行环境
@@ -24,15 +24,14 @@
 
 ### 快速开始
 
-**Windows（推荐）：** 下载或克隆本项目后，双击 `install.cmd`。安装程序会检查 Node.js、安装依赖、构建注入包，并创建「Antigravity (with Stats)」快捷方式。
+#### 方式一：下载 Release 预编译包（推荐，无需本地构建）
 
-也可以在 PowerShell 中运行：
+1. 前往 [Releases 页面](https://github.com/1yayaye/antigravity-token-stats/releases) 下载最新的 `antigravity-token-stats-vX.Y.Z.zip`。
+2. 解压到任意目录，双击运行 **`install.cmd`**（若客户端正在运行会提示协助关闭并自动完成注入）。
+3. 安装完成后直接启动 Antigravity 客户端即可！
+> **提示**：需要恢复官方原厂状态时，随时双击 **`uninstall.cmd`** 即可一键干净还原。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1
-```
-
-命令行方式：
+#### 方式二：从源码安装与开发
 
 ```bash
 git clone https://github.com/1yayaye/antigravity-token-stats.git
@@ -40,7 +39,12 @@ cd antigravity-token-stats
 npm run setup
 ```
 
-安装完成后，使用新建的快捷方式打开 Antigravity，客户端会自动注入看板。
+开发者模式（利用软链接热重载，代码变更无需每次重解包压包 asar）：
+```powershell
+pwsh -File .\install.ps1 -Dev
+```
+
+安装完成后，直接打开 Antigravity 或使用桌面快捷方式，客户端会自动加载看板与汉化增强。
 
 **呼出方式**：
 1. 快捷键 **`Alt+T`**（macOS 为 `⌥T`）
@@ -51,13 +55,21 @@ npm run setup
 
 | 命令 | 用途 |
 | :--- | :--- |
-| `npm run launch` | 启动 Antigravity 并热注入（推荐日常使用） |
-| `npm run inject:live` | 仅向当前已打开的客户端注入 |
+| `npm run patch` | 为 Antigravity 打入原生 Stats 看板与汉化补丁 |
+| `npm run unpatch` | 一键无损恢复官方出厂 app.asar 状态（或运行 `uninstall.cmd`） |
+| `npm run package:release` | 构建 Release 发布压缩包 (ZIP，需 Node.js 22.13+) |
+| `npm run launch` | 启动 Antigravity 2.0 |
 | `npm run dev` | 网页端预览看板 (<http://localhost:5173>) |
 | `npm run aggregate` | 终端直接打印汇总指标 |
-| `npm run setup:shortcut` | 创建「Antigravity (with Stats)」桌面快捷方式 |
-| `npm run setup` | 运行 Windows 安装流程（依赖、注入包、快捷方式） |
-| `npm run unpatch` | 回滚早期版本修改过的 `app.asar` 补丁 |
+| `npm run setup:shortcut` | 创建「Antigravity (with Stats)」桌面与开始菜单快捷方式 |
+| `npm run setup` | 运行 Windows 一键安装与打补丁流程 |
+| `npm test` | 运行离线全套自动化回归测试 |
+| `npm run mock:data` | 生成本地测试仿真数据（用于无 Antigravity 环境） |
+
+### 测试与调试
+
+关于在无 Antigravity 环境、CI/CD 持续集成、或跨机器调试的完整流程，请参阅：  
+👉 **[跨环境测试与调试实操指南 (TESTING.md)](TESTING.md)**
 
 ### 免责声明
 

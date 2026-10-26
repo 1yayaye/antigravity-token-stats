@@ -4,6 +4,7 @@ node_modules/
 # Build outputs
 dist/
 dist-bundle/
+dist-release/
 *.tsbuildinfo
 
 # Local scratch, logs, empty leftovers
@@ -23,6 +24,7 @@ AGENTS.md
 CLAUDE.md
 
 # Antigravity user data — never commit
+mock-data/
 *.db
 *.sqlite
 *.sqlite3

@@ -1,7 +1,7 @@
 {
   "name": "antigravity-token-stats",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Unofficial token-usage dashboard for Google Antigravity 2.0",
   "license": "MIT",
   "engines": {
@@ -14,23 +14,22 @@
     "build:bundle": "vite build --config vite.bundle.config.ts",
     "preview": "vite preview",
     "aggregate": "node scripts/aggregate-stats.cjs",
-    "benchmark": "node scripts/benchmark-overhead.cjs",
-    "test:realtime": "node scripts/test-realtime-feedback.cjs",
-    "test": "node scripts/test-all.cjs && node scripts/test-persistent-cache.cjs && node scripts/test-subscription-pricing.cjs",
+    "patch": "node scripts/patch-antigravity.cjs",
     "unpatch": "node scripts/unpatch-antigravity.cjs",
-    "launch": "node scripts/launch-antigravity.cjs",
+    "launch": "node -e \"const { findAntigravityExe } = require('./scripts/setup-shortcut.cjs'); require('child_process').spawn(findAntigravityExe(), [], { detached: true, stdio: 'ignore' }).unref();\"",
     "setup:shortcut": "node scripts/setup-shortcut.cjs",
-    "setup": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./install.ps1",
-    "inject:live": "node scripts/inject-live.cjs",
-    "inject:watch": "node scripts/inject-live.cjs --watch",
-    "test:persistent-cache": "node scripts/test-persistent-cache.cjs",
-    "test:integration": "node scripts/test-integration.cjs"
+    "setup": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./install.ps1",
+    "package:release": "node scripts/package-release.cjs",
+    "mock:data": "node scripts/generate-mock-data.cjs",
+    "test:integration": "node scripts/test-integration.cjs",
+    "test": "node scripts/test-all.cjs && node scripts/test-persistent-cache.cjs && node scripts/test-subscription-pricing.cjs && node scripts/test-context-widget.cjs"
   },
   "dependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@electron/asar": "^4.3.1",
     "@types/node": "^22.13.9",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",

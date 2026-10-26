@@ -74,7 +74,7 @@ export const StatsView: React.FC = () => {
     loadData(false);
   }, [loadData]);
 
-  // Listen for real-time live sync events from inject-live watcher
+  // Listen for real-time live sync events from main process loader watcher
   useEffect(() => {
     const handleStatsUpdated = (event: Event) => {
       const customEvent = event as CustomEvent<AggregatedStats>;

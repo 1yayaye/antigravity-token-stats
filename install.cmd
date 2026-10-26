@@ -1,6 +1,11 @@
 @echo off
 setlocal
-PowerShell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1"
+where pwsh >nul 2>nul
+if %errorlevel% equ 0 (
+  pwsh -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" %*
+) else (
+  PowerShell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" %*
+)
 if errorlevel 1 (
   echo.
   echo Installation failed. See the message above.

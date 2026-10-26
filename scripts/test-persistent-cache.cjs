@@ -68,7 +68,7 @@ try {
   const first = runAggregator();
   assert(fs.existsSync(cachePath), 'Process A should write the persistent cache');
   const firstCache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-  assert.strictEqual(firstCache.version, 6, 'Cache version should be 6');
+  assert.strictEqual(firstCache.version, 8, 'Cache version should be 8');
   assert(firstCache.dbs['cache-session'], 'Cache should contain database metrics');
   assert(firstCache.transcripts['cache-session'], 'Cache should contain transcript metrics');
 

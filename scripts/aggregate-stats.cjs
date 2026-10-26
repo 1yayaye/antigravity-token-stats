@@ -4,7 +4,37 @@ const os = require('node:os');
 const { DatabaseSync } = require('node:sqlite');
 
 function getAntigravityDir() {
-  return process.env.ANTIGRAVITY_DATA_DIR || path.join(os.homedir(), '.gemini', 'antigravity');
+  if (process.env.ANTIGRAVITY_DATA_DIR) return process.env.ANTIGRAVITY_DATA_DIR;
+  const defaultDir = path.join(os.homedir(), '.gemini', 'antigravity');
+  if (!fs.existsSync(defaultDir)) {
+    const localMock = path.join(__dirname, '..', 'mock-data');
+    if (fs.existsSync(localMock)) return localMock;
+  }
+  return defaultDir;
+}
+
+// Run state is owned by the host's summaries DB; the UI uses the same field. Unknown => idle,
+// so a schema change can only lose the "generating" hint, never fabricate token numbers.
+function readRunningSessions() {
+  const running = new Set();
+  const summaryPath = path.join(getAntigravityDir(), 'conversation_summaries.db');
+  if (!fs.existsSync(summaryPath)) return running;
+  let db = null;
+  try {
+    db = new DatabaseSync(summaryPath, { readOnly: true });
+    for (const row of db.prepare('SELECT conversation_id, status, not_fully_idle FROM conversation_summaries').all()) {
+      if (row.status !== 'CASCADE_RUN_STATUS_IDLE' || Number(row.not_fully_idle) === 1) {
+        running.add(row.conversation_id);
+      }
+    }
+  } catch (err) {
+    // Summaries DB busy/locked while the host writes: treat everything as idle.
+  } finally {
+    if (db) {
+      try { db.close(); } catch {}
+    }
+  }
+  return running;
 }
 
 // In-memory incremental cache for unmodified databases
@@ -13,7 +43,7 @@ const transcriptCache = new Map();
 let lastScanTime = 0;
 let lastAggregatedStats = null;
 const FAST_SCAN_TTL = 300; // 300ms throttle for back-to-back incremental calls
-const PERSIST_CACHE_VERSION = 6;
+const PERSIST_CACHE_VERSION = 8;
 const CACHE_FLUSH_DELAY_MS = 50;
 const CACHE_LOCK_MAX_AGE_MS = 10000;
 let cacheDirty = false;
@@ -152,6 +182,8 @@ function serializeCache() {
         generationTimestampsMs: entry.generationTimestampsMs || [],
         dailyTasks: entry.dailyTasks ? Array.from((entry.dailyTasks instanceof Map ? entry.dailyTasks : new Map(entry.dailyTasks)).entries()) : [],
         duration: entry.duration || 0,
+        turnCalls: entry.turnCalls || 0,
+        turnStartedAt: entry.turnStartedAt || null,
       },
     };
   }
@@ -433,6 +465,7 @@ function createEmptyStats() {
       responseTokensFormatted: '0',
       reasoningPct: 0,
     },
+    sessions: {},
     meta: { scannedConversations: 0, updatedAt: new Date().toISOString(), hasStaleSessions: false },
   };
 }
@@ -533,6 +566,8 @@ function computeStats(force = false) {
       let sessionGenerationTimestampsMs = [];
       let sessionDailyTasks = new Map();
       let sessionStepDuration = 0;
+      let sessionTurnCalls = 0;
+      let sessionTurnStartedAt = null;
       let parsedCacheEntry = null;
 
       if (cached && fingerprintsEqual(cached.fingerprint, fingerprint)) {
@@ -553,6 +588,8 @@ function computeStats(force = false) {
         sessionGenerationTimestampsMs = cached.generationTimestampsMs || [];
         sessionDailyTasks = cached.dailyTasks instanceof Map ? cached.dailyTasks : new Map(cached.dailyTasks || []);
         sessionStepDuration = cached.duration || 0;
+        sessionTurnCalls = cached.turnCalls || 0;
+        sessionTurnStartedAt = cached.turnStartedAt || null;
       } else {
         let db = null;
         try {
@@ -633,6 +670,15 @@ function computeStats(force = false) {
                 sessionGenerationTimestampsMs.push(t);
               }
             }
+
+            // Turn boundary: a user input step (14) resets the counter, so the tally is
+            // "model calls since the last user message" (i.e. the run currently on screen).
+            if (step.step_type === 14) {
+              sessionTurnCalls = 0;
+              sessionTurnStartedAt = stepDate ? stepDate.getTime() : null;
+            } else if (step.step_type === 15) {
+              sessionTurnCalls++;
+            }
           }
           sessionStepDuration = firstStepTime && lastStepTime ? lastStepTime - firstStepTime : 0;
 
@@ -655,6 +701,8 @@ function computeStats(force = false) {
             generationTimestampsMs: sessionGenerationTimestampsMs,
             dailyTasks: sessionDailyTasks,
             duration: sessionStepDuration,
+            turnCalls: sessionTurnCalls,
+            turnStartedAt: sessionTurnStartedAt,
           };
         } catch (dbErr) {
           const isTemporaryLock =
@@ -680,6 +728,8 @@ function computeStats(force = false) {
             sessionGenerationTimestampsMs = cached.generationTimestampsMs || [];
             sessionDailyTasks = cached.dailyTasks instanceof Map ? cached.dailyTasks : new Map(cached.dailyTasks || []);
             sessionStepDuration = cached.duration || 0;
+            sessionTurnCalls = cached.turnCalls || 0;
+            sessionTurnStartedAt = cached.turnStartedAt || null;
             hasStaleSessions = true;
           } else {
             if (isTemporaryLock) {
@@ -720,6 +770,8 @@ function computeStats(force = false) {
         generationTimestampsMs: sessionGenerationTimestampsMs,
         dailyTasks: sessionDailyTasks,
         duration: sessionStepDuration,
+        turnCalls: sessionTurnCalls,
+        turnStartedAt: sessionTurnStartedAt,
         mtimeMs: effectiveMtimeMs,
       });
 
@@ -968,11 +1020,40 @@ function computeStats(force = false) {
   // Phase 3: Aggregate final lifetime metrics from SQLite usage rows.
   let realTotalTokens = 0;
   let realPeakTokens = 0;
+  const sessionsSummary = {};
+  const runningSessions = readRunningSessions();
 
-  for (const metrics of sessionMetrics.values()) {
+  for (const [sId, metrics] of sessionMetrics) {
     const finalTokens = metrics.tokensFromDb || 0;
     realTotalTokens += finalTokens;
     if (finalTokens > realPeakTokens) realPeakTokens = finalTokens;
+
+    const usages = metrics.generationUsages || [];
+    const lastUsage = usages.length > 0 ? usages[usages.length - 1] : null;
+    const promptTokens = lastUsage ? (lastUsage.inputTokens + lastUsage.cacheReadTokens) : 0;
+    const turnCalls = metrics.turnCalls || 0;
+    const turnTokens = usages
+      .slice(Math.max(0, usages.length - turnCalls))
+      .reduce((sum, usage) => sum + usage.inputTokens + usage.cacheReadTokens + usage.outputTokens, 0);
+    sessionsSummary[sId] = {
+      isRunning: runningSessions.has(sId),
+      turnCalls,
+      turnTokens,
+      turnStartedAt: metrics.turnStartedAt || null,
+      promptTokens,
+      latestInput: lastUsage ? lastUsage.inputTokens : 0,
+      latestCacheRead: lastUsage ? lastUsage.cacheReadTokens : 0,
+      latestOutput: lastUsage ? lastUsage.outputTokens : 0,
+      latestThinking: lastUsage ? lastUsage.thinkingTokens : 0,
+      latestResponse: lastUsage ? lastUsage.responseTokens : 0,
+      modelName: lastUsage ? (lastUsage.modelName || '') : '',
+      totalTokens: finalTokens,
+      totalInputTokens: metrics.inputTokens || 0,
+      totalCacheReadTokens: metrics.cacheReadTokens || 0,
+      totalOutputTokens: metrics.outputTokens || 0,
+      compactionLimit: 256000,
+      turnsCount: usages.length,
+    };
   }
 
   // 1. Format tokens helper (B, M, K)
@@ -1190,6 +1271,7 @@ function computeStats(force = false) {
       responseTokensFormatted: formatTokens(totalResponseTokens),
       reasoningPct,
     },
+    sessions: sessionsSummary,
     meta: {
       scannedConversations: dbFiles.length,
       updatedAt: new Date().toISOString(),
@@ -1203,8 +1285,101 @@ function computeStats(force = false) {
   return result;
 }
 
+function readSingleSession(sessionId) {
+  if (!sessionId || typeof sessionId !== 'string') return null;
+  if (sessionId.includes('..') || sessionId.includes('/') || sessionId.includes('\\')) return null;
+
+  const agDir = getAntigravityDir();
+  const filePath = path.join(agDir, 'conversations', `${sessionId}.db`);
+  if (!fs.existsSync(filePath)) return null;
+
+  let db = null;
+  try {
+    db = new DatabaseSync(filePath, { readOnly: true });
+    // A fresh conversation has no gen_metadata rows yet. Returning a zero snapshot (instead of
+    // null) is what lets the pill show "generating, 0 calls" without waiting for a full rescan.
+    const genRows = db.prepare('SELECT idx, data FROM gen_metadata ORDER BY idx').all() || [];
+
+    const usages = [];
+    let totalTokens = 0;
+    let totalInput = 0;
+    let totalCache = 0;
+    let totalOutput = 0;
+    let totalThinking = 0;
+    let totalResponse = 0;
+
+    for (const row of genRows) {
+      if (!row.data) continue;
+      const usage = decodeGenMetadata(Buffer.from(row.data));
+      if (!usage) continue;
+      usages.push(usage);
+      totalTokens += (usage.inputTokens + usage.cacheReadTokens + usage.outputTokens);
+      totalInput += usage.inputTokens;
+      totalCache += usage.cacheReadTokens;
+      totalOutput += usage.outputTokens;
+      totalThinking += usage.thinkingTokens;
+      totalResponse += usage.responseTokens;
+    }
+
+    // Turn boundary mirrors computeStats: calls since the last user input step (type 14).
+    let steps = [];
+    try {
+      steps = db.prepare('SELECT idx, step_type, metadata FROM steps ORDER BY idx').all();
+    } catch (e) {
+      steps = db.prepare('SELECT idx, step_type FROM steps ORDER BY idx').all();
+    }
+    let turnCalls = 0;
+    let turnStartedAt = null;
+    for (const step of steps) {
+      if (step.step_type === 14) {
+        turnCalls = 0;
+        const startedAt = step.metadata ? decodeStepTimestamp(Buffer.from(step.metadata)) : null;
+        turnStartedAt = startedAt ? startedAt.getTime() : null;
+      } else if (step.step_type === 15) {
+        turnCalls++;
+      }
+    }
+    const turnUsages = usages.slice(Math.max(0, usages.length - turnCalls));
+    const turnTokens = turnUsages.reduce((sum, usage) => sum + usage.inputTokens + usage.cacheReadTokens + usage.outputTokens, 0);
+    const turnOutputTokens = turnUsages.reduce((sum, usage) => sum + usage.outputTokens, 0);
+
+    const lastUsage = usages.length > 0 ? usages[usages.length - 1] : null;
+    const promptTokens = lastUsage ? lastUsage.inputTokens + lastUsage.cacheReadTokens : 0;
+    return {
+      sessionId,
+      isRunning: readRunningSessions().has(sessionId),
+      promptTokens,
+      latestInput: lastUsage ? lastUsage.inputTokens : 0,
+      latestCacheRead: lastUsage ? lastUsage.cacheReadTokens : 0,
+      latestOutput: lastUsage ? lastUsage.outputTokens : 0,
+      latestThinking: lastUsage ? lastUsage.thinkingTokens : 0,
+      latestResponse: lastUsage ? lastUsage.responseTokens : 0,
+      modelName: lastUsage ? (lastUsage.modelName || '') : '',
+      totalTokens,
+      totalInputTokens: totalInput,
+      totalCacheReadTokens: totalCache,
+      totalOutputTokens: totalOutput,
+      totalThinkingTokens: totalThinking,
+      totalResponseTokens: totalResponse,
+      turnCalls,
+      turnTokens,
+      turnOutputTokens,
+      turnStartedAt,
+      compactionLimit: 256000,
+      turnsCount: genRows.length,
+    };
+  } catch (err) {
+    return null;
+  } finally {
+    if (db) {
+      try { db.close(); } catch {}
+    }
+  }
+}
+
 module.exports = {
   computeStats,
+  readSingleSession,
   pairGenerationDates,
   decodeVarint,
   parseProtoFields,

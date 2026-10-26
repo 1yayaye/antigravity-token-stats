@@ -204,14 +204,13 @@ liveTest('Time range filtering behaves correctly on AggregatedStats', () => {
   assert(tokens7d <= stats.kpis.lifetimeTokensRaw, '7d tokens should be <= lifetime tokens');
 });
 
-test('inject-live.cjs has persistent watch and __ANTIGRAVITY_REQUEST_SYNC__ CDP binding', () => {
-  const injectCode = fs.readFileSync(path.join(__dirname, 'inject-live.cjs'), 'utf8');
-  assert(injectCode.includes('__ANTIGRAVITY_CDP_SYNC__'), 'Must register CDP binding');
-  assert(injectCode.includes('__ANTIGRAVITY_REQUEST_SYNC__'), 'Must wire sync function');
-  assert(injectCode.includes('antigravity:stats-updated'), 'Must emit stats-updated event');
-  assert(injectCode.includes('fs.watch'), 'Must use fs.watch');
-  assert(injectCode.includes('500'), 'Must debounce 500ms');
-  assert(!injectCode.includes('if (!injected) {'), 'Must not have old skip/deadlock check');
+test('loader.cjs has persistent watch and __ANTIGRAVITY_REQUEST_SYNC__ IPC bridge', () => {
+  const loaderCode = fs.readFileSync(path.join(__dirname, 'loader.cjs'), 'utf8');
+  assert(loaderCode.includes('antigravity:request-sync'), 'Must handle IPC sync');
+  assert(loaderCode.includes('__ANTIGRAVITY_REQUEST_SYNC__'), 'Must wire sync function');
+  assert(loaderCode.includes('antigravity:stats-updated'), 'Must emit stats-updated event');
+  assert(loaderCode.includes('fs.watch'), 'Must use fs.watch');
+  assert(loaderCode.includes('debounce'), 'Must debounce updates');
 });
 
 test('Frontend StatsView listens to antigravity:stats-updated and calls __ANTIGRAVITY_REQUEST_SYNC__', () => {

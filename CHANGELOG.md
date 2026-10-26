@@ -2,11 +2,24 @@
 
 All notable changes to Antigravity Token Stats will be documented in this file.
 
+## [1.3.0] - 2026-10-26
+
+### Added
+- **Native ASAR Integration (`loader.cjs` & `patch-antigravity.cjs`)**: Replaced external CDP launch daemon with an in-process Electron loader hooked directly into `dist/main.js` and `dist/preload.js`. Eliminates window navigation race conditions and ghost DOM.
+- **Factory Backup & Safe Rollback**: Automatically saves pristine `app.asar.backup` and `.unpacked` with one-command factory restoration via `npm run unpatch`.
+- **Chat Input Context Usage Pill & Widget**: Real-time context token occupancy tracking, Prompt Cache hit rate meter, 256k auto-compaction warning, and `/compact` suggestions.
+- **Antigravity 2.0 UI Chinese Localization**: Non-invasive DOM tree localization observer and bilingual dictionary for desktop UI.
+- **Standalone Release Packaging (`package-release.cjs`)**: Self-contained ZIP archive bundle with double-clickable `install.cmd` and `uninstall.cmd`.
+- **Automated GitHub Release Workflow (`.github/workflows/release.yml`)**: Continuous integration and release packaging on `v*` tags.
+- **Comprehensive Real-Device Acceptance Suite (`scripts/run-device-acceptance.cjs`)**: 11-phase end-to-end CDP automated validation against live running Antigravity.
+- **Direct Shortcut Execution**: Desktop shortcut points directly to `Antigravity.exe` without intermediary Node processes.
+- **Developer Redirect Mode**: `loader.cjs` dynamically loads bundles from `%LOCALAPPDATA%\AntiToken\dev-bundle.path` when present.
+
 ## [1.2.0] - 2026-10-14
 
 ### Added
 - **Subscription Quota & Value Card (`SubscriptionQuotaCard`)**: Weekly and monthly quota tracking and capacity valuation based on official Google API pricing.
-- **Runtime Quota Auto-Capture**: Automatically captures live quota remaining fractions and reset countdowns directly from Antigravity's host `cloudCodeService.retrieveUserQuotaSummary`. Gracefully hides if uncaptured.
+- **Runtime Quota Auto-Capture**: Automatically captures live quota remaining fractions and reset countdowns directly from Antigravity's host `cloudCodeService.retrieveUserQuotaSummary`.
 - **Official API Pricing Engine (`pricing-service.ts`)**: Evaluates token consumption with exact Google rates ($0.75 / 1M uncached input, $0.075 / 1M cache read with 90% discount, $3.75 / 1M thinking & output).
 - **Subscription Capacity Back-Calculation**: Reverses weekly capacity (`consumed / usedFraction`) and monthly value from actual consumption.
 - **Subscription Tier Selector**: Switch between Pro ($19.99/mo), Ultra 5x ($99.99/mo), Ultra 20x ($199.99/mo), Free, and Custom plans with live ROI multiplier computation and localStorage persistence.

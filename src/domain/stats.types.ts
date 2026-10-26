@@ -61,6 +61,28 @@ export interface TokenBreakdown {
   reasoningPct: number;
 }
 
+export interface SessionSummary {
+  /** Host run state (conversation_summaries.status); absent when the summaries DB is unavailable. */
+  isRunning?: boolean;
+  /** Model calls completed since the last user input step, with their exact token sum. */
+  turnCalls?: number;
+  turnTokens?: number;
+  turnStartedAt?: number | null;
+  promptTokens: number;
+  latestInput: number;
+  latestCacheRead: number;
+  latestOutput: number;
+  latestThinking: number;
+  latestResponse: number;
+  modelName: string;
+  totalTokens: number;
+  totalInputTokens: number;
+  totalCacheReadTokens: number;
+  totalOutputTokens: number;
+  compactionLimit: number;
+  turnsCount: number;
+}
+
 /**
  * Aggregated token metrics and activity snapshot for a given time window.
  */
@@ -76,6 +98,7 @@ export interface AggregatedStats {
   };
   insights: ActivityInsights;
   tokenBreakdown?: TokenBreakdown;
+  sessions?: Record<string, SessionSummary>;
   meta: {
     scannedConversations: number;
     updatedAt: string;
@@ -114,8 +137,13 @@ declare global {
     __ANTIGRAVITY_OBSERVER__?: MutationObserver | null;
     __ANTIGRAVITY_KEY_HANDLER__?: ((e: KeyboardEvent) => void) | null;
     __ANTIGRAVITY_KEY_LISTENER__?: boolean;
-    __ANTIGRAVITY_REQUEST_SYNC__?: () => void;
+    __ANTIGRAVITY_REQUEST_SYNC__?: (sessionId?: string | null) => void;
+    __ANTIGRAVITY_SYNC_BRIDGE__?: {
+      requestSync: (payload?: { sessionId?: string | null } | string) => Promise<any>;
+    };
     __ANTIGRAVITY_CDP_SYNC__?: (rawPayload: string) => void;
+    __ANTIGRAVITY_STATS_LISTENER__?: boolean;
     AntigravityStats?: AntigravityStatsApi;
+    require?: (module: string) => any;
   }
 }
