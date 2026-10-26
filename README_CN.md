@@ -61,7 +61,6 @@ pwsh -File .\install.ps1 -Dev
 | `npm run launch` | 启动 Antigravity 2.0 |
 | `npm run dev` | 网页端预览看板 (<http://localhost:5173>) |
 | `npm run aggregate` | 终端直接打印汇总指标 |
-| `npm run setup:shortcut` | 创建「Antigravity (with Stats)」桌面与开始菜单快捷方式 |
 | `npm run setup` | 运行 Windows 一键安装与打补丁流程 |
 | `npm test` | 运行离线全套自动化回归测试 |
 | `npm run mock:data` | 生成本地测试仿真数据（用于无 Antigravity 环境） |

@@ -56,15 +56,15 @@ if (-not $npm) {
   Fail 'npm was not found. Reinstall Node.js 22.13+ and make sure npm is on PATH.'
 }
 
-Write-Host "[1/4] Installing dependencies..." -ForegroundColor Yellow
+Write-Host "[1/3] Installing dependencies..." -ForegroundColor Yellow
 & $npm.Source install --no-audit --no-fund
 if ($LASTEXITCODE -ne 0) { Fail 'npm install failed.' }
 
-Write-Host "[2/4] Building the injection bundle..." -ForegroundColor Yellow
+Write-Host "[2/3] Building the injection bundle..." -ForegroundColor Yellow
 & $npm.Source run build:bundle
 if ($LASTEXITCODE -ne 0) { Fail 'The bundle build failed.' }
 
-Write-Host "[3/4] Patching Antigravity app.asar..." -ForegroundColor Yellow
+Write-Host "[3/3] Patching Antigravity app.asar..." -ForegroundColor Yellow
 & $npm.Source run patch
 if ($LASTEXITCODE -ne 0) { Fail 'app.asar patch failed. Make sure Antigravity is closed before installing.' }
 
@@ -79,14 +79,21 @@ if ($Dev) {
   Write-Host "   ✓ Dev mode active: rebuilds will reload automatically in Antigravity." -ForegroundColor Green
 }
 
-Write-Host "[4/4] Creating the Antigravity (with Stats) shortcut..." -ForegroundColor Yellow
-& $npm.Source run setup:shortcut
-if ($LASTEXITCODE -ne 0) { Fail 'Shortcut creation failed.' }
+# Clean up any legacy redundant shortcuts
+$legacyShortcuts = @(
+  [System.IO.Path]::Combine([System.Environment]::GetFolderPath("Desktop"), "Antigravity (with Stats).lnk"),
+  [System.IO.Path]::Combine($env:APPDATA, "Microsoft\Windows\Start Menu\Programs\Antigravity (with Stats).lnk")
+)
+foreach ($sc in $legacyShortcuts) {
+  if (Test-Path $sc) {
+    Remove-Item -Force $sc -ErrorAction SilentlyContinue
+  }
+}
 
 Write-Host "`n======================================================" -ForegroundColor Green
 Write-Host "✓ Installation and patching complete!" -ForegroundColor Green
-Write-Host "Launch Antigravity using your desktop shortcut, or run:"
-Write-Host "  npm run launch"
+Write-Host "Launch Antigravity normally from your existing shortcut or taskbar."
+Write-Host "Press Alt+T or open Settings -> Usage Stats to view dashboard."
 Write-Host "To restore original factory state at any time, run:"
 Write-Host "  npm run unpatch  (or double-click uninstall.cmd)"
 Write-Host "======================================================`n"

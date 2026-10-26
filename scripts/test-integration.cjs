@@ -16,8 +16,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const asar = require('@electron/asar');
-const { findAntigravityExe, setupShortcut, getPowerShellCmd } = require('./setup-shortcut.cjs');
-const { patch, safeAtomicReplace, safeReplaceDirectory: safeReplacePatchDirectory } = require('./patch-antigravity.cjs');
+const { patch, findAntigravityExe, safeAtomicReplace, safeReplaceDirectory: safeReplacePatchDirectory } = require('./patch-antigravity.cjs');
 const { unpatch } = require('./unpatch-antigravity.cjs');
 
 const TESTS = [];
@@ -42,18 +41,6 @@ test('Official Antigravity executable detection', () => {
   const exePath = findAntigravityExe();
   assert(fs.existsSync(exePath), `Antigravity executable must exist at ${exePath}`);
   assert(exePath.toLowerCase().endsWith('antigravity.exe'), 'Must point to Antigravity.exe');
-});
-
-test('Desktop shortcut creation points directly to Antigravity.exe (pwsh preferred)', () => {
-  if (process.platform !== 'win32') return;
-  const psCmd = getPowerShellCmd();
-  assert(psCmd === 'pwsh' || psCmd === 'powershell.exe', 'Must find a valid PowerShell command');
-
-  setupShortcut();
-  const desktopLnk = path.join(os.homedir(), 'Desktop', 'Antigravity (with Stats).lnk');
-  assert(fs.existsSync(desktopLnk), `Shortcut should exist at ${desktopLnk}`);
-  const stats = fs.statSync(desktopLnk);
-  assert(stats.size > 500, 'LNK shortcut file should be a valid non-empty binary file');
 });
 
 test('Safe atomic replacement replaces target atomically', () => {

@@ -61,8 +61,7 @@ After installation, launch Antigravity directly or open it with your shortcut. T
 | `npm run launch` | Launch Antigravity 2.0 |
 | `npm run dev` | Standalone browser preview (<http://localhost:5173>) |
 | `npm run aggregate` | Print aggregated metrics in terminal |
-| `npm run setup:shortcut` | Create desktop & start menu shortcuts |
-| `npm run setup` | Run the Windows installer (build, patch, shortcut) |
+| `npm run setup` | Run the Windows installer (build & patch) |
 | `npm test` | Run complete offline regression test suites |
 | `npm run mock:data` | Generate local mock data for non-Antigravity environments |
 

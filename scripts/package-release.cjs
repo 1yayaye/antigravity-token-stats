@@ -69,11 +69,6 @@ esbuild.buildSync({
   define: esbuildDefine
 });
 
-fs.copyFileSync(
-  path.join(__dirname, 'setup-shortcut.cjs'),
-  path.join(stagingDir, 'bin', 'setup-shortcut.cjs')
-);
-
 // 4. Copy runtime assets
 console.log('[3/5] Copying runtime injection assets...');
 fs.copyFileSync(bundlePath, path.join(stagingDir, 'dist', 'antigravity-stats-bundle.js'));
@@ -180,16 +175,24 @@ function Run-Script([string]$scriptPath) {
 }
 
 # 3. Patch Antigravity
-Write-Host "\`n[1/2] Patching Antigravity app.asar..." -ForegroundColor Yellow
+Write-Host "\`nPatching Antigravity app.asar..." -ForegroundColor Yellow
 Run-Script (Join-Path $PSScriptRoot "bin\\patch.cjs")
 
-# 4. Create/Verify Shortcuts
-Write-Host "[2/2] Updating Desktop and Start Menu shortcuts..." -ForegroundColor Yellow
-Run-Script (Join-Path $PSScriptRoot "bin\\setup-shortcut.cjs")
+# Clean up any legacy redundant shortcuts
+$legacyShortcuts = @(
+  [System.IO.Path]::Combine([System.Environment]::GetFolderPath("Desktop"), "Antigravity (with Stats).lnk"),
+  [System.IO.Path]::Combine($env:APPDATA, "Microsoft\\Windows\\Start Menu\\Programs\\Antigravity (with Stats).lnk")
+)
+foreach ($sc in $legacyShortcuts) {
+  if (Test-Path $sc) {
+    Remove-Item -Force $sc -ErrorAction SilentlyContinue
+  }
+}
 
 Write-Host "\`n======================================================" -ForegroundColor Green
 Write-Host "✓ Installation and patching complete!" -ForegroundColor Green
-Write-Host "Open Antigravity and press Alt+T or go to Settings -> Usage Stats." -ForegroundColor Cyan
+Write-Host "Launch Antigravity normally from your existing shortcut or taskbar." -ForegroundColor Cyan
+Write-Host "Press Alt+T or open Settings -> Usage Stats to view dashboard." -ForegroundColor Cyan
 Write-Host "To restore pristine factory state at any time, run uninstall.cmd." -ForegroundColor Gray
 Write-Host "======================================================\`n"
 
@@ -253,14 +256,14 @@ try {
   Fail "Could not determine the installed Node.js version. Install Node.js 22.13+ and run the uninstaller again."
 }
 
-Write-Host "[1/2] Restoring pristine factory app.asar..." -ForegroundColor Yellow
+Write-Host "Restoring pristine factory app.asar..." -ForegroundColor Yellow
 & $nodeExe (Join-Path $PSScriptRoot "bin\\unpatch.cjs")
 
 if ($LASTEXITCODE -ne 0) {
   Fail "app.asar restore failed."
 }
 
-Write-Host "[2/2] Cleaning up Token Stats shortcuts..." -ForegroundColor Yellow
+# Clean up any legacy redundant shortcuts
 $shortcutLocations = @(
   [System.IO.Path]::Combine([System.Environment]::GetFolderPath("Desktop"), "Antigravity (with Stats).lnk"),
   [System.IO.Path]::Combine($env:APPDATA, "Microsoft\\Windows\\Start Menu\\Programs\\Antigravity (with Stats).lnk")
@@ -268,7 +271,6 @@ $shortcutLocations = @(
 foreach ($sc in $shortcutLocations) {
   if (Test-Path $sc) {
     Remove-Item -Force $sc -ErrorAction SilentlyContinue
-    Write-Host "   ✓ Removed: $sc" -ForegroundColor Gray
   }
 }
 
@@ -288,7 +290,7 @@ Antigravity Token Stats v${pkg.version}
    若 Antigravity 正在运行，安装程序会提示并协助自动关闭。
 
 2. 使用：
-   启动 Antigravity 客户端后：
+   正常启动原有的 Antigravity 客户端即可（无需任何新快捷方式）：
    - 快捷键：按下 Alt+T (macOS: Option+T) 随时呼出/隐藏统计面板
    - 菜单路径：在左侧设置菜单点击「Settings → Usage Stats」
    - 支持实时 Token 消耗统计、缓存命中率、周/月额度重置倒计时与价值折算

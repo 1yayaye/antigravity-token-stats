@@ -32,6 +32,25 @@ function getAntigravityResourcesDir() {
   return path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'antigravity', 'resources');
 }
 
+function findAntigravityExe() {
+  if (process.env.ANTIGRAVITY_EXE && fs.existsSync(process.env.ANTIGRAVITY_EXE)) {
+    return process.env.ANTIGRAVITY_EXE;
+  }
+  const resDir = getAntigravityResourcesDir();
+  const exeInParent = path.join(path.dirname(resDir), 'Antigravity.exe');
+  if (fs.existsSync(exeInParent)) return exeInParent;
+  const candidates = [
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'antigravity', 'Antigravity.exe') : null,
+    path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'antigravity', 'Antigravity.exe'),
+    process.env.PROGRAMFILES ? path.join(process.env.PROGRAMFILES, 'Antigravity', 'Antigravity.exe') : null,
+    process.env['PROGRAMFILES(X86)'] ? path.join(process.env['PROGRAMFILES(X86)'], 'Antigravity', 'Antigravity.exe') : null
+  ].filter(Boolean);
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  throw new Error('Antigravity.exe not found');
+}
+
 function isAntigravityRunning() {
   if (process.platform !== 'win32') return false;
   try {
@@ -318,6 +337,7 @@ if (require.main === module) {
 
 module.exports = {
   getAntigravityResourcesDir,
+  findAntigravityExe,
   isAntigravityRunning,
   safeAtomicReplace,
   safeReplaceDirectory,
