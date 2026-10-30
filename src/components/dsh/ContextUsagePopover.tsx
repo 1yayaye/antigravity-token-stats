@@ -37,9 +37,9 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
           <span style={{ color: 'var(--dsh-text-secondary, #d1d5db)' }}>
             {isZh ? '上下文已用 ' : 'Context Used '}
           </span>
-          <span className="font-bold text-white">{`${metrics.usedPct}%`}</span>
+          <span className="font-bold" style={{ color: 'var(--dsh-text-primary, #ffffff)' }}>{`${metrics.usedPct}%`}</span>
         </div>
-        <span className="font-semibold text-white">
+        <span className="font-semibold" style={{ color: 'var(--dsh-text-primary, #ffffff)' }}>
           {`~${formatCompactTokens(metrics.usedTokens)} / ${formatCompactTokens(metrics.limitTokens)}`}
         </span>
       </div>
@@ -106,7 +106,7 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
               {isZh ? '系统提示词' : 'System Prompt'}
             </span>
           </div>
-          <span className="font-medium text-white">
+          <span className="font-medium" style={{ color: 'var(--dsh-text-primary, #ffffff)' }}>
             {`~${formatCompactTokens(metrics.systemPromptTokens)}`}
           </span>
         </div>
@@ -121,7 +121,7 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
               {isZh ? '工具定义' : 'Tool Definitions'}
             </span>
           </div>
-          <span className="font-medium text-white">
+          <span className="font-medium" style={{ color: 'var(--dsh-text-primary, #ffffff)' }}>
             {`~${formatCompactTokens(metrics.toolDefinitionTokens)}`}
           </span>
         </div>
@@ -136,7 +136,7 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
               {isZh ? '对话消息' : 'Chat Messages'}
             </span>
           </div>
-          <span className="font-medium text-white">
+          <span className="font-medium" style={{ color: 'var(--dsh-text-primary, #ffffff)' }}>
             {`~${formatCompactTokens(metrics.chatMessageTokens)}`}
           </span>
         </div>
@@ -151,7 +151,7 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
         }}
       >
         <span>{isZh ? '256K 自动压缩阈值 · 缓存命中支持' : '256K Compaction Threshold · Prompt Cache'}</span>
-        <span className="font-mono text-white/70">/compact</span>
+        <span className="font-mono" style={{ color: 'var(--dsh-text-muted, #9ca3af)' }}>/compact</span>
       </div>
     </div>
   );

@@ -215,7 +215,7 @@ foreach ($sc in $legacyShortcuts) {
 Write-Host "\`n======================================================" -ForegroundColor Green
 Write-Host "✓ Installation and patching complete!" -ForegroundColor Green
 Write-Host "Launch Antigravity normally from your existing shortcut or taskbar." -ForegroundColor Cyan
-Write-Host "Press Alt+T or open Settings -> Usage Stats to view dashboard." -ForegroundColor Cyan
+Write-Host "Open Settings -> Usage Stats in Antigravity to view the dashboard." -ForegroundColor Cyan
 Write-Host "To restore pristine factory state at any time, run uninstall.cmd." -ForegroundColor Gray
 Write-Host "======================================================\`n"
 
@@ -314,7 +314,6 @@ Antigravity Token Stats v${pkg.version}
 
 2. 使用：
    正常启动原有的 Antigravity 客户端即可（无需任何新快捷方式）：
-   - 快捷键：按下 Alt+T (macOS: Option+T) 随时呼出/隐藏统计面板
    - 菜单路径：在左侧设置菜单点击「Settings → Usage Stats」
    - 支持实时 Token 消耗统计、缓存命中率、周/月额度重置倒计时与价值折算
 
@@ -331,7 +330,6 @@ Requirement: Node.js 22.13+ must be installed on Windows.
 
 2. Usage:
    Launch Antigravity:
-   - Shortcut: Press Alt+T to toggle the stats dashboard.
    - Menu: Click Settings -> Usage Stats.
 
 3. Uninstall:

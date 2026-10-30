@@ -148,6 +148,48 @@ const missingFraction = parseQuotaSummaryResponse({
 });
 assert.equal(missingFraction.weeklyGemini.remainingFraction, 1, 'absent fraction defaults to fully remaining');
 
+// Current schema (client update): the fraction moved into the protobuf oneof
+// wrapper `remaining: { case, value }`; resetTime became a protobuf Timestamp.
+// Shape captured verbatim from the live retrieveUserQuotaSummary response.
+const oneofResponse = parseQuotaSummaryResponse({
+  groups: [
+    {
+      displayName: 'Gemini Models',
+      buckets: [
+        {
+          bucketId: 'gemini-weekly',
+          displayName: 'Weekly Limit Remaining',
+          window: 'weekly',
+          remaining: { case: 'remainingFraction', value: 0.17833418 },
+          resetTime: { seconds: '1793448740', nanos: 0 },
+        },
+        {
+          bucketId: 'gemini-5h',
+          displayName: 'Five Hour Limit Remaining',
+          window: '5h',
+          remaining: { case: 'remainingFraction', value: 0.91937995 },
+        },
+      ],
+    },
+    {
+      displayName: 'Claude and GPT models',
+      buckets: [
+        {
+          bucketId: '3p-weekly',
+          displayName: 'Weekly Limit Remaining',
+          window: 'weekly',
+          remaining: { case: 'remainingFraction', value: 1 },
+        },
+      ],
+    },
+  ],
+});
+assert.ok(oneofResponse, 'oneof-shaped response must produce a summary');
+assert.equal(oneofResponse.weeklyGemini.bucketId, 'gemini-weekly', 'oneof shape must classify the gemini weekly bucket');
+assert.equal(oneofResponse.weeklyGemini.remainingFraction, 0.17833418, 'oneof remaining.value must be read as the fraction');
+assert.equal(oneofResponse.weeklyGemini.usedFraction, 0.8217, 'oneof shape must derive usedFraction from remaining.value');
+assert.equal(oneofResponse.weeklyGemini.resetTime, new Date(1793448740 * 1000).toISOString(), 'protobuf Timestamp resetTime must convert to ISO');
+
 // Deployment variants put buckets directly on the response top level.
 const topLevelBuckets = parseQuotaSummaryResponse({
   description: 'top-level bucket layout',

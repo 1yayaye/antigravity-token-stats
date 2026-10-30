@@ -132,9 +132,6 @@ async function injectStatsIntoWindow(win) {
 
     const postScript = `
       (() => {
-        if (window.${contract.WINDOW_API} && typeof window.${contract.WINDOW_API}.showToast === 'function') {
-          window.${contract.WINDOW_API}.showToast('✦ Token Stats & 汉化增强已就绪');
-        }
         if (window.${contract.WINDOW_STATS}) {
           window.dispatchEvent(new CustomEvent('${contract.EVENT_STATS_UPDATED}', { detail: window.${contract.WINDOW_STATS} }));
         }

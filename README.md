@@ -6,7 +6,7 @@
 
 A local, non-invasive token usage dashboard for **Google Antigravity 2.0** desktop client.
 
-Seamlessly integrated into the UI (**Settings → Usage Stats** or `Alt+T`) via native app.asar integration. All metrics are parsed directly from native SQLite `gen_metadata` (Protobuf) and transcript event logs. **No rough character-based token heuristics**.
+Seamlessly integrated into the UI (**Settings → Usage Stats**) via native app.asar integration. All metrics are parsed directly from native SQLite `gen_metadata` (Protobuf) and transcript event logs. **No rough character-based token heuristics**.
 
 ### Features
 
@@ -55,9 +55,7 @@ pwsh -File .\install.ps1 -Dev
 After installation, launch Antigravity directly or open it with your shortcut. The native dashboard and i18n enhancements will load automatically.
 
 **Open Dashboard**:
-1. Shortcut: **`Alt+T`** (macOS: `⌥T`)
-2. In-app: **Settings → Usage Stats**
-3. Click the notification toast on load
+1. In-app: **Settings → Usage Stats**
 
 ### Commands
 

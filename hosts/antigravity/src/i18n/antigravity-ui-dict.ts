@@ -551,6 +551,5 @@ export const EXCLUSION_SELECTORS = [
   'input[type="text"]:focus',
   '.monaco-editor',
   '.xterm',
-  '#antigravity-stats-settings-content', // Already handled by Stats i18n
-  '#antigravity-stats-modal-content'     // Already handled by Stats i18n
+  '#antigravity-stats-settings-content' // Already handled by Stats i18n
 ];

@@ -42,7 +42,7 @@ window.addEventListener('message', (event: MessageEvent) => {
       window.dispatchEvent(new CustomEvent(EVENT_STATS_UPDATED, { detail: msg.stats }));
       break;
     case EXT_TO_WEBVIEW.QUOTA:
-      // Mirror the quota into the shared window global so SubscriptionQuotaCard's
+      // Mirror the quota into the shared window global so QuotaHeroCard's
       // tryFetchLiveQuotaFromHost() picks it up. Dispatched WITHOUT a detail: the
       // shared StatsView handler treats detail as AggregatedStats, and the stats
       // side was already pushed via EXT_TO_WEBVIEW.STATS.

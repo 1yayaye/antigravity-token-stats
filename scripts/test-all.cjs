@@ -122,18 +122,11 @@ test('Patch script has ASAR unpack and factory backup safeguards', () => {
   assert(patchScript.includes('contract.WINDOW_SYNC_BRIDGE'), 'Must inject preload bridge');
 });
 
-test('Toast messages are inserted as text', () => {
-  const standaloneCode = fs.readFileSync(path.join(__dirname, '..', 'hosts', 'antigravity', 'src', 'standalone.tsx'), 'utf8');
-  assert(standaloneCode.includes('data-toast-message'), 'Toast should have a message node');
-  assert(standaloneCode.includes('messageNode.textContent = message'), 'Toast message must use textContent');
-  assert(!standaloneCode.includes('white-space: nowrap;">${message}</span>'), 'Toast must not interpolate message into HTML');
-});
-
 test('Subscription quota countdown refreshes while mounted', () => {
-  const cardCode = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'stats', 'SubscriptionQuotaCard.tsx'), 'utf8');
-  assert(cardCode.includes('setInterval(() => setNowMs(Date.now()), 60_000)'), 'Quota card should refresh its clock every minute');
-  assert(cardCode.includes('computeQuotaCycleMetrics(stats, liveQuota, selectedTier, nowMs)'), 'Quota card should recompute metrics against the refreshed clock');
-  assert(cardCode.includes('clearInterval(timer)'), 'Quota card should clear its clock on unmount');
+  const hookCode = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'stats', 'useQuotaMetrics.ts'), 'utf8');
+  assert(hookCode.includes('setInterval(() => setNowMs(Date.now()), 60_000)'), 'Quota hook should refresh its clock every minute');
+  assert(hookCode.includes('computeQuotaCycleMetrics(stats, liveQuota, selectedTier, nowMs)'), 'Quota hook should recompute metrics against the refreshed clock');
+  assert(hookCode.includes('clearInterval(timer)'), 'Quota hook should clear its clock on unmount');
 });
 
 test('Standalone has DOM race condition guards', () => {

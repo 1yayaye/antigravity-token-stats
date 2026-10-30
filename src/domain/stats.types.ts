@@ -156,10 +156,6 @@ export type TimeRange = 'today' | '1d' | '7d' | '30d' | 'all';
 export interface AntigravityStatsApi {
   mount: (container: HTMLElement) => void;
   unmount: () => void;
-  openModal: () => void;
-  closeModal: () => void;
-  showToast: (message?: string, durationMs?: number) => void;
-  closeToast: (immediate?: boolean) => void;
   init: () => void;
 }
 
@@ -169,9 +165,8 @@ declare global {
     __ANTIGRAVITY_STATS_ROOT__?: import('react-dom/client').Root | null;
     __ANTIGRAVITY_STATUSBAR_ROOT__?: import('react-dom/client').Root | null;
     __ANTIGRAVITY_STATUSBAR_CONTAINER__?: HTMLElement | null;
+    __ANTIGRAVITY_STATUSBAR_SIGNATURE__?: string;
     __ANTIGRAVITY_OBSERVER__?: MutationObserver | null;
-    __ANTIGRAVITY_KEY_HANDLER__?: ((e: KeyboardEvent) => void) | null;
-    __ANTIGRAVITY_KEY_LISTENER__?: boolean;
     __ANTIGRAVITY_REQUEST_SYNC__?: (sessionId?: string | null) => void;
     __ANTIGRAVITY_SYNC_BRIDGE__?: {
       requestSync: (payload?: { sessionId?: string | null } | string) => Promise<any>;

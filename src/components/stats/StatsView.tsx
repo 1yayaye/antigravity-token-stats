@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { StatsHeader } from './StatsHeader';
-import { KpiBanner } from './KpiBanner';
 import { TokenActivityHeatmap } from './TokenActivityHeatmap';
-import { ActivityInsightsCard } from './ActivityInsightsCard';
-import { TokenBreakdownCard } from './TokenBreakdownCard';
-import { SubscriptionQuotaCard } from './SubscriptionQuotaCard';
+import { QuotaHeroCard } from './QuotaHeroCard';
+import { TokenSummaryTile } from './TokenSummaryTile';
+import { DailyTrendCard } from './DailyTrendCard';
 import { ProxyStatusCard } from './ProxyStatusCard';
 import { AggregatedStats, TimeRange } from '../../domain/stats.types';
 import { fetchRawStats, filterStatsByRange, EMPTY_STATS, detectAntigravityTheme, syncThemeToElement } from '../../services/stats-service';
@@ -26,7 +25,6 @@ export const StatsView: React.FC = () => {
       setIsDark(theme === 'dark');
       if (typeof document !== 'undefined') {
         syncThemeToElement(document.getElementById('antigravity-stats-settings-content'));
-        syncThemeToElement(document.getElementById('antigravity-stats-modal-overlay'));
       }
     };
     handleThemeChange();
@@ -120,12 +118,16 @@ export const StatsView: React.FC = () => {
           isRefreshing={isRefreshing}
         />
 
-        <KpiBanner stats={stats} />
-        <SubscriptionQuotaCard stats={rawStats} />
-        <ProxyStatusCard proxy={rawStats.proxy} />
-        <TokenBreakdownCard breakdown={stats.tokenBreakdown} />
-        <TokenActivityHeatmap cells={rawStats.activity.heatmap} dailyStats={rawStats.activity.dailyStats} />
-        <ActivityInsightsCard insights={rawStats.insights} kpis={rawStats.kpis} />
+        <div className="bento-grid">
+          <QuotaHeroCard stats={rawStats} />
+          <TokenSummaryTile stats={stats} />
+          {/* Trend + proxy stack in one column so the left side fills the heatmap's row height */}
+          <div className="bento-col">
+            <DailyTrendCard cells={rawStats.activity.heatmap} timeRange={timeRange} />
+            <ProxyStatusCard proxy={rawStats.proxy} />
+          </div>
+          <TokenActivityHeatmap cells={rawStats.activity.heatmap} dailyStats={rawStats.activity.dailyStats} />
+        </div>
       </div>
     </div>
   );

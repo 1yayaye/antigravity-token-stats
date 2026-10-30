@@ -204,7 +204,7 @@ export const TokenActivityHeatmap: React.FC<TokenActivityHeatmapProps> = ({ cell
 
   if (!currentMonth || !calendar.length) {
     return (
-      <section className="py-5">
+      <section className="bento-tile bento-heat">
         <h2 className="text-sm font-semibold text-foreground">{t('tokenActivityTitle')}</h2>
         <p className="text-sm text-muted-foreground">{t('noData')}</p>
       </section>
@@ -214,7 +214,7 @@ export const TokenActivityHeatmap: React.FC<TokenActivityHeatmapProps> = ({ cell
   return (
     <div
       ref={cardRef}
-      className="rounded-xl border border-card-border bg-card p-4 sm:p-5 shadow-sm text-foreground relative select-none my-4"
+      className="bento-tile bento-heat text-foreground relative select-none"
     >
       {/* 1. Card Header: Title and calendar range */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">

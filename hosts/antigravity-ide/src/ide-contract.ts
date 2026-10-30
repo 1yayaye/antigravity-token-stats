@@ -11,8 +11,9 @@ import type { LiveQuotaSummary } from '../../../src/domain/pricing.types';
 
 export const IDE_STATS_VIEW_ID = 'antigravity-ide-stats.view';
 export const IDE_REFRESH_COMMAND = 'antigravity-ide-stats.refresh';
-// Opens the Token Stats side bar (Alt+T, mirroring the desktop shortcut). The
-// workbench container id is derived from the viewsContainers id in the manifest.
+// Opens the Token Stats side bar (bound to Alt+T in the IDE keybinding
+// manifest). The workbench container id is derived from the viewsContainers id
+// in the manifest.
 export const IDE_OPEN_STATS_COMMAND = 'antigravity-ide-stats.open';
 export const IDE_PROXY_STATUS_COMMAND = 'antigravity-ide-stats.proxyStatus';
 export const IDE_PROXY_INSTALL_COMMAND = 'antigravity-ide-stats.proxyInstall';

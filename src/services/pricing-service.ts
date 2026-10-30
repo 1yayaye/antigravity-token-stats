@@ -180,11 +180,14 @@ export function formatResetCountdown(resetTimeIso: string | null | undefined, la
 
 function parseRawBucket(b: any): CapturedQuotaBucket | undefined {
   if (!b) return undefined;
-  // Per the server's proto schema, remainingFraction is a flat number field inside
-  // the oneof; legacy captures used a remainingAmount string instead. Missing both
-  // means "no usage recorded", i.e. fully remaining.
+  // Remaining fraction sources, in order: the current proto oneof wrapper
+  // `remaining: { case: 'remainingFraction', value }` (Antigravity client update),
+  // the legacy flat `remainingFraction` number, and the older `remainingAmount`
+  // string. Missing all three means "no usage recorded", i.e. fully remaining.
   let fraction = 1;
-  if (typeof b.remainingFraction === 'number' && Number.isFinite(b.remainingFraction)) {
+  if (b.remaining && typeof b.remaining.value === 'number' && Number.isFinite(b.remaining.value)) {
+    fraction = b.remaining.value;
+  } else if (typeof b.remainingFraction === 'number' && Number.isFinite(b.remainingFraction)) {
     fraction = b.remainingFraction;
   } else if (typeof b.remainingAmount === 'string' && b.remainingAmount.trim() !== '' && Number.isFinite(Number(b.remainingAmount))) {
     fraction = Number(b.remainingAmount);

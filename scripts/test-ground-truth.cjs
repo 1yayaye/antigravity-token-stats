@@ -228,7 +228,7 @@ test('Frontend StatsView listens to stats-updated via contract and calls __ANTIG
   assert(viewCode.includes('__ANTIGRAVITY_REQUEST_SYNC__'), 'StatsView must trigger __ANTIGRAVITY_REQUEST_SYNC__');
   assert(!viewCode.includes('FALLBACK_STATS'), 'StatsView must not use fake FALLBACK_STATS');
   assert(viewCode.includes('EMPTY_STATS'), 'StatsView should use clean EMPTY_STATS');
-  assert(viewCode.includes('TokenBreakdownCard'), 'StatsView must render TokenBreakdownCard');
+  assert(viewCode.includes('TokenSummaryTile'), 'StatsView must render TokenSummaryTile');
 });
 
 liveTest('TokenBreakdown computes accurate input, output, cache, and thinking breakdown', () => {
@@ -258,9 +258,9 @@ liveTest('TokenBreakdown computes accurate input, output, cache, and thinking br
   const hitRateNum = parseFloat(tb.cacheHitRate);
   assert(hitRateNum > 85, `cacheHitRate must reflect ground truth (>85%), got ${tb.cacheHitRate}`);
 
-  // Card component exists
-  const cardPath = path.join(__dirname, '..', 'src', 'components', 'stats', 'TokenBreakdownCard.tsx');
-  assert(fs.existsSync(cardPath), 'TokenBreakdownCard.tsx must exist');
+  // Tile component exists
+  const tilePath = path.join(__dirname, '..', 'src', 'components', 'stats', 'TokenSummaryTile.tsx');
+  assert(fs.existsSync(tilePath), 'TokenSummaryTile.tsx must exist');
 });
 
 test('Protobuf decoder handles non-standard Unicode, emojis, and corrupted varints', () => {

@@ -2,6 +2,8 @@
 /**
  * Real-Device Comprehensive Acceptance Test Suite
  * Connects to live Antigravity instance via Chrome DevTools Protocol (CDP).
+ * Prerequisite: the Antigravity Settings modal must be open (Step 3 injects
+ * and clicks the "Usage Stats" nav button inside it).
  */
 
 const fs = require('node:fs');
@@ -135,28 +137,35 @@ async function runRealDeviceAcceptance() {
         console.log('✓ Context Popover Content:');
         popoverInfo.lines.forEach(l => console.log(`    ${l}`));
 
-        // Step 3: Trigger Full Modal via openModal
-        console.log('\n--- [Step 3: Opening Full Stats Modal] ---');
-        await sendCommand('Runtime.evaluate', {
-          expression: `window.AntigravityStats.openModal();`
+        // Step 3: Open Settings -> Usage Stats via the injected nav button
+        console.log('\n--- [Step 3: Opening Settings -> Usage Stats] ---');
+        const navState = await sendCommand('Runtime.evaluate', {
+          expression: `(() => {
+            const navBtn = document.getElementById('antigravity-stats-nav-btn');
+            if (!navBtn) return { found: false };
+            navBtn.click();
+            return { found: true };
+          })()`,
+          returnByValue: true
         });
+        if (!navState.found) {
+          throw new Error('Usage Stats nav button not found — open the Antigravity Settings modal first, then re-run.');
+        }
         await new Promise(r => setTimeout(r, 1600));
 
         const modalDOM = await sendCommand('Runtime.evaluate', {
           expression: `(() => {
-            const overlay = document.getElementById('antigravity-stats-modal-overlay');
-            const content = document.getElementById('antigravity-stats-modal-content');
+            const content = document.getElementById('antigravity-stats-settings-content');
             return {
-              overlayExists: !!overlay,
               contentExists: !!content,
-              hasContainer: !!overlay?.querySelector('.antigravity-stats-container')
+              hasContainer: !!content?.querySelector('.antigravity-stats-container')
             };
           })()`,
           returnByValue: true
         });
-        console.log('✓ Modal Structure Verified:', modalDOM);
-        if (!modalDOM.overlayExists || !modalDOM.contentExists) {
-          throw new Error('Stats Modal Overlay/Content failed to render!');
+        console.log('✓ Settings Stats View Verified:', modalDOM);
+        if (!modalDOM.contentExists || !modalDOM.hasContainer) {
+          throw new Error('Settings Usage Stats view failed to render!');
         }
 
         // Step 4: Verify Subscription Quota Card & Reactive Tier Selection
@@ -214,7 +223,7 @@ async function runRealDeviceAcceptance() {
         console.log('\n--- [Step 5: Token Breakdown Card] ---');
         const breakdownCard = await sendCommand('Runtime.evaluate', {
           expression: `(() => {
-            const modalContent = document.getElementById('antigravity-stats-modal-content');
+            const modalContent = document.getElementById('antigravity-stats-settings-content');
             const el = Array.from(modalContent?.querySelectorAll('section') || []).find(s => {
               const txt = s.innerText.toLowerCase();
               return txt.includes('breakdown') || txt.includes('消耗结构') || txt.includes('cache hit rate') || txt.includes('缓存命中率');
@@ -239,7 +248,7 @@ async function runRealDeviceAcceptance() {
         console.log('\n--- [Step 6: Token Activity Heatmap & Interactive Cells] ---');
         const heatmapInfo = await sendCommand('Runtime.evaluate', {
           expression: `(() => {
-            const modalContent = document.getElementById('antigravity-stats-modal-content');
+            const modalContent = document.getElementById('antigravity-stats-settings-content');
             const heatmapEl = Array.from(modalContent?.querySelectorAll('div, section') || []).find(el =>
               el.innerText.includes('活跃历史') || el.innerText.includes('Activity history') || el.innerText.includes('Token 活跃度')
             );
@@ -263,7 +272,7 @@ async function runRealDeviceAcceptance() {
         console.log('\n--- [Step 7: Time Range Select Reactivity] ---');
         const timeSelectResult = await sendCommand('Runtime.evaluate', {
           expression: `(() => {
-            const modalContent = document.getElementById('antigravity-stats-modal-content');
+            const modalContent = document.getElementById('antigravity-stats-settings-content');
             const selectEl = modalContent?.querySelector('select');
             if (!selectEl) return { found: false };
             const initial = selectEl.value;
@@ -282,7 +291,7 @@ async function runRealDeviceAcceptance() {
         console.log('\n--- [Step 8: UI Language Dynamic Switching] ---');
         const langToggleResult = await sendCommand('Runtime.evaluate', {
           expression: `(() => {
-            const modalContent = document.getElementById('antigravity-stats-modal-content');
+            const modalContent = document.getElementById('antigravity-stats-settings-content');
             const langBtn = modalContent?.querySelector('header button');
             if (!langBtn) return { found: false };
             const beforeTitle = modalContent.querySelector('h1')?.innerText;
@@ -304,50 +313,41 @@ async function runRealDeviceAcceptance() {
         });
         console.log(`  • Language toggle verified:`, langToggleResult);
 
-        // Step 9: Close Modal & Clean Unmount
-        console.log('\n--- [Step 9: Close Modal & Verify Clean Unmount] ---');
+        // Step 9: Navigate away from the Stats tab & verify clean unmount
+        console.log('\n--- [Step 9: Navigate Away & Verify Clean Unmount] ---');
         await sendCommand('Runtime.evaluate', {
-          expression: `window.AntigravityStats.closeModal();`
+          expression: `(() => {
+            const navBtn = document.getElementById('antigravity-stats-nav-btn');
+            const modal = document.querySelector('.settings-modal-container');
+            const modelsBtn = modal
+              ? Array.from(modal.querySelectorAll('button')).find((b) => {
+                  const text = (b.innerText || '').trim();
+                  return text === 'Models' || text === '模型' || text === '模型配置';
+                })
+              : null;
+            (modelsBtn || navBtn)?.click();
+            return { clicked: !!(modelsBtn || navBtn) };
+          })()`,
+          returnByValue: true
         });
         await new Promise(r => setTimeout(r, 600));
 
         const postClose = await sendCommand('Runtime.evaluate', {
           expression: `(() => {
             return {
-              overlayExists: !!document.getElementById('antigravity-stats-modal-overlay'),
-              rootCleaned: window.__ANTIGRAVITY_STATS_ROOT__ === null
+              rootCleaned: window.__ANTIGRAVITY_STATS_ROOT__ === null,
+              statsViewHidden: document.getElementById('antigravity-stats-settings-content')?.style.display === 'none'
             };
           })()`,
           returnByValue: true
         });
-        console.log('✓ Post-Close Cleanup:', postClose);
-        if (postClose.overlayExists) {
-          throw new Error('Modal Overlay was not properly removed after closeModal!');
+        console.log('✓ Post-Navigation Cleanup:', postClose);
+        if (!postClose.rootCleaned) {
+          throw new Error('Stats root was not unmounted after navigating away from the Usage Stats tab!');
         }
 
-        // Step 10: Test Keyboard Shortcut Alt+T (open and close)
-        console.log('\n--- [Step 10: Hotkey (Alt+T) Modal Trigger] ---');
-        await sendCommand('Runtime.evaluate', {
-          expression: `(() => {
-            window.dispatchEvent(new KeyboardEvent('keydown', { key: 't', altKey: true, bubbles: true }));
-          })()`
-        });
-        await new Promise(r => setTimeout(r, 800));
-
-        const hotkeyOpened = await sendCommand('Runtime.evaluate', {
-          expression: `!!document.getElementById('antigravity-stats-modal-overlay')`,
-          returnByValue: true
-        });
-        console.log(`✓ Alt+T hotkey opened modal successfully: ${hotkeyOpened}`);
-
-        // Close again
-        await sendCommand('Runtime.evaluate', {
-          expression: `window.AntigravityStats.closeModal();`
-        });
-        await new Promise(r => setTimeout(r, 400));
-
-        // Step 11: Live Sync IPC Trigger
-        console.log('\n--- [Step 11: Real-time Live Sync IPC Hook] ---');
+        // Step 10: Live Sync IPC Trigger
+        console.log('\n--- [Step 10: Real-time Live Sync IPC Hook] ---');
         await sendCommand('Runtime.evaluate', {
           expression: `(() => {
             if (typeof window.__ANTIGRAVITY_REQUEST_SYNC__ === 'function') {

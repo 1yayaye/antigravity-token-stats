@@ -2,6 +2,24 @@
 
 All notable changes to Antigravity Token Stats will be documented in this file.
 
+## [1.5.0] - 2026-10-31
+
+### Added
+- **Modern Bento Grid Redesign**: Overhauled stats dashboard layout into an adaptive Bento Grid architecture:
+  - **`QuotaHeroCard`**: Hero subscription card highlighting live ROI multiplier, net booked savings, and SVG circular progress rings for Gemini/Claude weekly quota and monthly volume. Remains hidden when online quota is unavailable to avoid phantom metrics.
+  - **`TokenSummaryTile`**: Consolidated lifetime, input, output, and active day metrics paired with a 4-channel composition stacked bar (Cache Read, Raw Input, Thinking, Response).
+  - **`DailyTrendCard`**: Interactive SVG daily trend area chart with dynamic nice-number gridlines responding to active time range filters (`today`, `1d`, `7d`, `30d`, `all`).
+  - **`ProxyStatusCard`**: Compact proxy tile embedded directly within the Bento layout tracking Desktop & IDE socket redirection status.
+- **DSH Status Bar Probing & Bridge**:
+  - `probeHostPillStyle`: Automatically samples surrounding Antigravity UI typography, font size, and accent tokens for seamless pixel-matching.
+  - Transparent hover bridge (`POPOVER_BRIDGE_PX`) and hide timer delay (`POPOVER_HIDE_DELAY_MS`) preventing flicker when moving between status pills and popover cards.
+  - Render memoization preventing redundant re-renders during high-frequency telemetry polling.
+- **Protobuf Quota Compatibility**: `parseRawBucket` supports the updated `remaining: { case: 'remainingFraction', value }` protobuf schema from the latest Antigravity client release.
+
+### Changed
+- **Streamlined Host Integration**: Retired floating toast notification and global `Alt+T` overlay shortcut; unified access exclusively through native **Settings → Usage Stats** tab with clean lifecycle mounting and unmounting.
+- **Verification Suites**: Updated unit tests, device acceptance, and CDP verification suites (`test-token-breakdown.cjs`, `test-subscription-pricing.cjs`, `run-device-acceptance.cjs`, `verify-real-device.cjs`) to validate Bento components and Settings navigation.
+
 ## [1.4.0] - 2026-10-31
 
 ### Added

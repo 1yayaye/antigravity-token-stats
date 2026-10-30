@@ -13,11 +13,17 @@ export const translations = {
 
     // KPIs
     kpiLifetimeTokens: 'Total tokens (incl. cache reads)',
-    kpiPeakTokens: 'Highest tokens in one conversation',
-    kpiLongestTask: 'Longest conversation span (incl. idle time)',
-    kpiCurrentStreak: 'Current streak',
-    kpiLongestStreak: 'Longest streak',
     days: 'days',
+
+    // Bento summary & trend
+    compositionByChannel: 'Composition by channel',
+    dailyTrendTitle: 'Daily usage trend',
+    dailyTrendUnit: 'tokens / day',
+    monthlyQuotaShort: 'Monthly quota',
+    weeklyQuotaShort: 'Weekly quota',
+    quotaUsedShort: 'Used',
+    quotaCapacityShort: 'Capacity',
+    quotaHeroBasis: 'API value used ÷ subscription fee',
 
     // Token Activity
     tokenActivityTitle: 'Activity history',
@@ -39,29 +45,17 @@ export const translations = {
     tier3: 'Tier 3 · Frequent',
     tier4: 'Tier 4 · Peak',
 
-    // Activity Insights
-    activityInsightsTitle: 'Historical usage',
-    fastMode: 'Calls without thinking tokens',
-    mostUsedReasoning: 'Most used model (by calls)',
-    skillsExplored: 'Distinct skills used',
-    totalSkillsUsed: 'Skill invocations',
-    totalThreads: 'Total conversations',
-
-    // Token Breakdown Card
-    tokenBreakdownTitle: 'Input and output details',
+    // Token channels
     inputChannelTitle: 'Input tokens',
     outputChannelTitle: 'Output tokens',
     cacheReadLabel: 'Cache reads',
     rawInputLabel: 'Uncached input',
     thinkingTokensLabel: 'Thinking',
     responseTokensLabel: 'Response',
-    cacheHitRateBadge: 'Cache Hit Rate',
 
     timeRangeLabel: 'Summary time range',
     periodSummary: 'Period summary',
     activeDays: 'Active days',
-    shareOfInput: 'Share of input',
-    shareOfOutput: 'Share of output',
     incompleteBreakdown: 'Complete breakdown unavailable',
     periodBasis: 'Lifetime totals come from exact SQLite usage. Daily ranges pair usage rows with transcript planner dates, falling back to SQLite step timestamps when logs are absent.',
     noData: 'No recorded activity',
@@ -102,16 +96,8 @@ export const translations = {
     proxyIdeLabel: 'Antigravity IDE',
     proxyInstalled: 'Active',
     proxyNotInstalled: 'Inactive',
-    proxyProcessStatus: 'Process Status',
     proxyRunning: 'Running',
     proxyIdle: 'Idle',
-    proxyTestBtn: 'Test Proxy',
-    proxyTesting: 'Testing...',
-    proxyTestSuccess: 'Connected to Google API',
-    proxyTestFailed: 'Connection Failed',
-    proxyInstallHint: 'Manage via CLI:',
-    proxyLocationAlert: 'Egress IP Notice',
-    proxyLocationDesc: 'If dialog reports "User location is not supported", switch your proxy exit node to a non-datacenter supported ISP/residential IP.',
   },
   zh: {
     // Header
@@ -125,11 +111,17 @@ export const translations = {
 
     // KPIs
     kpiLifetimeTokens: '总 Token（含缓存读取）',
-    kpiPeakTokens: '单个对话最高 Token',
-    kpiLongestTask: '最长对话时长（含空闲时间）',
-    kpiCurrentStreak: '当前连续使用天数',
-    kpiLongestStreak: '最长连续使用天数',
     days: '天',
+
+    // Bento summary & trend
+    compositionByChannel: '构成 · 按渠道',
+    dailyTrendTitle: '每日消耗趋势',
+    dailyTrendUnit: 'Token / 天',
+    monthlyQuotaShort: '月额度',
+    weeklyQuotaShort: '周额度',
+    quotaUsedShort: '已用',
+    quotaCapacityShort: '容量',
+    quotaHeroBasis: '已用 API 价值 ÷ 订阅费',
 
     // Token Activity
     tokenActivityTitle: '活跃历史',
@@ -151,29 +143,17 @@ export const translations = {
     tier3: 'Tier 3 · 频繁编码',
     tier4: 'Tier 4 · 峰值高频',
 
-    // Activity Insights
-    activityInsightsTitle: '历史使用统计',
-    fastMode: '无思考 Token 调用占比',
-    mostUsedReasoning: '最常用模型（按调用次数）',
-    skillsExplored: '使用过的技能数',
-    totalSkillsUsed: '技能调用次数',
-    totalThreads: '累计对话',
-
-    // Token Breakdown Card
-    tokenBreakdownTitle: '输入输出明细',
+    // Token channels
     inputChannelTitle: '输入 Token',
     outputChannelTitle: '输出 Token',
     cacheReadLabel: '缓存读取',
     rawInputLabel: '非缓存输入',
     thinkingTokensLabel: '思考',
     responseTokensLabel: '回答',
-    cacheHitRateBadge: '缓存命中率',
 
     timeRangeLabel: '汇总时间范围',
     periodSummary: '期间汇总',
     activeDays: '活跃天数',
-    shareOfInput: '占输入总量',
-    shareOfOutput: '占输出总量',
     incompleteBreakdown: '暂无完整明细',
     periodBasis: '累计总量来自 SQLite 精确用量。按设备本地自然日汇总时，优先匹配 transcript 的 planner 日期，若日志已清理则自动回退至 SQLite 原生步骤时间戳。',
     noData: '暂无活动记录',
@@ -214,16 +194,8 @@ export const translations = {
     proxyIdeLabel: 'IDE 扩展端',
     proxyInstalled: '已启用',
     proxyNotInstalled: '未启用',
-    proxyProcessStatus: '进程状态',
     proxyRunning: '运行中',
     proxyIdle: '未运行',
-    proxyTestBtn: '测试代理',
-    proxyTesting: '测试中...',
-    proxyTestSuccess: '成功连通 Google 接口',
-    proxyTestFailed: '连接失败',
-    proxyInstallHint: '终端管理命令：',
-    proxyLocationAlert: '出口 IP 限制提醒',
-    proxyLocationDesc: '若对话报错 "User location is not supported"，说明 Google 判定当前代理为机房或不支持地区，请更换为住宅或受支持 ISP 出口。',
   },
 };
 

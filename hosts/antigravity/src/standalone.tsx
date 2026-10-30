@@ -6,148 +6,10 @@ import { LanguageProvider } from '../../../src/i18n/LanguageContext';
 import { detectAntigravityTheme, syncThemeToElement } from '../../../src/services/stats-service';
 import { antigravityI18n } from './i18n/antigravity-ui-i18n';
 import { DshStatusBar } from '../../../src/components/dsh/DshStatusBar';
+import type { DshHostStyle } from '../../../src/components/dsh/DshStatusBar';
 import type { DshTelemetryData } from '../../../src/types/dsh-telemetry';
 import { CONTAINER_STATUSBAR_ID, EVENT_LANGUAGE_CHANGED, EVENT_REQUEST_SYNC, EVENT_STATS_UPDATED, IPC_REQUEST_SYNC, WINDOW_SYNC_BRIDGE } from '../../../src/injection-contract.cjs';
 import '../../../src/domain/stats.types';
-
-let toastTimeout: ReturnType<typeof setTimeout> | null = null;
-let toastFadeTimeout: ReturnType<typeof setTimeout> | null = null;
-
-// Clean removal of floating Toast
-export function removeStatsToast(immediate: boolean = false) {
-  if (toastTimeout) {
-    clearTimeout(toastTimeout);
-    toastTimeout = null;
-  }
-  if (toastFadeTimeout) {
-    clearTimeout(toastFadeTimeout);
-    toastFadeTimeout = null;
-  }
-  const existingToast = document.getElementById('antigravity-stats-toast');
-  if (existingToast) {
-    if (immediate) {
-      existingToast.remove();
-      return;
-    }
-    existingToast.style.opacity = '0';
-    existingToast.style.transform = 'translateY(-6px) scale(0.96)';
-    existingToast.style.pointerEvents = 'none';
-    toastFadeTimeout = setTimeout(() => {
-      existingToast.remove();
-    }, 250);
-  }
-}
-
-// Non-intrusive floating Toast notification (Antigravity 2.0 Glassmorphism)
-export function showStatsToast(message: string = '✦ Token Stats & 汉化增强已就绪', durationMs: number = 4000) {
-  if (toastTimeout) clearTimeout(toastTimeout);
-  if (toastFadeTimeout) clearTimeout(toastFadeTimeout);
-  const oldToast = document.getElementById('antigravity-stats-toast');
-  if (oldToast) oldToast.remove();
-
-  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
-  const shortcutLabel = isMac ? '⌥T' : 'Alt+T';
-
-  const toast = document.createElement('div');
-  toast.id = 'antigravity-stats-toast';
-  toast.setAttribute('role', 'status');
-  toast.setAttribute('aria-live', 'polite');
-  toast.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    z-index: 999999;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 14px;
-    border-radius: 12px;
-    background-color: rgba(18, 20, 26, 0.92);
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    box-shadow: 0 16px 36px -8px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
-    color: #f1f4f9;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-size: 13px;
-    cursor: pointer;
-    user-select: none;
-    opacity: 0;
-    transform: translateY(-8px) scale(0.96);
-    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  `;
-
-  toast.innerHTML = `
-    <div style="display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 8px; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(96, 165, 250, 0.3); color: #60a5fa; flex-shrink: 0; position: relative;">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="18" y1="20" x2="18" y2="10"></line>
-        <line x1="12" y1="20" x2="12" y2="4"></line>
-        <line x1="6" y1="20" x2="6" y2="14"></line>
-      </svg>
-      <span style="position: absolute; top: -2px; right: -2px; width: 6px; height: 6px; border-radius: 9999px; background-color: #10b981; box-shadow: 0 0 6px #10b981;"></span>
-    </div>
-    <div style="display: flex; flex-direction: column; gap: 1px; min-width: 0;">
-      <span data-toast-message style="font-weight: 600; color: #f1f4f9; letter-spacing: -0.01em; white-space: nowrap;"></span>
-      <span style="font-size: 11px; color: #94a3b8; letter-spacing: 0.01em; white-space: nowrap;">按 <kbd style="font-family: inherit; padding: 1px 4px; border-radius: 4px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: #cbd5e1;">${shortcutLabel}</kbd> 或点击查看看板</span>
-    </div>
-    <button id="antigravity-stats-toast-close" style="margin-left: 6px; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 6px; border: none; background: transparent; color: rgba(255,255,255,0.4); cursor: pointer; padding: 0; outline: none; transition: color 0.15s, background-color 0.15s;" title="关闭">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="18" y1="6" x2="6" y2="18"></line>
-        <line x1="6" y1="6" x2="18" y2="18"></line>
-      </svg>
-    </button>
-  `;
-  const messageNode = toast.querySelector('[data-toast-message]');
-  if (messageNode) messageNode.textContent = message;
-
-  toast.addEventListener('click', (e) => {
-    const closeBtn = toast.querySelector('#antigravity-stats-toast-close');
-    if (closeBtn && (e.target === closeBtn || closeBtn.contains(e.target as Node))) {
-      e.stopPropagation();
-      removeStatsToast();
-      return;
-    }
-    removeStatsToast(true);
-    openStatsModal();
-  });
-
-  const closeBtn = toast.querySelector('#antigravity-stats-toast-close') as HTMLElement | null;
-  if (closeBtn) {
-    closeBtn.addEventListener('mouseenter', () => {
-      closeBtn.style.color = '#ffffff';
-      closeBtn.style.backgroundColor = 'rgba(255,255,255,0.1)';
-    });
-    closeBtn.addEventListener('mouseleave', () => {
-      closeBtn.style.color = 'rgba(255,255,255,0.4)';
-      closeBtn.style.backgroundColor = 'transparent';
-    });
-  }
-
-  toast.addEventListener('mouseenter', () => {
-    if (toastTimeout) {
-      clearTimeout(toastTimeout);
-      toastTimeout = null;
-    }
-  });
-  toast.addEventListener('mouseleave', () => {
-    if (!toastTimeout) {
-      toastTimeout = setTimeout(() => {
-        removeStatsToast();
-      }, 2000);
-    }
-  });
-
-  document.body.appendChild(toast);
-
-  requestAnimationFrame(() => {
-    toast.style.opacity = '1';
-    toast.style.transform = 'translateY(0) scale(1)';
-  });
-
-  toastTimeout = setTimeout(() => {
-    removeStatsToast();
-  }, durationMs);
-}
 
 let activeContainer: HTMLElement | null = null;
 let isMounting = false;
@@ -216,69 +78,6 @@ export function unmountStats() {
   });
 }
 
-// Standalone Modal for direct Sidebar / Shortcut access
-export function openStatsModal() {
-  removeStatsToast(true);
-
-  // Clean any existing modal overlays and unmount prior root
-  unmountStats();
-  document.querySelectorAll('#antigravity-stats-modal-overlay').forEach(el => el.remove());
-
-  const theme = detectAntigravityTheme();
-  const isDark = theme === 'dark';
-
-  const modalOverlay = document.createElement('div');
-  modalOverlay.id = 'antigravity-stats-modal-overlay';
-  modalOverlay.className = `fixed inset-0 z-[999999] flex items-center justify-center p-6 animate-fadeIn ${theme}`;
-  modalOverlay.style.cssText = `position: fixed; inset: 0; z-index: 999999; display: flex; align-items: center; justify-content: center; background-color: ${isDark ? 'rgba(0, 0, 0, 0.65)' : 'rgba(0, 0, 0, 0.35)'}; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);`;
-
-  const modalContainer = document.createElement('div');
-  modalContainer.className = `w-full max-w-5xl h-[88vh] max-h-[880px] overflow-hidden flex flex-col relative rounded-2xl shadow-2xl text-foreground ${theme}`;
-  modalContainer.style.cssText = isDark
-    ? 'width: 100%; max-width: 1060px; height: 88vh; max-height: 880px; display: flex; flex-direction: column; position: relative; border-radius: 16px; overflow: hidden; background-color: rgba(18, 20, 26, 0.94); backdrop-filter: blur(32px) saturate(180%); -webkit-backdrop-filter: blur(32px) saturate(180%); border: 1px solid rgba(255, 255, 255, 0.12); box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08);'
-    : 'width: 100%; max-width: 1060px; height: 88vh; max-height: 880px; display: flex; flex-direction: column; position: relative; border-radius: 16px; overflow: hidden; background-color: rgba(255, 255, 255, 0.96); backdrop-filter: blur(32px) saturate(180%); -webkit-backdrop-filter: blur(32px) saturate(180%); border: 1px solid rgba(0, 0, 0, 0.12); box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.25);';
-
-  const closeBtn = document.createElement('button');
-  closeBtn.className = `transition-colors cursor-pointer border-none bg-transparent outline-none flex items-center justify-center shrink-0 w-9 h-9 rounded-lg absolute z-30 top-4 right-4 ${
-    isDark ? 'text-white/70 hover:text-white hover:bg-white/10' : 'text-black/60 hover:text-black hover:bg-black/10'
-  }`;
-  closeBtn.innerHTML = `
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <line x1="18" y1="6" x2="6" y2="18"></line>
-      <line x1="6" y1="6" x2="18" y2="18"></line>
-    </svg>
-  `;
-  closeBtn.title = 'Close (Esc)';
-  closeBtn.addEventListener('click', closeStatsModal);
-
-  const contentArea = document.createElement('div');
-  contentArea.id = 'antigravity-stats-modal-content';
-  contentArea.className = 'flex-1 min-h-0 w-full';
-
-  modalContainer.appendChild(closeBtn);
-  modalContainer.appendChild(contentArea);
-  modalOverlay.appendChild(modalContainer);
-
-  modalOverlay.addEventListener('click', (e) => {
-    if (e.target === modalOverlay) closeStatsModal();
-  });
-
-  document.body.appendChild(modalOverlay);
-  mountStats(contentArea);
-}
-
-export function closeStatsModal() {
-  unmountStats();
-  document.querySelectorAll('#antigravity-stats-modal-overlay').forEach(el => el.remove());
-
-  // Re-mount Settings inline view if Settings modal is still open on the Usage Stats tab
-  const settingsModal = document.querySelector('.settings-modal-container');
-  const settingsContainer = document.getElementById('antigravity-stats-settings-content');
-  if (settingsModal && settingsContainer && settingsContainer.style.display !== 'none') {
-    mountStats(settingsContainer);
-  }
-}
-
 export function removeContextPopover() {
   document.querySelectorAll('#antigravity-context-popover, #antigravity-dsh-popover-container').forEach(el => el.remove());
 }
@@ -335,6 +134,29 @@ export function checkGenerationState(): boolean {
 // lands. This heartbeat re-reads the active session once per second, independent of any event.
 const PILL_HEARTBEAT_MS = 1000;
 let pillHeartbeat: ReturnType<typeof setInterval> | null = null;
+
+// Probe the host's own control styling so the injected pills inherit the same text
+// color, size and weight as native Antigravity controls (e.g. the Turbo dropdown).
+// Every field is optional — when the host DOM isn't ready the pills fall back to
+// their own --dsh-* tokens.
+function probeHostPillStyle(): DshHostStyle {
+  const probe: DshHostStyle = {};
+  try {
+    const anchor = document.querySelector('button[data-testid="permissions-selector-trigger"]');
+    if (anchor instanceof HTMLElement && anchor.isConnected) {
+      const cs = getComputedStyle(anchor);
+      if (cs.color) probe.textColor = cs.color;
+      if (cs.fontSize) probe.fontSize = cs.fontSize;
+      if (cs.fontWeight) probe.fontWeight = cs.fontWeight;
+    }
+    const rootCs = getComputedStyle(document.documentElement);
+    const accent = (rootCs.getPropertyValue('--primary') || rootCs.getPropertyValue('--accent-primary')).trim();
+    if (accent) probe.accentColor = accent;
+  } catch {
+    // Host styles unavailable — component defaults apply.
+  }
+  return probe;
+}
 
 export function mountDshStatusBar(container: HTMLElement) {
   if (!container) return;
@@ -419,8 +241,16 @@ export function mountDshStatusBar(container: HTMLElement) {
 
   const theme = detectAntigravityTheme();
   const lang = antigravityI18n.getLanguage();
+  const hostStyle = probeHostPillStyle();
+
+  // The heartbeat, mutation scans and sync events all funnel through here every
+  // second; skipping no-op renders keeps the host's event loop free enough that
+  // popover dismissal stays instant.
+  const renderSignature = JSON.stringify([telemetry, theme, lang, hostStyle]);
 
   if (window.__ANTIGRAVITY_STATUSBAR_ROOT__ && window.__ANTIGRAVITY_STATUSBAR_CONTAINER__ === container && container.isConnected) {
+    if (window.__ANTIGRAVITY_STATUSBAR_SIGNATURE__ === renderSignature) return;
+    window.__ANTIGRAVITY_STATUSBAR_SIGNATURE__ = renderSignature;
     window.__ANTIGRAVITY_STATUSBAR_ROOT__.render(
       <React.StrictMode>
         <div className={`antigravity-dsh-container ${theme}`}>
@@ -428,7 +258,7 @@ export function mountDshStatusBar(container: HTMLElement) {
             telemetry={telemetry}
             lang={lang}
             theme={theme}
-            onOpenModal={openStatsModal}
+            hostStyle={hostStyle}
           />
         </div>
       </React.StrictMode>
@@ -442,6 +272,7 @@ export function mountDshStatusBar(container: HTMLElement) {
   const root = ReactDOM.createRoot(container);
   window.__ANTIGRAVITY_STATUSBAR_ROOT__ = root;
   window.__ANTIGRAVITY_STATUSBAR_CONTAINER__ = container;
+  window.__ANTIGRAVITY_STATUSBAR_SIGNATURE__ = renderSignature;
 
   root.render(
     <React.StrictMode>
@@ -450,7 +281,7 @@ export function mountDshStatusBar(container: HTMLElement) {
           telemetry={telemetry}
           lang={lang}
           theme={theme}
-          onOpenModal={openStatsModal}
+          hostStyle={hostStyle}
         />
       </div>
     </React.StrictMode>
@@ -512,33 +343,9 @@ export function initAntigravitySettingsInjector() {
   unmountStats();
   unmountDshStatusBar();
 
-  // Clean up any stale misplaced containers, buttons, and toasts from prior injections
+  // Clean up any stale misplaced containers, buttons, toasts and modal overlays
+  // from prior injections (older bundles exposed a floating dashboard + toast).
   document.querySelectorAll('#antigravity-stats-nav-btn, #antigravity-stats-sidebar-btn, #antigravity-stats-content, #antigravity-stats-settings-content, #antigravity-stats-modal-overlay, #antigravity-stats-toast, #antigravity-context-usage-pill, #antigravity-dsh-statusbar-container, #antigravity-dsh-popover-container').forEach(el => el.remove());
-
-  // Listen for Esc key to close modal & Alt+T to toggle
-  if (window.__ANTIGRAVITY_KEY_HANDLER__) {
-    try { window.removeEventListener('keydown', window.__ANTIGRAVITY_KEY_HANDLER__); } catch (e) {}
-    window.__ANTIGRAVITY_KEY_HANDLER__ = null;
-  }
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      closeStatsModal();
-      removeStatsToast(true);
-    }
-    // Shortcut Alt+T to toggle Stats
-    if (e.altKey && e.key.toLowerCase() === 't') {
-      e.preventDefault();
-      const existingOverlay = document.getElementById('antigravity-stats-modal-overlay');
-      if (existingOverlay) {
-        closeStatsModal();
-      } else {
-        openStatsModal();
-      }
-    }
-  };
-  window.__ANTIGRAVITY_KEY_HANDLER__ = handleKeyDown;
-  window.__ANTIGRAVITY_KEY_LISTENER__ = true;
-  window.addEventListener('keydown', handleKeyDown);
 
   const scanAndInject = () => {
     // 1. Hook into Settings Modal tabs
@@ -740,12 +547,8 @@ export function initAntigravitySettingsInjector() {
   scanAndInject();
 }
 
-export const openModal = openStatsModal;
-export const closeModal = closeStatsModal;
 export const mount = mountStats;
 export const unmount = unmountStats;
-export const showToast = showStatsToast;
-export const closeToast = removeStatsToast;
 export const init = initAntigravitySettingsInjector;
 export const i18n = antigravityI18n;
 export const mountStatusBar = mountDshStatusBar;
@@ -758,14 +561,6 @@ if (typeof window !== 'undefined') {
     mountStats,
     unmount: unmountStats,
     unmountStats,
-    openModal: openStatsModal,
-    openStatsModal,
-    closeModal: closeStatsModal,
-    closeStatsModal,
-    showToast: showStatsToast,
-    showStatsToast,
-    closeToast: removeStatsToast,
-    removeStatsToast,
     init: initAntigravitySettingsInjector,
     initAntigravitySettingsInjector,
     i18n: antigravityI18n,

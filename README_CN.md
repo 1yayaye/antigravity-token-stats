@@ -6,7 +6,7 @@
 
 适用于 **Google Antigravity 2.0** 桌面端的本地 Token 用量看板。
 
-原生集成到客户端界面中（**Settings → Usage Stats** 或快捷键 `Alt+T`）。数据直接解析本地 SQLite `gen_metadata`（Protobuf）与 transcript 日志，**不按字符估算**，真实精确。
+原生集成到客户端界面中（**Settings → Usage Stats**）。数据直接解析本地 SQLite `gen_metadata`（Protobuf）与 transcript 日志，**不按字符估算**，真实精确。
 
 ### 特性
 
@@ -55,9 +55,7 @@ pwsh -File .\install.ps1 -Dev
 安装完成后，直接打开 Antigravity 或使用桌面快捷方式，客户端会自动加载看板与汉化增强。
 
 **呼出方式**：
-1. 快捷键 **`Alt+T`**（macOS 为 `⌥T`）
-2. 客户端左下角 **Settings → Usage Stats**
-3. 注入成功时弹出的右上方 Toast
+1. 客户端左下角 **Settings → Usage Stats**
 
 ### 常用命令
 

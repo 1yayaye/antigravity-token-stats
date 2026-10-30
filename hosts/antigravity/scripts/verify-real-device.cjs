@@ -65,23 +65,24 @@ async function main() {
       try {
         console.log('[CDP] WebSocket connected successfully');
 
-        // 1. Ensure Stats modal is open
-        console.log('[Test 1] Opening Stats modal...');
+        // 1. Open Settings -> Usage Stats via the injected nav button
+        console.log('[Test 1] Opening Settings -> Usage Stats...');
         await sendCommand('Runtime.evaluate', {
           expression: `
-            if (window.AntigravityStats && typeof window.AntigravityStats.openModal === 'function') {
-              window.AntigravityStats.openModal();
-            } else if (window.__ANTIGRAVITY_STATS__ && typeof window.__ANTIGRAVITY_STATS__.open === 'function') {
-              window.__ANTIGRAVITY_STATS__.open();
+            const navBtn = document.getElementById('antigravity-stats-nav-btn');
+            if (navBtn) {
+              navBtn.click();
+            } else {
+              console.warn('[TokenStats] Usage Stats nav button not found — is the Settings modal open?');
             }
           `
         });
 
-        // Wait 1.5s for modal and live quota fetch to render
+        // Wait 1.5s for the view and live quota fetch to render
         await new Promise(r => setTimeout(r, 1500));
 
-        // 2. Verify SubscriptionQuotaCard is rendered
-        console.log('[Test 2] Inspecting SubscriptionQuotaCard in rendered DOM...');
+        // 2. Verify QuotaHeroCard is rendered
+        console.log('[Test 2] Inspecting QuotaHeroCard in rendered DOM...');
         const cardInfo = await sendCommand('Runtime.evaluate', {
           expression: `(() => {
             const selectEl = document.getElementById('quota-tier-select');
@@ -106,7 +107,7 @@ async function main() {
 
         console.log('Card Detection Result:', JSON.stringify(cardInfo, null, 2));
         if (!cardInfo.found) {
-          throw new Error('SubscriptionQuotaCard NOT found in DOM!');
+          throw new Error('QuotaHeroCard NOT found in DOM!');
         }
 
         // 3. Verify Live Quota values extracted from DOM

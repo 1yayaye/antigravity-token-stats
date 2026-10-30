@@ -24,8 +24,8 @@ export const SessionStatsPopover: React.FC<SessionStatsPopoverProps> = ({ metric
       }}
     >
       {/* Header */}
-      <div className="flex items-center gap-2 font-semibold text-[14px] text-white">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#d1d5db]">
+      <div className="flex items-center gap-2 font-semibold text-[14px]" style={{ color: 'var(--dsh-text-primary, #ffffff)' }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--dsh-text-secondary, #d1d5db)' }}>
           <path d="m12 14 4-4" />
           <path d="M3.34 19a10 10 0 1 1 17.32 0" />
         </svg>
@@ -41,7 +41,7 @@ export const SessionStatsPopover: React.FC<SessionStatsPopoverProps> = ({ metric
           <span style={{ color: 'var(--dsh-text-secondary, #d1d5db)' }}>
             {isZh ? '模型用时' : 'Model Time'}
           </span>
-          <span className="font-medium text-white">
+          <span className="font-medium" style={{ color: 'var(--dsh-text-primary, #ffffff)' }}>
             {formatDuration(metrics.modelDurationSec, lang)}
           </span>
         </div>
@@ -50,7 +50,7 @@ export const SessionStatsPopover: React.FC<SessionStatsPopoverProps> = ({ metric
           <span style={{ color: 'var(--dsh-text-secondary, #d1d5db)' }}>
             {isZh ? '工具调用用时' : 'Tool Call Time'}
           </span>
-          <span className="font-medium text-white">
+          <span className="font-medium" style={{ color: 'var(--dsh-text-primary, #ffffff)' }}>
             {formatDuration(metrics.toolDurationSec, lang)}
           </span>
         </div>
@@ -59,7 +59,7 @@ export const SessionStatsPopover: React.FC<SessionStatsPopoverProps> = ({ metric
           <span style={{ color: 'var(--dsh-text-secondary, #d1d5db)' }}>
             {isZh ? '首 token 平均 (TTFT)' : 'Avg TTFT'}
           </span>
-          <span className="font-medium text-white">
+          <span className="font-medium" style={{ color: 'var(--dsh-text-primary, #ffffff)' }}>
             {metrics.ttftSec != null ? formatDuration(metrics.ttftSec, lang) : '--'}
           </span>
         </div>
@@ -68,7 +68,7 @@ export const SessionStatsPopover: React.FC<SessionStatsPopoverProps> = ({ metric
           <span style={{ color: 'var(--dsh-text-secondary, #d1d5db)' }}>
             {isZh ? '正文输出速度 (TPS)' : 'Text Output Speed (TPS)'}
           </span>
-          <span className="font-medium text-white">
+          <span className="font-medium" style={{ color: 'var(--dsh-text-primary, #ffffff)' }}>
             {metrics.tps != null ? `${metrics.tps} tok/s` : '--'}
           </span>
         </div>
