@@ -1,9 +1,13 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
+const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 
-function getAntigravityDir() {
+// Data root resolution order: explicit argument > ANTIGRAVITY_DATA_DIR > %USERPROFILE%/.gemini/antigravity,
+// falling back to the repo mock-data tree only when the default directory does not exist yet.
+function resolveAntigravityDir(explicitDir) {
+  if (explicitDir) return explicitDir;
   if (process.env.ANTIGRAVITY_DATA_DIR) return process.env.ANTIGRAVITY_DATA_DIR;
   const defaultDir = path.join(os.homedir(), '.gemini', 'antigravity');
   if (!fs.existsSync(defaultDir)) {
@@ -15,9 +19,9 @@ function getAntigravityDir() {
 
 // Run state is owned by the host's summaries DB; the UI uses the same field. Unknown => idle,
 // so a schema change can only lose the "generating" hint, never fabricate token numbers.
-function readRunningSessions() {
+function readRunningSessions(dataDir) {
   const running = new Set();
-  const summaryPath = path.join(getAntigravityDir(), 'conversation_summaries.db');
+  const summaryPath = path.join(dataDir, 'conversation_summaries.db');
   if (!fs.existsSync(summaryPath)) return running;
   let db = null;
   try {
@@ -42,8 +46,9 @@ const dbCache = new Map();
 const transcriptCache = new Map();
 let lastScanTime = 0;
 let lastAggregatedStats = null;
+let lastAggregatedDir = null;
 const FAST_SCAN_TTL = 300; // 300ms throttle for back-to-back incremental calls
-const PERSIST_CACHE_VERSION = 8;
+const PERSIST_CACHE_VERSION = 9;
 const CACHE_FLUSH_DELAY_MS = 50;
 const CACHE_LOCK_MAX_AGE_MS = 10000;
 let cacheDirty = false;
@@ -54,12 +59,19 @@ function isPersistentCacheDisabled() {
   return process.env.ANTIGRAVITY_DISABLE_PERSIST_CACHE === '1';
 }
 
-function getCacheFilePath() {
+// One cache file per data root: the desktop client (~/.gemini/antigravity) and the
+// IDE extension (~/.gemini/antigravity-ide) run in separate processes and must never
+// overwrite each other's snapshots. ANTIGRAVITY_STATS_CACHE_PATH is an explicit user
+// override and stays a single exact path across roots.
+function getCacheFilePath(dataDir) {
   if (process.env.ANTIGRAVITY_STATS_CACHE_PATH) return process.env.ANTIGRAVITY_STATS_CACHE_PATH;
   const stateDir = process.env.LOCALAPPDATA
     ? path.join(process.env.LOCALAPPDATA, 'AntiToken')
     : path.join(os.homedir(), '.antigravity-token-stats');
-  return path.join(stateDir, 'stats-cache.json');
+  const normalized = normalizePath(dataDir ?? resolveAntigravityDir());
+  const hash = crypto.createHash('sha1').update(normalized).digest('hex').slice(0, 8);
+  const slug = normalized.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'root';
+  return path.join(stateDir, `stats-cache-${slug}-${hash}.json`);
 }
 
 function normalizePath(value) {
@@ -100,18 +112,25 @@ function markCacheDirty() {
   scheduleCacheFlush();
 }
 
-function hydrateCacheFromDisk() {
-  if (isPersistentCacheDisabled()) return;
+// Persistent-cache hydration happens once per data root, lazily on first use —
+// a process that serves two roots (e.g. tests, multi-host tooling) must not mix
+// snapshots.
+const hydratedRoots = new Set();
 
-  const cachePath = getCacheFilePath();
+function hydrateCacheFromDisk(dataDir) {
+  if (isPersistentCacheDisabled()) return;
+  if (hydratedRoots.has(normalizePath(dataDir))) return;
+  hydratedRoots.add(normalizePath(dataDir));
+
+  const cachePath = getCacheFilePath(dataDir);
   try {
     if (!fs.existsSync(cachePath)) return;
     const snapshot = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-    if (snapshot.version !== PERSIST_CACHE_VERSION || normalizePath(snapshot.dataRoot) !== normalizePath(getAntigravityDir())) {
+    if (snapshot.version !== PERSIST_CACHE_VERSION || normalizePath(snapshot.dataRoot) !== normalizePath(dataDir)) {
       return;
     }
 
-    const conversationsDir = path.join(getAntigravityDir(), 'conversations');
+    const conversationsDir = path.join(dataDir, 'conversations');
     for (const entry of Object.values(snapshot.dbs || {})) {
       if (!entry?.file || !entry.fingerprint || !entry.metrics) continue;
       const filePath = path.resolve(conversationsDir, entry.file);
@@ -127,7 +146,7 @@ function hydrateCacheFromDisk() {
       });
     }
 
-    const brainDir = path.join(getAntigravityDir(), 'brain');
+    const brainDir = path.join(dataDir, 'brain');
     for (const entry of Object.values(snapshot.transcripts || {})) {
       if (!entry?.sessionId || !entry.fingerprint || !entry.metrics) continue;
       const transcriptPath = path.resolve(brainDir, entry.sessionId, '.system_generated', 'logs', 'transcript.jsonl');
@@ -151,10 +170,9 @@ function hydrateCacheFromDisk() {
   }
 }
 
-function serializeCache() {
-  const agDir = getAntigravityDir();
-  const conversationsDir = path.join(agDir, 'conversations');
-  const brainDir = path.join(agDir, 'brain');
+function serializeCache(dataDir) {
+  const conversationsDir = path.join(dataDir, 'conversations');
+  const brainDir = path.join(dataDir, 'brain');
   const dbs = {};
   const transcripts = {};
 
@@ -191,6 +209,9 @@ function serializeCache() {
   for (const [transcriptPath, entry] of transcriptCache) {
     if (!entry.fingerprint) continue;
     const relative = path.relative(brainDir, transcriptPath);
+    // Entries from another data root must never leak into this root's snapshot,
+    // even when a flush lands mid-scan while the cache still holds both roots.
+    if (!relative || relative.startsWith('..')) continue;
     const parts = relative.split(path.sep);
     if (parts.length < 4) continue;
     transcripts[parts[0]] = {
@@ -208,7 +229,7 @@ function serializeCache() {
 
   return {
     version: PERSIST_CACHE_VERSION,
-    dataRoot: normalizePath(agDir),
+    dataRoot: normalizePath(dataDir),
     updatedAt: new Date().toISOString(),
     dbs,
     transcripts,
@@ -217,8 +238,12 @@ function serializeCache() {
 
 function persistCacheToDisk() {
   if (isPersistentCacheDisabled() || !cacheDirty) return;
+  // Serialize the root the cache entries actually belong to, resolved at flush
+  // time — not whatever root happened to schedule this flush.
+  const dataDir = lastAggregatedDir;
+  if (!dataDir) return;
 
-  const cachePath = getCacheFilePath();
+  const cachePath = getCacheFilePath(dataDir);
   const lockPath = `${cachePath}.lock`;
   // ponytail: one cache-wide lock; split per session only if concurrent writers become measurable.
   let lockFd = null;
@@ -237,7 +262,7 @@ function persistCacheToDisk() {
       if (lockFd === null) return;
     }
 
-    const serialized = JSON.stringify(serializeCache());
+    const serialized = JSON.stringify(serializeCache(dataDir));
     tempPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
     fs.writeFileSync(tempPath, serialized, 'utf8');
 
@@ -275,8 +300,6 @@ function scheduleCacheFlush() {
     persistCacheToDisk();
   }, CACHE_FLUSH_DELAY_MS);
 }
-
-hydrateCacheFromDisk();
 
 // Pure JS zero-dependency Protobuf decoder for SQLite gen_metadata BLOBs
 function decodeVarint(buf, offset) {
@@ -470,13 +493,14 @@ function createEmptyStats() {
   };
 }
 
-function computeStats(force = false) {
+function computeStats(force = false, dataDir) {
   const nowMs = Date.now();
-  if (!force && lastAggregatedStats && nowMs - lastScanTime < FAST_SCAN_TTL) {
+  const agDir = resolveAntigravityDir(dataDir);
+  // The in-memory snapshot is only valid for the data root that produced it; switching
+  // dataDir must never serve another root's numbers through the fast-scan TTL.
+  if (!force && lastAggregatedStats && lastAggregatedDir === agDir && nowMs - lastScanTime < FAST_SCAN_TTL) {
     return lastAggregatedStats;
   }
-
-  const agDir = getAntigravityDir();
 
   // Self-check #1: Data directory existence
   if (!fs.existsSync(agDir)) {
@@ -487,6 +511,10 @@ function computeStats(force = false) {
 
   const convDir = path.join(agDir, 'conversations');
   const brainDir = path.join(agDir, 'brain');
+
+  // Load this root's persistent cache before the eviction loop below prunes
+  // entries not belonging to the current root.
+  hydrateCacheFromDisk(agDir);
 
   const dbFiles = fs.existsSync(convDir)
     ? fs.readdirSync(convDir).filter(f => f.endsWith('.db'))
@@ -568,6 +596,7 @@ function computeStats(force = false) {
       let sessionStepDuration = 0;
       let sessionTurnCalls = 0;
       let sessionTurnStartedAt = null;
+      let sessionPerf = null;
       let parsedCacheEntry = null;
 
       if (cached && fingerprintsEqual(cached.fingerprint, fingerprint)) {
@@ -590,6 +619,7 @@ function computeStats(force = false) {
         sessionStepDuration = cached.duration || 0;
         sessionTurnCalls = cached.turnCalls || 0;
         sessionTurnStartedAt = cached.turnStartedAt || null;
+        sessionPerf = cached.perf || null;
       } else {
         let db = null;
         try {
@@ -681,6 +711,7 @@ function computeStats(force = false) {
             }
           }
           sessionStepDuration = firstStepTime && lastStepTime ? lastStepTime - firstStepTime : 0;
+          sessionPerf = extractSessionPerformanceMetrics(steps);
 
           parsedCacheEntry = {
             mtimeMs: effectiveMtimeMs,
@@ -703,6 +734,7 @@ function computeStats(force = false) {
             duration: sessionStepDuration,
             turnCalls: sessionTurnCalls,
             turnStartedAt: sessionTurnStartedAt,
+            perf: sessionPerf,
           };
         } catch (dbErr) {
           const isTemporaryLock =
@@ -730,6 +762,7 @@ function computeStats(force = false) {
             sessionStepDuration = cached.duration || 0;
             sessionTurnCalls = cached.turnCalls || 0;
             sessionTurnStartedAt = cached.turnStartedAt || null;
+            sessionPerf = cached.perf || null;
             hasStaleSessions = true;
           } else {
             if (isTemporaryLock) {
@@ -773,6 +806,7 @@ function computeStats(force = false) {
         turnCalls: sessionTurnCalls,
         turnStartedAt: sessionTurnStartedAt,
         mtimeMs: effectiveMtimeMs,
+        perf: sessionPerf,
       });
 
       totalModelCalls += modelCalls;
@@ -1021,7 +1055,7 @@ function computeStats(force = false) {
   let realTotalTokens = 0;
   let realPeakTokens = 0;
   const sessionsSummary = {};
-  const runningSessions = readRunningSessions();
+  const runningSessions = readRunningSessions(agDir);
 
   for (const [sId, metrics] of sessionMetrics) {
     const finalTokens = metrics.tokensFromDb || 0;
@@ -1035,6 +1069,16 @@ function computeStats(force = false) {
     const turnTokens = usages
       .slice(Math.max(0, usages.length - turnCalls))
       .reduce((sum, usage) => sum + usage.inputTokens + usage.cacheReadTokens + usage.outputTokens, 0);
+    const perf = metrics.perf || { rounds: 1, steps: 0, tps: null, modelDurationSec: 0, toolDurationSec: 0, ttftSec: null };
+    const dshTelemetry = buildDshTelemetry({
+      sessionId: sId,
+      isStreaming: runningSessions.has(sId),
+      perf,
+      promptTokens,
+      totalInput: metrics.inputTokens || 0,
+      totalCache: metrics.cacheReadTokens || 0,
+      totalOutput: metrics.outputTokens || 0,
+    });
     sessionsSummary[sId] = {
       isRunning: runningSessions.has(sId),
       turnCalls,
@@ -1053,6 +1097,13 @@ function computeStats(force = false) {
       totalOutputTokens: metrics.outputTokens || 0,
       compactionLimit: 256000,
       turnsCount: usages.length,
+      rounds: perf.rounds,
+      steps: perf.steps,
+      tps: perf.tps,
+      modelDurationSec: perf.modelDurationSec,
+      toolDurationSec: perf.toolDurationSec,
+      ttftSec: perf.ttftSec,
+      dshTelemetry,
     };
   }
 
@@ -1272,6 +1323,14 @@ function computeStats(force = false) {
       reasoningPct,
     },
     sessions: sessionsSummary,
+    proxy: (function() {
+      try {
+        const pm = require('./proxy-manager.cjs');
+        return pm.getAllStatus();
+      } catch {
+        return undefined;
+      }
+    })(),
     meta: {
       scannedConversations: dbFiles.length,
       updatedAt: new Date().toISOString(),
@@ -1282,14 +1341,205 @@ function computeStats(force = false) {
 
   lastScanTime = Date.now();
   lastAggregatedStats = result;
+  lastAggregatedDir = agDir;
   return result;
 }
 
-function readSingleSession(sessionId) {
+function extractSessionPerformanceMetrics(dbOrSteps) {
+  let modelTimeMs = 0;
+  let toolTimeMs = 0;
+  let ttftSumMs = 0;
+  let ttftStepsCount = 0;
+  let roundsCount = 0;
+  let stepsCount = 0;
+  let responseMs = 0;
+  let responseTokens = 0;
+
+  let rows = [];
+  if (Array.isArray(dbOrSteps)) {
+    rows = dbOrSteps;
+  } else if (dbOrSteps && typeof dbOrSteps.prepare === 'function') {
+    try {
+      rows = dbOrSteps.prepare('SELECT idx, step_type, metadata, step_payload FROM steps ORDER BY idx ASC').all();
+    } catch {
+      rows = [];
+    }
+  }
+
+  for (const row of rows) {
+    const stepType = row.step_type;
+    if (stepType === 14) {
+      roundsCount++;
+      continue;
+    }
+
+    if (stepType === 15) {
+      stepsCount++;
+      if (!row.metadata) continue;
+      try {
+        const top = parseProtoFields(Buffer.from(row.metadata));
+        const sTs = top.get(1)?.[0] ? parseProtoFields(top.get(1)[0]) : null;
+        const fTs = top.get(8)?.[0] ? parseProtoFields(top.get(8)[0]) : (top.get(7)?.[0] ? parseProtoFields(top.get(7)[0]) : null);
+        const firstTs = top.get(6)?.[0] ? parseProtoFields(top.get(6)[0]) : null;
+
+        const startMs = sTs ? (Number(sTs.get(1)) || 0) * 1000 + (Number(sTs.get(2)) || 0) / 1e6 : 0;
+        const finishMs = fTs ? (Number(fTs.get(1)) || 0) * 1000 + (Number(fTs.get(2)) || 0) / 1e6 : 0;
+        const firstMs = firstTs ? (Number(firstTs.get(1)) || 0) * 1000 + (Number(firstTs.get(2)) || 0) / 1e6 : 0;
+
+        if (startMs > 0 && finishMs >= startMs) {
+          modelTimeMs += (finishMs - startMs);
+        }
+
+        // TTFT extraction: valid whenever first token arrives after start, regardless of fTs
+        if (startMs > 0 && firstMs >= startMs) {
+          const ttft = firstMs - startMs;
+          if (ttft < 300_000) {
+            ttftSumMs += ttft;
+            ttftStepsCount++;
+          }
+        }
+
+        const payload = row.step_payload ? parseProtoFields(Buffer.from(row.step_payload)) : null;
+        const plannerBuf = payload?.get(20)?.[0];
+        const usageBuf = top.get(9)?.[0];
+        if (!plannerBuf || !usageBuf) continue;
+        const planner = parseProtoFields(plannerBuf);
+        // Tool-call output cannot be separated reliably from text tokens in mixed steps.
+        if (!planner.get(1)?.[0]?.length || planner.has(7)) continue;
+        const usage = parseProtoFields(usageBuf);
+        const thinkingTokens = Number(usage.get(9) ?? 0);
+        const stepResponseTokens = Number(usage.get(10) ?? (Number(usage.get(3) ?? 0) - thinkingTokens));
+        const thinkingBuf = planner.get(11)?.[0];
+        const hasThinking = thinkingTokens > 0 || planner.has(3) || planner.has(16) || planner.has(5);
+        if (hasThinking && !thinkingBuf) continue;
+        const thinking = thinkingBuf ? parseProtoFields(thinkingBuf) : null;
+        const thinkingMs = thinking ? Number(thinking.get(1) ?? 0) * 1000 + Number(thinking.get(2) ?? 0) / 1e6 : 0;
+        // The host's thinking_duration includes the wait from created_at to the response phase.
+        const responseStartMs = Math.max(firstMs, startMs + thinkingMs);
+        const generationTs = top.get(7)?.[0] ? parseProtoFields(top.get(7)[0]) : fTs;
+        const generationEndMs = generationTs ? Number(generationTs.get(1) ?? 0) * 1000 + Number(generationTs.get(2) ?? 0) / 1e6 : 0;
+        if (startMs > 0 && firstMs >= startMs && finishMs >= generationEndMs && generationEndMs > responseStartMs
+          && Number.isFinite(thinkingMs) && thinkingMs >= 0 && Number.isFinite(stepResponseTokens) && stepResponseTokens > 0) {
+          responseMs += generationEndMs - responseStartMs;
+          responseTokens += stepResponseTokens;
+        }
+      } catch {}
+      continue;
+    }
+
+    if (stepType === 132) {
+      stepsCount++;
+      if (!row.metadata) continue;
+      try {
+        const top = parseProtoFields(Buffer.from(row.metadata));
+        const sTs = top.get(1)?.[0] ? parseProtoFields(top.get(1)[0]) : null;
+        const fTs = top.get(8)?.[0] ? parseProtoFields(top.get(8)[0]) : (top.get(7)?.[0] ? parseProtoFields(top.get(7)[0]) : null);
+
+        if (sTs && fTs) {
+          const startMs = (Number(sTs.get(1)) || 0) * 1000 + (Number(sTs.get(2)) || 0) / 1e6;
+          const finishMs = (Number(fTs.get(1)) || 0) * 1000 + (Number(fTs.get(2)) || 0) / 1e6;
+          if (startMs > 0 && finishMs >= startMs) {
+            const rawDuration = finishMs - startMs;
+            toolTimeMs += Math.min(180_000, rawDuration);
+          }
+        }
+      } catch {}
+    }
+  }
+
+  const rate = responseMs > 0 ? responseTokens / (responseMs / 1000) : 0;
+  const tps = rate > 0 ? Number(rate.toFixed(rate < 10 ? 1 : 0)) || null : null;
+
+  return {
+    rounds: Math.max(1, roundsCount),
+    steps: stepsCount,
+    tps,
+    modelDurationSec: modelTimeMs / 1000,
+    toolDurationSec: toolTimeMs / 1000,
+    ttftSec: ttftStepsCount > 0 ? (ttftSumMs / ttftStepsCount / 1000) : null,
+  };
+}
+
+function buildDshTelemetry({
+  sessionId,
+  isStreaming = false,
+  perf,
+  promptTokens = 0,
+  totalInput = 0,
+  totalCache = 0,
+  totalOutput = 0,
+}) {
+  const SYSTEM_BASELINE = 8200;
+  const TOOLS_BASELINE = 8300;
+  const BASELINE_SUM = SYSTEM_BASELINE + TOOLS_BASELINE; // 16500
+
+  let systemPromptTokens = 0;
+  let toolDefinitionTokens = 0;
+  let chatMessageTokens = 0;
+
+  if (promptTokens <= 0) {
+    systemPromptTokens = 0;
+    toolDefinitionTokens = 0;
+    chatMessageTokens = 0;
+  } else if (promptTokens < BASELINE_SUM) {
+    const scale = promptTokens / BASELINE_SUM;
+    systemPromptTokens = Math.round(SYSTEM_BASELINE * scale);
+    toolDefinitionTokens = Math.max(0, promptTokens - systemPromptTokens);
+    chatMessageTokens = 0;
+  } else {
+    systemPromptTokens = SYSTEM_BASELINE;
+    toolDefinitionTokens = TOOLS_BASELINE;
+    chatMessageTokens = Math.max(0, promptTokens - BASELINE_SUM);
+  }
+
+  const billedInput = totalInput + totalCache;
+  let cacheHitRatePct = null;
+  if (billedInput > 0) {
+    const rawPct = (totalCache / billedInput) * 100;
+    cacheHitRatePct = Math.round(rawPct);
+    if (totalInput > 0 && cacheHitRatePct >= 100) {
+      cacheHitRatePct = 99;
+    }
+  }
+
+  const limitTokens = 1048576; // 1M
+  const usedPct = promptTokens > 0 ? Math.min(100, Math.round((promptTokens / limitTokens) * 100)) : 0;
+  const totalTokens = totalInput + totalCache + totalOutput;
+
+  return {
+    sessionId,
+    isStreaming: Boolean(isStreaming),
+    session: {
+      rounds: perf.rounds,
+      steps: perf.steps,
+      tps: perf.tps,
+      modelDurationSec: perf.modelDurationSec,
+      toolDurationSec: perf.toolDurationSec,
+      ttftSec: perf.ttftSec,
+    },
+    token: {
+      totalTokens,
+      cacheHitRatePct,
+      uncachedInputTokens: totalInput,
+      cacheReadTokens: totalCache,
+      outputTokens: totalOutput,
+    },
+    context: {
+      usedTokens: promptTokens,
+      limitTokens,
+      usedPct,
+      systemPromptTokens,
+      toolDefinitionTokens,
+      chatMessageTokens,
+    },
+  };
+}
+
+function readSingleSession(sessionId, dataDir) {
   if (!sessionId || typeof sessionId !== 'string') return null;
   if (sessionId.includes('..') || sessionId.includes('/') || sessionId.includes('\\')) return null;
 
-  const agDir = getAntigravityDir();
+  const agDir = resolveAntigravityDir(dataDir);
   const filePath = path.join(agDir, 'conversations', `${sessionId}.db`);
   if (!fs.existsSync(filePath)) return null;
 
@@ -1324,7 +1574,7 @@ function readSingleSession(sessionId) {
     // Turn boundary mirrors computeStats: calls since the last user input step (type 14).
     let steps = [];
     try {
-      steps = db.prepare('SELECT idx, step_type, metadata FROM steps ORDER BY idx').all();
+      steps = db.prepare('SELECT idx, step_type, metadata, step_payload FROM steps ORDER BY idx').all();
     } catch (e) {
       steps = db.prepare('SELECT idx, step_type FROM steps ORDER BY idx').all();
     }
@@ -1345,9 +1595,20 @@ function readSingleSession(sessionId) {
 
     const lastUsage = usages.length > 0 ? usages[usages.length - 1] : null;
     const promptTokens = lastUsage ? lastUsage.inputTokens + lastUsage.cacheReadTokens : 0;
+    const perf = extractSessionPerformanceMetrics(steps);
+    const isRunning = readRunningSessions(agDir).has(sessionId);
+    const dshTelemetry = buildDshTelemetry({
+      sessionId,
+      isStreaming: isRunning,
+      perf,
+      promptTokens,
+      totalInput,
+      totalCache,
+      totalOutput,
+    });
     return {
       sessionId,
-      isRunning: readRunningSessions().has(sessionId),
+      isRunning,
       promptTokens,
       latestInput: lastUsage ? lastUsage.inputTokens : 0,
       latestCacheRead: lastUsage ? lastUsage.cacheReadTokens : 0,
@@ -1367,6 +1628,13 @@ function readSingleSession(sessionId) {
       turnStartedAt,
       compactionLimit: 256000,
       turnsCount: genRows.length,
+      rounds: perf.rounds,
+      steps: perf.steps,
+      tps: perf.tps,
+      modelDurationSec: perf.modelDurationSec,
+      toolDurationSec: perf.toolDurationSec,
+      ttftSec: perf.ttftSec,
+      dshTelemetry,
     };
   } catch (err) {
     return null;
@@ -1380,6 +1648,8 @@ function readSingleSession(sessionId) {
 module.exports = {
   computeStats,
   readSingleSession,
+  extractSessionPerformanceMetrics,
+  buildDshTelemetry,
   pairGenerationDates,
   decodeVarint,
   parseProtoFields,

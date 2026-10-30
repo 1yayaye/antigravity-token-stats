@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Language, TranslationKey, translations } from './translations';
-import { antigravityI18n } from './antigravity-ui-i18n';
+import { EVENT_LANGUAGE_CHANGED } from '../injection-contract.cjs';
 
 interface LanguageContextType {
   lang: Language;
@@ -28,7 +28,9 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode; initialLang
 
   const setLang = (newLang: Language) => {
     setLangState(newLang);
-    antigravityI18n.setLanguage(newLang);
+    // Host layers (e.g. the Antigravity desktop UI translation) follow the stats UI
+    // language through this event; the shared core owns no host code.
+    window.dispatchEvent(new CustomEvent(EVENT_LANGUAGE_CHANGED, { detail: { lang: newLang } }));
   };
 
   const toggleLang = () => {
@@ -43,8 +45,8 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode; initialLang
         setLangState(detail.lang);
       }
     };
-    window.addEventListener('antigravity:language-changed', onExternalChange);
-    return () => window.removeEventListener('antigravity:language-changed', onExternalChange);
+    window.addEventListener(EVENT_LANGUAGE_CHANGED, onExternalChange);
+    return () => window.removeEventListener(EVENT_LANGUAGE_CHANGED, onExternalChange);
   }, [lang]);
 
   const t = (key: TranslationKey): string => {

@@ -5,8 +5,10 @@ import { TokenActivityHeatmap } from './TokenActivityHeatmap';
 import { ActivityInsightsCard } from './ActivityInsightsCard';
 import { TokenBreakdownCard } from './TokenBreakdownCard';
 import { SubscriptionQuotaCard } from './SubscriptionQuotaCard';
+import { ProxyStatusCard } from './ProxyStatusCard';
 import { AggregatedStats, TimeRange } from '../../domain/stats.types';
 import { fetchRawStats, filterStatsByRange, EMPTY_STATS, detectAntigravityTheme, syncThemeToElement } from '../../services/stats-service';
+import { EVENT_STATS_UPDATED } from '../../injection-contract.cjs';
 
 export const StatsView: React.FC = () => {
   const [rawStats, setRawStats] = useState<AggregatedStats>(EMPTY_STATS);
@@ -86,9 +88,9 @@ export const StatsView: React.FC = () => {
       }
     };
 
-    window.addEventListener('antigravity:stats-updated', handleStatsUpdated);
+    window.addEventListener(EVENT_STATS_UPDATED, handleStatsUpdated);
     return () => {
-      window.removeEventListener('antigravity:stats-updated', handleStatsUpdated);
+      window.removeEventListener(EVENT_STATS_UPDATED, handleStatsUpdated);
     };
   }, [loadData]);
 
@@ -120,6 +122,7 @@ export const StatsView: React.FC = () => {
 
         <KpiBanner stats={stats} />
         <SubscriptionQuotaCard stats={rawStats} />
+        <ProxyStatusCard proxy={rawStats.proxy} />
         <TokenBreakdownCard breakdown={stats.tokenBreakdown} />
         <TokenActivityHeatmap cells={rawStats.activity.heatmap} dailyStats={rawStats.activity.dailyStats} />
         <ActivityInsightsCard insights={rawStats.insights} kpis={rawStats.kpis} />

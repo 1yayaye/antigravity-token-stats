@@ -1,11 +1,14 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import './index.css';
-import { StatsView } from './components/stats/StatsView';
-import { LanguageProvider } from './i18n/LanguageContext';
-import { detectAntigravityTheme, syncThemeToElement } from './services/stats-service';
+import '../../../src/index.css';
+import { StatsView } from '../../../src/components/stats/StatsView';
+import { LanguageProvider } from '../../../src/i18n/LanguageContext';
+import { detectAntigravityTheme, syncThemeToElement } from '../../../src/services/stats-service';
 import { antigravityI18n } from './i18n/antigravity-ui-i18n';
-import './domain/stats.types';
+import { DshStatusBar } from '../../../src/components/dsh/DshStatusBar';
+import type { DshTelemetryData } from '../../../src/types/dsh-telemetry';
+import { CONTAINER_STATUSBAR_ID, EVENT_LANGUAGE_CHANGED, EVENT_REQUEST_SYNC, EVENT_STATS_UPDATED, IPC_REQUEST_SYNC, WINDOW_SYNC_BRIDGE } from '../../../src/injection-contract.cjs';
+import '../../../src/domain/stats.types';
 
 let toastTimeout: ReturnType<typeof setTimeout> | null = null;
 let toastFadeTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -276,19 +279,8 @@ export function closeStatsModal() {
   }
 }
 
-let activePopoverEl: HTMLElement | null = null;
-let popoverHideTimeout: ReturnType<typeof setTimeout> | null = null;
-
 export function removeContextPopover() {
-  if (popoverHideTimeout) {
-    clearTimeout(popoverHideTimeout);
-    popoverHideTimeout = null;
-  }
-  if (activePopoverEl) {
-    activePopoverEl.remove();
-    activePopoverEl = null;
-  }
-  document.querySelectorAll('#antigravity-context-popover').forEach(el => el.remove());
+  document.querySelectorAll('#antigravity-context-popover, #antigravity-dsh-popover-container').forEach(el => el.remove());
 }
 
 export function getCurrentConversationId(): string | null {
@@ -305,21 +297,24 @@ export function requestDataSync(sessionId?: string | null) {
   lastSyncRequestTime = now;
 
   // Tier 1: ContextBridge Preload bridge
-  if (typeof window !== 'undefined' && window.__ANTIGRAVITY_SYNC_BRIDGE__ && typeof window.__ANTIGRAVITY_SYNC_BRIDGE__.requestSync === 'function') {
-    window.__ANTIGRAVITY_SYNC_BRIDGE__.requestSync({ sessionId: targetSessionId }).catch(() => {});
+  const syncBridge = typeof window !== 'undefined'
+    ? (window as unknown as Record<string, Window['__ANTIGRAVITY_SYNC_BRIDGE__']>)[WINDOW_SYNC_BRIDGE]
+    : undefined;
+  if (syncBridge && typeof syncBridge.requestSync === 'function') {
+    syncBridge.requestSync({ sessionId: targetSessionId }).catch(() => {});
   }
   // Tier 2: Direct Electron IPC if available
   else if (typeof window !== 'undefined' && typeof window.require === 'function') {
     try {
       const electron = window.require('electron');
       if (electron?.ipcRenderer) {
-        electron.ipcRenderer.invoke('antigravity:request-sync', { sessionId: targetSessionId }).catch(() => {});
+        electron.ipcRenderer.invoke(IPC_REQUEST_SYNC, { sessionId: targetSessionId }).catch(() => {});
       }
     } catch {}
   }
   // Tier 3: Event fallback
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('antigravity:request-sync', { detail: { sessionId: targetSessionId } }));
+    window.dispatchEvent(new CustomEvent(EVENT_REQUEST_SYNC, { detail: { sessionId: targetSessionId } }));
   }
 }
 
@@ -341,18 +336,156 @@ export function checkGenerationState(): boolean {
 const PILL_HEARTBEAT_MS = 1000;
 let pillHeartbeat: ReturnType<typeof setInterval> | null = null;
 
+export function mountDshStatusBar(container: HTMLElement) {
+  if (!container) return;
+
+  const sessionId = getCurrentConversationId();
+  const stats = window.__ANTIGRAVITY_STATS__;
+  const session = sessionId && stats?.sessions ? stats.sessions[sessionId] : null;
+  const isGenerating = Boolean(session?.isRunning) || (Boolean(sessionId) && checkGenerationState());
+
+  const promptTokens = session ? session.promptTokens : 0;
+  const totalInput = session?.totalInputTokens || 0;
+  const totalCache = session?.totalCacheReadTokens || 0;
+  const totalOutput = session?.totalOutputTokens || 0;
+  const totalTokens = session?.totalTokens || (totalInput + totalCache + totalOutput);
+
+  const billedInput = totalInput + totalCache;
+  let cacheHitRatePct: number | null = null;
+  if (billedInput > 0) {
+    cacheHitRatePct = Math.round((totalCache / billedInput) * 100);
+    if (totalInput > 0 && cacheHitRatePct >= 100) cacheHitRatePct = 99;
+  }
+
+  const SYSTEM_BASELINE = 8200;
+  const TOOLS_BASELINE = 8300;
+  const BASELINE_SUM = SYSTEM_BASELINE + TOOLS_BASELINE;
+  let systemPromptTokens = 0;
+  let toolDefinitionTokens = 0;
+  let chatMessageTokens = 0;
+
+  if (promptTokens <= 0) {
+    systemPromptTokens = 0;
+    toolDefinitionTokens = 0;
+    chatMessageTokens = 0;
+  } else if (promptTokens < BASELINE_SUM) {
+    const scale = promptTokens / BASELINE_SUM;
+    systemPromptTokens = Math.round(SYSTEM_BASELINE * scale);
+    toolDefinitionTokens = Math.max(0, promptTokens - systemPromptTokens);
+    chatMessageTokens = 0;
+  } else {
+    systemPromptTokens = SYSTEM_BASELINE;
+    toolDefinitionTokens = TOOLS_BASELINE;
+    chatMessageTokens = Math.max(0, promptTokens - BASELINE_SUM);
+  }
+
+  const usedPct = promptTokens > 0 ? Math.min(100, Math.round((promptTokens / 1048576) * 100)) : 0;
+  const effectiveTps = session?.tps ?? null;
+
+  const telemetry: DshTelemetryData = session?.dshTelemetry ? {
+    ...session.dshTelemetry,
+    isStreaming: isGenerating,
+    session: {
+      ...session.dshTelemetry.session,
+      tps: effectiveTps,
+    },
+  } : {
+    sessionId: sessionId || '',
+    isStreaming: isGenerating,
+    session: {
+      rounds: session?.rounds || 1,
+      steps: session?.steps || session?.turnsCount || session?.turnCalls || 0,
+      tps: effectiveTps,
+      modelDurationSec: session?.modelDurationSec || 0,
+      toolDurationSec: session?.toolDurationSec || 0,
+      ttftSec: session?.ttftSec ?? null,
+    },
+    token: {
+      totalTokens,
+      cacheHitRatePct,
+      uncachedInputTokens: totalInput,
+      cacheReadTokens: totalCache,
+      outputTokens: totalOutput,
+    },
+    context: {
+      usedTokens: promptTokens,
+      limitTokens: 1048576,
+      usedPct,
+      systemPromptTokens,
+      toolDefinitionTokens,
+      chatMessageTokens,
+    },
+  };
+
+  const theme = detectAntigravityTheme();
+  const lang = antigravityI18n.getLanguage();
+
+  if (window.__ANTIGRAVITY_STATUSBAR_ROOT__ && window.__ANTIGRAVITY_STATUSBAR_CONTAINER__ === container && container.isConnected) {
+    window.__ANTIGRAVITY_STATUSBAR_ROOT__.render(
+      <React.StrictMode>
+        <div className={`antigravity-dsh-container ${theme}`}>
+          <DshStatusBar
+            telemetry={telemetry}
+            lang={lang}
+            theme={theme}
+            onOpenModal={openStatsModal}
+          />
+        </div>
+      </React.StrictMode>
+    );
+    return;
+  }
+
+  unmountDshStatusBar();
+
+  container.innerHTML = '';
+  const root = ReactDOM.createRoot(container);
+  window.__ANTIGRAVITY_STATUSBAR_ROOT__ = root;
+  window.__ANTIGRAVITY_STATUSBAR_CONTAINER__ = container;
+
+  root.render(
+    <React.StrictMode>
+      <div className={`antigravity-dsh-container ${theme}`}>
+        <DshStatusBar
+          telemetry={telemetry}
+          lang={lang}
+          theme={theme}
+          onOpenModal={openStatsModal}
+        />
+      </div>
+    </React.StrictMode>
+  );
+}
+
+export function unmountDshStatusBar() {
+  if (window.__ANTIGRAVITY_STATUSBAR_ROOT__) {
+    try {
+      window.__ANTIGRAVITY_STATUSBAR_ROOT__.unmount();
+    } catch (e) {
+      console.warn('[TokenStats] Error unmounting status bar root:', e);
+    }
+    window.__ANTIGRAVITY_STATUSBAR_ROOT__ = null;
+  }
+  window.__ANTIGRAVITY_STATUSBAR_CONTAINER__ = null;
+}
+
+export function refreshStatusBar() {
+  const container = document.getElementById(CONTAINER_STATUSBAR_ID);
+  if (container) {
+    mountDshStatusBar(container);
+  }
+}
+
 function refreshContextPill() {
-  const pill = document.getElementById('antigravity-context-usage-pill');
-  if (!pill) {
+  const container = document.getElementById(CONTAINER_STATUSBAR_ID) || document.getElementById('antigravity-context-usage-pill');
+  if (!container) {
     if (pillHeartbeat) clearInterval(pillHeartbeat);
     pillHeartbeat = null;
     return;
   }
   const sessionId = getCurrentConversationId();
-  updateContextPillContent(pill, sessionId);
   if (sessionId) requestDataSync(sessionId);
-  const btn = pill.querySelector('button') as HTMLButtonElement | null;
-  if (btn && activePopoverEl) renderContextPopover(btn, detectAntigravityTheme() === 'dark');
+  refreshStatusBar();
 }
 
 export function startContextPillHeartbeat() {
@@ -366,284 +499,7 @@ export function checkConversationRoute() {
   if (current !== lastKnownConversationId) {
     lastKnownConversationId = current;
     requestDataSync(current);
-  }
-}
-
-function scheduleHidePopover() {
-  if (popoverHideTimeout) clearTimeout(popoverHideTimeout);
-  popoverHideTimeout = setTimeout(() => {
-    const popover = document.getElementById('antigravity-context-popover');
-    if (popover) {
-      popover.style.opacity = '0';
-      popover.style.transform = 'translateY(6px)';
-      popover.style.pointerEvents = 'none';
-      setTimeout(() => {
-        if (popover && popover.style.opacity === '0') {
-          popover.remove();
-          activePopoverEl = null;
-        }
-      }, 200);
-    }
-  }, 150);
-}
-
-function renderContextPopover(btn: HTMLButtonElement, isDark: boolean) {
-  if (popoverHideTimeout) {
-    clearTimeout(popoverHideTimeout);
-    popoverHideTimeout = null;
-  }
-
-  let popover = document.getElementById('antigravity-context-popover') as HTMLElement | null;
-  if (!popover) {
-    popover = document.createElement('div');
-    popover.id = 'antigravity-context-popover';
-    document.body.appendChild(popover);
-  }
-  activePopoverEl = popover;
-
-  const rect = btn.getBoundingClientRect();
-  const sessionId = getCurrentConversationId();
-  const stats = window.__ANTIGRAVITY_STATS__;
-  const session = sessionId && stats?.sessions ? stats.sessions[sessionId] : null;
-
-  const isGenerating = Boolean(session?.isRunning) || (Boolean(sessionId) && checkGenerationState());
-  // Context occupancy is the prompt of the last completed request; a reply still streaming has
-  // no usage row yet, so the number holds still while "生成中" is shown.
-  const currentTokens = session ? session.promptTokens : 0;
-  const isLoading = currentTokens === 0;
-  const turnCalls = session?.turnCalls || 0;
-  const turnTokens = session?.turnTokens || 0;
-  const turnElapsed = isGenerating && session?.turnStartedAt
-    ? Math.max(0, Math.round((Date.now() - session.turnStartedAt) / 1000))
-    : 0;
-
-  const compactionLimit = session?.compactionLimit || 256000;
-  const pct = isLoading ? 0 : Math.min(100, (currentTokens / compactionLimit) * 100);
-
-  let statusColor = '#10b981';
-  if (isGenerating) statusColor = '#38bdf8';
-  else if (isLoading) statusColor = '#94a3b8';
-  else if (pct > 85) statusColor = '#f43f5e';
-  else if (pct > 55) statusColor = '#f59e0b';
-
-  const remainingTokens = Math.max(0, compactionLimit - currentTokens);
-  const cacheTokens = session ? session.latestCacheRead : 0;
-  const inputTokens = session ? session.latestInput : 0;
-  const outputTokens = session ? session.latestOutput : 0;
-  const thinkingTokens = session ? session.latestThinking : 0;
-  const responseTokens = session ? session.latestResponse : 0;
-  const cacheRate = currentTokens > 0 ? ((cacheTokens / currentTokens) * 100).toFixed(1) : '0.0';
-
-  const wasOpen = popover.style.opacity === '1';
-  popover.style.cssText = `
-    position: fixed;
-    bottom: ${Math.max(10, window.innerHeight - rect.top + 8)}px;
-    right: ${Math.max(10, window.innerWidth - rect.right)}px;
-    z-index: 9999999;
-    width: 280px;
-    border-radius: 12px;
-    padding: 14px;
-    font-size: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.6), 0 0 0 1px ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'};
-    background: ${isDark ? 'rgba(24, 26, 32, 0.95)' : 'rgba(255, 255, 255, 0.98)'};
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    color: ${isDark ? '#f1f4f9' : '#0f172a'};
-    font-family: system-ui, -apple-system, sans-serif;
-    opacity: ${wasOpen ? '1' : '0'};
-    transform: translateY(${wasOpen ? '0' : '6px'});
-    transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-    pointer-events: auto;
-  `;
-
-  const tagText = isGenerating ? '生成中' : isLoading ? '等待首次调用' : 'Ground Truth';
-  const tagColor = isGenerating ? '#38bdf8' : isLoading ? '#94a3b8' : '#60a5fa';
-  const tagBg = isGenerating ? 'rgba(56, 189, 248, 0.12)' : isLoading ? 'rgba(148, 163, 184, 0.12)' : 'rgba(59, 130, 246, 0.12)';
-  const tagBorder = isGenerating ? 'rgba(56, 189, 248, 0.25)' : isLoading ? 'rgba(148, 163, 184, 0.25)' : 'rgba(59, 130, 246, 0.25)';
-
-  popover.innerHTML = `
-    <div style="display: flex; align-items: center; justify-content: space-between; padding-bottom: 8px; border-bottom: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'};">
-      <div style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
-        <span style="width: 8px; height: 8px; border-radius: 9999px; background-color: ${statusColor}; box-shadow: 0 0 6px ${statusColor};"></span>
-        <span>当前会话上下文详情</span>
-      </div>
-      <span style="font-size: 10px; padding: 1px 6px; border-radius: 4px; font-family: monospace; background: ${tagBg}; color: ${tagColor}; border: 1px solid ${tagBorder};">${tagText}</span>
-    </div>
-    <div style="display: flex; flex-direction: column; gap: 6px;">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <span style="color: ${isDark ? '#94a3b8' : '#64748b'};">上下文占用 (上次请求)</span>
-        <span style="font-family: monospace; font-weight: 600; color: ${isDark ? '#ffffff' : '#0f172a'};">${isLoading ? (isGenerating ? '生成中...' : '等待首次调用') : currentTokens.toLocaleString() + ' Tokens'}</span>
-      </div>
-      <div style="width: 100%; height: 6px; border-radius: 9999px; overflow: hidden; display: flex; background: ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)'};">
-        <div style="height: 100%; width: ${pct}%; background-color: ${statusColor}; transition: width 0.3s ease;"></div>
-      </div>
-      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: ${isDark ? '#94a3b8' : '#64748b'};">
-        <span>距离自动压缩 (~256k)</span>
-        <span style="font-family: monospace; font-weight: 600; color: ${statusColor};">${isLoading ? '—' : `剩余 ~${(remainingTokens / 1000).toFixed(1)}k (${pct.toFixed(0)}%)`}</span>
-      </div>
-    </div>
-    <div style="border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 5px; font-size: 11px; background: ${isDark ? 'rgba(0, 0, 0, 0.25)' : 'rgba(0, 0, 0, 0.03)'}; border: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)'};">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <span style="display: flex; align-items: center; gap: 5px; color: ${isDark ? '#94a3b8' : '#64748b'};">
-          <span style="width: 6px; height: 6px; border-radius: 9999px; background: #a855f7;"></span>
-          Prompt Cache 命中:
-        </span>
-        <span style="font-family: monospace; color: #c084fc;">${cacheTokens.toLocaleString()} (${cacheRate}%)</span>
-      </div>
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <span style="display: flex; align-items: center; gap: 5px; color: ${isDark ? '#94a3b8' : '#64748b'};">
-          <span style="width: 6px; height: 6px; border-radius: 9999px; background: #3b82f6;"></span>
-          增量新输入 Input:
-        </span>
-        <span style="font-family: monospace; color: #60a5fa;">${inputTokens.toLocaleString()}</span>
-      </div>
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <span style="display: flex; align-items: center; gap: 5px; color: ${isDark ? '#94a3b8' : '#64748b'};">
-          <span style="width: 6px; height: 6px; border-radius: 9999px; background: #10b981;"></span>
-          上次请求输出 (思考 / 回复):
-        </span>
-        <span style="font-family: monospace; color: #34d399;">${outputTokens.toLocaleString()} (${thinkingTokens} / ${responseTokens})</span>
-      </div>
-      <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 4px; border-top: 1px dashed ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'};">
-        <span style="display: flex; align-items: center; gap: 5px; color: ${isDark ? '#94a3b8' : '#64748b'};">
-          <span style="width: 6px; height: 6px; border-radius: 9999px; background: #38bdf8;"></span>
-          ${isGenerating ? '本轮累计' : '上轮累计'}:
-        </span>
-        <span style="font-family: monospace; color: #7dd3fc;">${turnCalls} 次调用 · ${turnTokens.toLocaleString()}${turnElapsed > 0 ? ` · ${turnElapsed}s` : ''}</span>
-      </div>
-    </div>
-    <div style="padding-top: 4px; display: flex; align-items: center; justify-content: space-between; font-size: 10px; border-top: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)'}; color: ${isDark ? '#64748b' : '#94a3b8'};">
-      <span>模型上下文 1M · 自动压缩 256k</span>
-      <span>可输入 <kbd style="padding: 1px 4px; border-radius: 4px; font-family: monospace; background: ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}; color: ${isDark ? '#cbd5e1' : '#475569'};">/compact</kbd></span>
-    </div>
-  `;
-
-  if (!wasOpen) {
-    requestAnimationFrame(() => {
-      popover!.style.opacity = '1';
-      popover!.style.transform = 'translateY(0)';
-    });
-  }
-
-  popover.onmouseenter = () => {
-    if (popoverHideTimeout) {
-      clearTimeout(popoverHideTimeout);
-      popoverHideTimeout = null;
-    }
-  };
-  popover.onmouseleave = scheduleHidePopover;
-}
-
-function ensurePillStructure(pillContainer: HTMLElement, isDark: boolean) {
-  let btn = pillContainer.querySelector('button') as HTMLButtonElement | null;
-  if (!btn) {
-    pillContainer.innerHTML = `
-      <button type="button" class="antigravity-pill-btn"
-        style="display: flex; cursor: pointer; align-items: center; height: 28px; gap: 6px; border-radius: 9999px; padding-left: 8px; padding-right: 8px; font-size: 12px; color: ${isDark ? '#cbd5e1' : '#475569'}; background: ${isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)'}; border: 1px solid ${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)'}; user-select: none; outline: none; transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.2s ease; shrink: 0;"
-        onmouseover="this.style.background='${isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)'}';"
-        onmouseout="this.style.background='${isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)'}';">
-        <div class="antigravity-pill-icon" style="position: relative; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-          <svg width="14" height="14" viewBox="0 0 16 16" style="transform: rotate(-90deg);">
-            <circle class="antigravity-pill-bg" cx="8" cy="8" r="6" stroke="${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'}" stroke-width="2" fill="none" />
-            <circle class="antigravity-pill-fg" cx="8" cy="8" r="6" stroke="#10b981" stroke-width="2" stroke-linecap="round" fill="none"
-              stroke-dasharray="37.7" stroke-dashoffset="37.7"
-              style="transition: stroke-dashoffset 0.25s ease, stroke 0.25s ease;" />
-          </svg>
-        </div>
-        <span class="antigravity-pill-text" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; font-weight: 600; letter-spacing: -0.01em; color: ${isDark ? '#f1f4f9' : '#0f172a'};">--</span>
-      </button>
-    `;
-    btn = pillContainer.querySelector('button') as HTMLButtonElement;
-    btn.onmouseenter = () => renderContextPopover(btn!, detectAntigravityTheme() === 'dark');
-    btn.onmouseleave = scheduleHidePopover;
-    btn.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      removeContextPopover();
-      openStatsModal();
-    };
-  }
-
-  const iconDiv = btn.querySelector('.antigravity-pill-icon') as HTMLDivElement;
-  const bgCircle = btn.querySelector('.antigravity-pill-bg') as SVGCircleElement;
-  const progressCircle = btn.querySelector('.antigravity-pill-fg') as SVGCircleElement;
-  const textSpan = btn.querySelector('.antigravity-pill-text') as HTMLSpanElement;
-
-  return { btn, iconDiv, bgCircle, progressCircle, textSpan };
-}
-
-export function updateContextPillContent(pillContainer: HTMLElement, sessionId: string | null) {
-  const stats = window.__ANTIGRAVITY_STATS__;
-  const session = sessionId && stats?.sessions ? stats.sessions[sessionId] : null;
-
-  const isGenerating = Boolean(session?.isRunning) || (Boolean(sessionId) && checkGenerationState());
-  // Exact value of the last completed request; no extrapolation while the next one streams.
-  const currentTokens = session ? session.promptTokens : 0;
-  const isLoading = currentTokens === 0;
-
-  const compactionLimit = session?.compactionLimit || 256000;
-  const pct = isLoading ? 0 : Math.min(100, (currentTokens / compactionLimit) * 100);
-
-  let statusColor = '#10b981'; // emerald (<55%)
-  if (isGenerating) {
-    statusColor = '#38bdf8'; // sky blue while a call is in flight
-  } else if (isLoading) {
-    statusColor = '#94a3b8'; // muted gray, nothing completed yet
-  } else if (pct > 85) {
-    statusColor = '#f43f5e'; // rose (>85%)
-  } else if (pct > 55) {
-    statusColor = '#f59e0b'; // amber (55%-85%)
-  }
-
-  const radius = 6;
-  const circumference = 2 * Math.PI * radius; // 37.6991
-  const strokeDashoffset = isLoading ? circumference : circumference - (pct / 100) * circumference;
-
-  const displayTokens = isLoading
-    ? '--'
-    : currentTokens < 1000
-      ? `${currentTokens}`
-      : currentTokens < 1000000
-        ? `${(currentTokens / 1000).toFixed(1)}k`
-        : `${(currentTokens / 1000000).toFixed(2)}M`;
-
-  const isDark = detectAntigravityTheme() === 'dark';
-  const { btn, iconDiv, progressCircle, textSpan } = ensurePillStructure(pillContainer, isDark);
-
-  const ariaLabel = `会话上下文用量: ${displayTokens}${isGenerating ? ' (生成中)' : ''}`;
-  if (btn.getAttribute('aria-label') !== ariaLabel) {
-    btn.setAttribute('aria-label', ariaLabel);
-  }
-
-  if (textSpan.textContent !== displayTokens) {
-    textSpan.textContent = displayTokens;
-  }
-
-  const targetDasharray = isLoading ? '3, 3' : circumference.toFixed(1);
-  if (progressCircle.getAttribute('stroke-dasharray') !== targetDasharray) {
-    progressCircle.setAttribute('stroke-dasharray', targetDasharray);
-  }
-
-  const targetOffset = strokeDashoffset.toFixed(1);
-  if (progressCircle.getAttribute('stroke-dashoffset') !== targetOffset) {
-    progressCircle.setAttribute('stroke-dashoffset', targetOffset);
-  }
-
-  if (progressCircle.getAttribute('stroke') !== statusColor) {
-    progressCircle.setAttribute('stroke', statusColor);
-  }
-
-  if (isGenerating) {
-    iconDiv.style.animation = 'antigravity-pill-spin 3s linear infinite';
-    btn.style.borderColor = isDark ? 'rgba(56, 189, 248, 0.4)' : 'rgba(14, 165, 233, 0.4)';
-    btn.style.boxShadow = '0 0 6px rgba(56, 189, 248, 0.15)';
-  } else {
-    iconDiv.style.animation = 'none';
-    btn.style.borderColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)';
-    btn.style.boxShadow = 'none';
+    refreshStatusBar();
   }
 }
 
@@ -654,9 +510,10 @@ export function initAntigravitySettingsInjector() {
     window.__ANTIGRAVITY_OBSERVER__ = null;
   }
   unmountStats();
+  unmountDshStatusBar();
 
   // Clean up any stale misplaced containers, buttons, and toasts from prior injections
-  document.querySelectorAll('#antigravity-stats-nav-btn, #antigravity-stats-sidebar-btn, #antigravity-stats-content, #antigravity-stats-settings-content, #antigravity-stats-modal-overlay, #antigravity-stats-toast, #antigravity-context-usage-pill').forEach(el => el.remove());
+  document.querySelectorAll('#antigravity-stats-nav-btn, #antigravity-stats-sidebar-btn, #antigravity-stats-content, #antigravity-stats-settings-content, #antigravity-stats-modal-overlay, #antigravity-stats-toast, #antigravity-context-usage-pill, #antigravity-dsh-statusbar-container, #antigravity-dsh-popover-container').forEach(el => el.remove());
 
   // Listen for Esc key to close modal & Alt+T to toggle
   if (window.__ANTIGRAVITY_KEY_HANDLER__) {
@@ -811,20 +668,19 @@ export function initAntigravitySettingsInjector() {
       existingSidebarBtn.remove();
     }
 
-    // 2. Hook into Turbo button in the chat input footer (Context Usage Widget)
+    // 2. Hook into Turbo button in the chat input footer (DSH Status Bar)
     const turboBtn = document.querySelector('button[data-testid="permissions-selector-trigger"]') as HTMLElement | null;
     if (turboBtn && turboBtn.parentElement) {
       const parent = turboBtn.parentElement;
       if (parent.contains(turboBtn)) {
-        let pill = parent.querySelector('#antigravity-context-usage-pill') as HTMLElement | null;
-        if (!pill) {
-          pill = document.createElement('div');
-          pill.id = 'antigravity-context-usage-pill';
-          pill.className = 'relative inline-flex items-center';
-          pill.style.cssText = 'position: relative; display: inline-flex; align-items: center;';
-          turboBtn.before(pill);
-          updateContextPillContent(pill, getCurrentConversationId());
+        let container = parent.querySelector(`#${CONTAINER_STATUSBAR_ID}`) as HTMLElement | null;
+        if (!container) {
+          container = document.createElement('div');
+          container.id = CONTAINER_STATUSBAR_ID;
+          container.className = 'relative inline-flex items-center';
+          turboBtn.before(container);
         }
+        mountDshStatusBar(container);
         startContextPillHeartbeat();
       }
     }
@@ -844,10 +700,16 @@ export function initAntigravitySettingsInjector() {
 
   if (!window.__ANTIGRAVITY_STATS_LISTENER__) {
     window.__ANTIGRAVITY_STATS_LISTENER__ = true;
-    window.addEventListener('antigravity:stats-updated', () => {
-      const pill = document.getElementById('antigravity-context-usage-pill');
-      if (pill) {
-        updateContextPillContent(pill, getCurrentConversationId());
+    window.addEventListener(EVENT_STATS_UPDATED, () => {
+      refreshStatusBar();
+    });
+
+    // Host UI translation follows the stats UI language. The guard stops the echo
+    // loop: antigravityI18n.setLanguage re-dispatches this same event.
+    window.addEventListener(EVENT_LANGUAGE_CHANGED, (e) => {
+      const detail = (e as CustomEvent<{ lang?: string }>).detail;
+      if (detail?.lang && antigravityI18n.getLanguage() !== detail.lang) {
+        antigravityI18n.setLanguage(detail.lang as 'en' | 'zh');
       }
     });
 
@@ -886,6 +748,8 @@ export const showToast = showStatsToast;
 export const closeToast = removeStatsToast;
 export const init = initAntigravitySettingsInjector;
 export const i18n = antigravityI18n;
+export const mountStatusBar = mountDshStatusBar;
+export const unmountStatusBar = unmountDshStatusBar;
 
 // Automatically initialize when loaded into the renderer
 if (typeof window !== 'undefined') {
@@ -905,6 +769,11 @@ if (typeof window !== 'undefined') {
     init: initAntigravitySettingsInjector,
     initAntigravitySettingsInjector,
     i18n: antigravityI18n,
+    mountStatusBar: mountDshStatusBar,
+    mountDshStatusBar,
+    unmountStatusBar: unmountDshStatusBar,
+    unmountDshStatusBar,
+    refreshStatusBar,
   };
   window.AntigravityStats = api;
   // Delay assignment after module evaluation in case Rollup re-assigns global

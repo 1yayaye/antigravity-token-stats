@@ -1,6 +1,9 @@
 param(
   [switch]$Dev,
-  [switch]$Force
+  [switch]$Force,
+  [switch]$NoProxy,
+  [int]$ProxyPort = 7890,
+  [string]$ProxyType = 'socks5'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -65,7 +68,14 @@ Write-Host "[2/3] Building the injection bundle..." -ForegroundColor Yellow
 if ($LASTEXITCODE -ne 0) { Fail 'The bundle build failed.' }
 
 Write-Host "[3/3] Patching Antigravity app.asar..." -ForegroundColor Yellow
-& $npm.Source run patch
+$patchArgs = @()
+if ($NoProxy) {
+  $patchArgs += "--no-proxy"
+} else {
+  $patchArgs += "--proxy-port=$ProxyPort"
+  $patchArgs += "--proxy-type=$ProxyType"
+}
+& $npm.Source run patch -- $patchArgs
 if ($LASTEXITCODE -ne 0) { Fail 'app.asar patch failed. Make sure Antigravity is closed before installing.' }
 
 if ($Dev) {

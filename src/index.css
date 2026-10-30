@@ -64,6 +64,57 @@
   --heat-4: #1d4ed8;
   --pill-active: #e2e8f0;
 }
+
+/* DeepSeek Harness Scoped Design Tokens */
+.antigravity-dsh-container,
+.antigravity-dsh-statusbar,
+.antigravity-dsh-popover,
+.antigravity-dsh-container.dark,
+.antigravity-dsh-statusbar.dark,
+.antigravity-dsh-popover.dark {
+  --dsh-statusbar-bg: transparent;
+  --dsh-statusbar-border: transparent;
+  --dsh-statusbar-hover: rgba(255, 255, 255, 0.08);
+  --dsh-statusbar-height: 28px;
+
+  --dsh-card-bg: #25262b;
+  --dsh-card-border: rgba(255, 255, 255, 0.08);
+  --dsh-card-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+  --dsh-card-radius: 14px;
+  --dsh-card-width: 320px;
+
+  --dsh-text-primary: #ffffff;
+  --dsh-text-secondary: #d1d5db;
+  --dsh-text-muted: #9ca3af;
+  --dsh-divider: rgba(255, 255, 255, 0.08);
+
+  --dsh-seg-system-prompt: #9ca3af;
+  --dsh-seg-tool-definitions: #a855f7;
+  --dsh-seg-chat-messages: #3b82f6;
+  --dsh-seg-track: #38393e;
+}
+
+.antigravity-dsh-container.light,
+.antigravity-dsh-statusbar.light,
+.antigravity-dsh-popover.light {
+  --dsh-statusbar-bg: transparent;
+  --dsh-statusbar-border: transparent;
+  --dsh-statusbar-hover: rgba(0, 0, 0, 0.06);
+
+  --dsh-card-bg: #ffffff;
+  --dsh-card-border: rgba(0, 0, 0, 0.1);
+  --dsh-card-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+
+  --dsh-text-primary: #18181b;
+  --dsh-text-secondary: #3f3f46;
+  --dsh-text-muted: #71717a;
+  --dsh-divider: rgba(0, 0, 0, 0.08);
+
+  --dsh-seg-system-prompt: #9ca3af;
+  --dsh-seg-tool-definitions: #a855f7;
+  --dsh-seg-chat-messages: #3b82f6;
+  --dsh-seg-track: #e4e4e7;
+}
 .stats-view *, .stats-view *::before, .stats-view *::after { box-sizing: border-box; }
 :where(.stats-view, .stats-view *) { border: 0 solid var(--card-border); }
 .stats-view dd, .stats-view dl { margin: 0; }

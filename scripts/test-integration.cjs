@@ -16,8 +16,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const asar = require('@electron/asar');
-const { patch, findAntigravityExe, safeAtomicReplace, safeReplaceDirectory: safeReplacePatchDirectory } = require('./patch-antigravity.cjs');
-const { unpatch } = require('./unpatch-antigravity.cjs');
+const { patch, findAntigravityExe, safeAtomicReplace, safeReplaceDirectory: safeReplacePatchDirectory } = require('../hosts/antigravity/scripts/patch-antigravity.cjs');
+const { unpatch } = require('../hosts/antigravity/scripts/unpatch-antigravity.cjs');
+const contract = require('../src/injection-contract.cjs');
 
 const TESTS = [];
 let passCount = 0;
@@ -86,7 +87,7 @@ test('Safe directory replacement preserves the original tree after a failed swit
 });
 
 test('Release installer requires system Node and has no Electron runtime fallback', () => {
-  const releaseCode = fs.readFileSync(path.join(__dirname, 'package-release.cjs'), 'utf8');
+  const releaseCode = fs.readFileSync(path.join(__dirname, '..', 'hosts', 'antigravity', 'scripts', 'package-release.cjs'), 'utf8');
   assert(releaseCode.includes('Node.js 22.13+ is required'), 'Release scripts must require Node.js 22.13+');
   assert(!releaseCode.includes('ELECTRON_RUN_AS_NODE'), 'Release scripts must not use Electron as Node');
   assert(!releaseCode.includes('Antigravity built-in runtime'), 'Release scripts must not use Antigravity as Node');
@@ -120,7 +121,7 @@ test('Mock ASAR: full patch lifecycle, hooks injection, and unpack preservation'
     });
 
     const pristineAsarBuf = fs.readFileSync(asarPath);
-    assert(!pristineAsarBuf.includes(Buffer.from('__ANTIGRAVITY_STATS_INJECTION__')), 'Initial asar must not contain patch marker');
+    assert(!pristineAsarBuf.includes(Buffer.from(contract.MARKER_MAIN_HOOK)), 'Initial asar must not contain patch marker');
     assert(!fs.existsSync(backupPath), 'Initial state must not have backup file');
     assert(fs.existsSync(asarPath + '.unpacked'), 'Initial state must have unpacked folder');
 
@@ -145,7 +146,7 @@ test('Mock ASAR: full patch lifecycle, hooks injection, and unpack preservation'
 
     // Patched asar must have marker
     const patchedAsarBuf = fs.readFileSync(asarPath);
-    assert(patchedAsarBuf.includes(Buffer.from('__ANTIGRAVITY_STATS_INJECTION__')), 'Patched asar must contain marker');
+    assert(patchedAsarBuf.includes(Buffer.from(contract.MARKER_MAIN_HOOK)), 'Patched asar must contain marker');
 
     // Extract patched asar to verify injected modules
     const verifyExtractDir = path.join(tmpRoot, 'verify-extracted');
@@ -153,17 +154,20 @@ test('Mock ASAR: full patch lifecycle, hooks injection, and unpack preservation'
     asar.extractAll(asarPath, verifyExtractDir);
 
     const patchedMain = fs.readFileSync(path.join(verifyExtractDir, 'dist', 'main.js'), 'utf8');
-    assert(patchedMain.includes('__ANTIGRAVITY_STATS_INJECTION__'), 'dist/main.js must contain injection marker');
+    assert(patchedMain.includes(contract.MARKER_MAIN_HOOK), 'dist/main.js must contain injection marker');
     assert(patchedMain.includes("require('./antigravity-stats/loader.cjs')"), 'dist/main.js must require loader.cjs');
     // Ensure strict mode remains at top of file
     assert(patchedMain.startsWith('"use strict";'), 'dist/main.js must retain "use strict" as the very first statement');
 
     const patchedPreload = fs.readFileSync(path.join(verifyExtractDir, 'dist', 'preload.js'), 'utf8');
-    assert(patchedPreload.includes('__ANTIGRAVITY_STATS_PRELOAD_BRIDGE__'), 'dist/preload.js must contain preload bridge marker');
-    assert(patchedPreload.includes('__ANTIGRAVITY_SYNC_BRIDGE__'), 'dist/preload.js must expose __ANTIGRAVITY_SYNC_BRIDGE__');
+    assert(patchedPreload.includes(contract.MARKER_PRELOAD_BRIDGE), 'dist/preload.js must contain preload bridge marker');
+    assert(patchedPreload.includes(contract.WINDOW_SYNC_BRIDGE), `dist/preload.js must expose ${contract.WINDOW_SYNC_BRIDGE}`);
 
     assert(fs.existsSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', 'loader.cjs')), 'loader.cjs must exist in dist/antigravity-stats/');
     assert(fs.existsSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', 'aggregate-stats.cjs')), 'aggregate-stats.cjs must exist in dist/antigravity-stats/');
+    assert(fs.existsSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', 'paths.cjs')), 'paths.cjs must exist in dist/antigravity-stats/');
+    assert(fs.existsSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', 'injection-contract.cjs')), 'injection-contract.cjs must exist in dist/antigravity-stats/');
+    assert(fs.existsSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', 'proxy-manager.cjs')), 'proxy-manager.cjs must exist in dist/antigravity-stats/');
     assert(fs.existsSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', 'antigravity-stats-bundle.js')), 'antigravity-stats-bundle.js must exist in dist/antigravity-stats/');
 
     // Unpack folder must remain intact
@@ -187,7 +191,7 @@ test('Mock ASAR: full patch lifecycle, hooks injection, and unpack preservation'
     asar.uncacheAll();
     asar.extractAll(asarPath, verifyExtractDir2);
     const mainAfterSecondPatch = fs.readFileSync(path.join(verifyExtractDir2, 'dist', 'main.js'), 'utf8');
-    const hookMatches = mainAfterSecondPatch.match(/__ANTIGRAVITY_STATS_INJECTION__/g) || [];
+    const hookMatches = mainAfterSecondPatch.match(new RegExp(contract.MARKER_MAIN_HOOK, 'g')) || [];
     assert(hookMatches.length === 1, 'Hook must appear exactly once in dist/main.js');
 
     // 3. Rollback (unpatch)
@@ -203,7 +207,7 @@ test('Mock ASAR: full patch lifecycle, hooks injection, and unpack preservation'
 
     const restoredBuf = fs.readFileSync(asarPath);
     assert(restoredBuf.equals(pristineAsarBuf), 'Restored asar must be bitwise identical to pristine asar');
-    assert(!restoredBuf.includes(Buffer.from('__ANTIGRAVITY_STATS_INJECTION__')), 'Restored asar must not have patch marker');
+    assert(!restoredBuf.includes(Buffer.from(contract.MARKER_MAIN_HOOK)), 'Restored asar must not have patch marker');
 
     // Unpacked folder must match pristine
     const restoredMcpFile = path.join(asarPath + '.unpacked', 'node_modules', 'chrome-devtools-mcp', 'build', 'index.js');

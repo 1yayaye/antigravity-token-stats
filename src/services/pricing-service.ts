@@ -1,5 +1,13 @@
 import { CapturedQuotaBucket, LiveQuotaSummary, SubscriptionTierConfig, SubscriptionTierId } from '../domain/pricing.types';
 import { AggregatedStats } from '../domain/stats.types';
+import { WINDOW_LIVE_QUOTA } from '../injection-contract.cjs';
+
+// Live quota crosses the injector/UI boundary through the contract-defined window global;
+// resolve it via the contract constant so the key string is owned by injection-contract.cjs.
+// (The Window declaration in pricing.types.ts keeps the literal key for type checking.)
+function liveQuotaStore(): Record<string, LiveQuotaSummary | null | undefined> {
+  return window as unknown as Record<string, LiveQuotaSummary | null | undefined>;
+}
 
 // Official developer API pricing per 1M tokens (USD)
 export const OFFICIAL_PRICING = {
@@ -172,7 +180,15 @@ export function formatResetCountdown(resetTimeIso: string | null | undefined, la
 
 function parseRawBucket(b: any): CapturedQuotaBucket | undefined {
   if (!b) return undefined;
-  const fraction = typeof b.remaining?.value === 'number' ? b.remaining.value : 1;
+  // Per the server's proto schema, remainingFraction is a flat number field inside
+  // the oneof; legacy captures used a remainingAmount string instead. Missing both
+  // means "no usage recorded", i.e. fully remaining.
+  let fraction = 1;
+  if (typeof b.remainingFraction === 'number' && Number.isFinite(b.remainingFraction)) {
+    fraction = b.remainingFraction;
+  } else if (typeof b.remainingAmount === 'string' && b.remainingAmount.trim() !== '' && Number.isFinite(Number(b.remainingAmount))) {
+    fraction = Number(b.remainingAmount);
+  }
   const remainingFraction = Math.max(0, Math.min(1, fraction));
   let resetTimeIso: string | null = null;
   if (b.resetTime) {
@@ -199,8 +215,17 @@ export function parseQuotaSummaryResponse(resp: any): LiveQuotaSummary | null {
 
   let weeklyGemini: CapturedQuotaBucket | undefined;
 
+  // Some deployments put buckets both under groups[].buckets[] and directly on the
+  // top level; scan both so either shape yields the weekly Gemini bucket.
+  const bucketLists: any[][] = [];
   for (const group of resp.groups) {
-    const buckets = Array.isArray(group.buckets) ? group.buckets : [];
+    bucketLists.push(Array.isArray(group.buckets) ? group.buckets : []);
+  }
+  if (Array.isArray(resp.buckets)) {
+    bucketLists.push(resp.buckets);
+  }
+
+  for (const buckets of bucketLists) {
     for (const bucket of buckets) {
       const bId = String(bucket.bucketId || '').toLowerCase();
       const dName = String(bucket.displayName || '').toLowerCase();
@@ -233,13 +258,14 @@ export async function tryFetchLiveQuotaFromHost(force = false): Promise<LiveQuot
   if (typeof window === 'undefined') return null;
 
   const now = Date.now();
-  if (!force && window.__ANTIGRAVITY_LIVE_QUOTA__ && now - lastQuotaFetchTime < QUOTA_CACHE_TTL_MS) {
-    return window.__ANTIGRAVITY_LIVE_QUOTA__;
+  const cached = liveQuotaStore()[WINDOW_LIVE_QUOTA];
+  if (!force && cached && now - lastQuotaFetchTime < QUOTA_CACHE_TTL_MS) {
+    return cached;
   }
 
   try {
     const root = document.querySelector('#root, #app') || document.body.firstElementChild;
-    if (!root) return window.__ANTIGRAVITY_LIVE_QUOTA__ || null;
+    if (!root) return liveQuotaStore()[WINDOW_LIVE_QUOTA] || null;
 
     let cloudCodeService: any = null;
     function searchFiber(fiber: any, depth = 0) {
@@ -265,7 +291,7 @@ export async function tryFetchLiveQuotaFromHost(force = false): Promise<LiveQuot
       const summary = parseQuotaSummaryResponse(res?.response);
       if (summary) {
         lastQuotaFetchTime = now;
-        window.__ANTIGRAVITY_LIVE_QUOTA__ = summary;
+        liveQuotaStore()[WINDOW_LIVE_QUOTA] = summary;
         return summary;
       }
     }
@@ -273,5 +299,5 @@ export async function tryFetchLiveQuotaFromHost(force = false): Promise<LiveQuot
     // Graceful silence on failure
   }
 
-  return window.__ANTIGRAVITY_LIVE_QUOTA__ || null;
+  return liveQuotaStore()[WINDOW_LIVE_QUOTA] || null;
 }

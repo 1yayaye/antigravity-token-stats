@@ -1,0 +1,76 @@
+{
+  "name": "antigravity-ide-token-stats",
+  "displayName": "Antigravity Token Stats",
+  "description": "Token usage dashboard for Antigravity IDE sessions, backed by scripts/aggregate-stats.cjs",
+  "version": "1.4.0",
+  "publisher": "antigravity-local",
+  "private": true,
+  "license": "MIT",
+  "type": "commonjs",
+  "engines": {
+    "vscode": "^1.107.0"
+  },
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "antigravity-ide-stats",
+          "title": "Token Stats",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "antigravity-ide-stats": [
+        {
+          "type": "webview",
+          "id": "antigravity-ide-stats.view",
+          "name": "Token Stats"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "antigravity-ide-stats.refresh",
+        "title": "Antigravity Stats: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "antigravity-ide-stats.open",
+        "title": "Antigravity Stats: Open Token Stats"
+      },
+      {
+        "command": "antigravity-ide-stats.proxyStatus",
+        "title": "Antigravity Proxy: Show Status & Diagnostics"
+      },
+      {
+        "command": "antigravity-ide-stats.proxyInstall",
+        "title": "Antigravity Proxy: Configure & Install Transparent Proxy"
+      },
+      {
+        "command": "antigravity-ide-stats.proxyUninstall",
+        "title": "Antigravity Proxy: Uninstall Transparent Proxy"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "antigravity-ide-stats.refresh",
+          "when": "view == antigravity-ide-stats.view",
+          "group": "navigation"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "antigravity-ide-stats.open",
+        "key": "alt+t"
+      }
+    ]
+  },
+  "scripts": {}
+}

@@ -7,32 +7,14 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-
-function getDevToolsPort() {
-  if (process.env.ANTIGRAVITY_DEVTOOLS_PORT) return parseInt(process.env.ANTIGRAVITY_DEVTOOLS_PORT, 10);
-  const candidates = [
-    process.env.ANTIGRAVITY_DEVTOOLS_PATH,
-    path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Antigravity', 'DevToolsActivePort'),
-    path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'antigravity', 'DevToolsActivePort'),
-    path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs', 'antigravity', 'DevToolsActivePort'),
-    path.join(os.homedir(), '.gemini', 'antigravity', 'DevToolsActivePort'),
-  ].filter(Boolean);
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      const port = parseInt(fs.readFileSync(candidate, 'utf8').split('\n')[0].trim(), 10);
-      if (port) return port;
-    }
-  }
-  throw new Error('DevToolsActivePort not found');
-}
+const { findDevToolsPort } = require('./paths.cjs');
 
 async function runRealDeviceAcceptance() {
   console.log('======================================================');
   console.log('🚀 Antigravity Real-Device Comprehensive Acceptance');
   console.log('======================================================\n');
 
-  const port = getDevToolsPort();
+  const port = findDevToolsPort();
   console.log(`[CDP] Active DevTools Port: ${port}`);
 
   const pagesRes = await fetch(`http://127.0.0.1:${port}/json`);

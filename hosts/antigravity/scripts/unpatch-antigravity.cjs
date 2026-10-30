@@ -4,37 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
-
-function getAntigravityResourcesDir() {
-  if (process.env.ANTIGRAVITY_RESOURCES && fs.existsSync(process.env.ANTIGRAVITY_RESOURCES)) {
-    return process.env.ANTIGRAVITY_RESOURCES;
-  }
-
-  const candidates = [
-    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'antigravity', 'resources') : null,
-    path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'antigravity', 'resources'),
-    process.env.PROGRAMFILES ? path.join(process.env.PROGRAMFILES, 'Antigravity', 'resources') : null,
-    process.env['PROGRAMFILES(X86)'] ? path.join(process.env['PROGRAMFILES(X86)'], 'Antigravity', 'resources') : null,
-    'C:\\Program Files\\Antigravity\\resources',
-    'C:\\Program Files (x86)\\Antigravity\\resources'
-  ].filter(Boolean);
-
-  for (const dir of candidates) {
-    if (fs.existsSync(dir)) return dir;
-  }
-
-  return path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'antigravity', 'resources');
-}
-
-function isAntigravityRunning() {
-  if (process.platform !== 'win32') return false;
-  try {
-    const out = execFileSync('tasklist', ['/FI', 'IMAGENAME eq Antigravity.exe', '/FO', 'CSV', '/NH'], { encoding: 'utf8' });
-    return out.toLowerCase().includes('antigravity.exe');
-  } catch {
-    return false;
-  }
-}
+const { getAntigravityResourcesDir, isAntigravityRunning, getDevBundlePathFile } = require('./paths.cjs');
+const contract = require('../../../src/injection-contract.cjs');
 
 function safeAtomicReplace(sourceFile, targetFile) {
   const tempTarget = `${targetFile}.tmp.${Date.now()}`;
@@ -104,7 +75,7 @@ function unpatch(options = {}) {
   if (fs.existsSync(asarPath)) {
     try {
       const content = fs.readFileSync(asarPath);
-      isModified = content.includes(Buffer.from('__ANTIGRAVITY_STATS_INJECTION__'));
+      isModified = content.includes(Buffer.from(contract.MARKER_MAIN_HOOK));
     } catch (err) {
       isModified = true;
     }
@@ -113,9 +84,7 @@ function unpatch(options = {}) {
   // Clean dev-bundle.path redirect file if present
   if (!options.skipDevRedirect) {
     try {
-      const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-      const defaultDevBundleFile = path.join(localAppData, 'AntiToken', 'dev-bundle.path');
-      const devBundleFile = options.devBundleFile || defaultDevBundleFile;
+      const devBundleFile = options.devBundleFile || getDevBundlePathFile();
       if (fs.existsSync(devBundleFile)) {
         fs.rmSync(devBundleFile, { force: true });
         log('   ✓ Removed dev-bundle redirect file');
@@ -158,6 +127,29 @@ function unpatch(options = {}) {
     throw err;
   }
 
+  // Restore factory state by also removing proxy DLL and config if present
+  try {
+    const projectRoot = typeof __RELEASE_ROOT !== 'undefined'
+      ? __RELEASE_ROOT
+      : path.resolve(__dirname, '..', '..', '..');
+    const candidates = [
+      path.join(projectRoot, 'scripts', 'proxy-manager.cjs'),
+      path.join(projectRoot, 'dist', 'proxy-manager.cjs'),
+    ];
+    let pm = null;
+    for (const c of candidates) {
+      if (fs.existsSync(c)) {
+        pm = require(c);
+        break;
+      }
+    }
+    if (!pm) {
+      pm = require('../../../scripts/proxy-manager.cjs');
+    }
+    pm.uninstallProxy('desktop');
+    log('   ✓ Removed transparent proxy files from desktop');
+  } catch {}
+
   log('\n======================================================');
   log('✓ SUCCESS: Antigravity 2.0 app.asar has been restored to factory state.');
   log('======================================================\n');
@@ -165,8 +157,12 @@ function unpatch(options = {}) {
 }
 
 if (require.main === module) {
+  const cliOptions = {
+    killRunning: process.argv.includes('--kill') || process.argv.includes('--force'),
+    skipProcessCheck: process.argv.includes('--skip-process-check'),
+  };
   try {
-    unpatch();
+    unpatch(cliOptions);
   } catch (err) {
     console.error('\n❌ [Unpatch Error]:', err.message);
     process.exit(1);

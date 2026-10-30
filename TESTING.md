@@ -183,7 +183,7 @@ npm run launch
 #### 步骤 6：运行真机自动化 CDP 端到端校验
 在客户端保持开启的状态下，新开一个终端执行：
 ```powershell
-node scripts/verify-real-device.cjs
+node hosts/antigravity/scripts/verify-real-device.cjs
 ```
 该脚本通过只读 Chrome DevTools Protocol (CDP) 端口连接到客户端，自动断言注入锚点、DOM 节点渲染与配额卡片，验证后安全退出。
 

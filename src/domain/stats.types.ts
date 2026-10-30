@@ -81,6 +81,38 @@ export interface SessionSummary {
   totalOutputTokens: number;
   compactionLimit: number;
   turnsCount: number;
+  rounds?: number;
+  steps?: number;
+  tps?: number | null;
+  modelDurationSec?: number;
+  toolDurationSec?: number;
+  ttftSec?: number | null;
+  dshTelemetry?: import('../types/dsh-telemetry').DshTelemetryData;
+}
+
+export interface ProxyTargetInfo {
+  target: 'desktop' | 'ide';
+  installed: boolean;
+  available: boolean;
+  dir: string | null;
+  isRunning: boolean;
+  dllExists: boolean;
+  configExists: boolean;
+  config?: {
+    proxy?: {
+      type: 'socks5' | 'http';
+      host: string;
+      port: number;
+    };
+    diagnostics?: {
+      agent_ip_probe?: boolean;
+    };
+  } | null;
+}
+
+export interface ProxyStatusSummary {
+  desktop: ProxyTargetInfo;
+  ide: ProxyTargetInfo;
 }
 
 /**
@@ -99,6 +131,7 @@ export interface AggregatedStats {
   insights: ActivityInsights;
   tokenBreakdown?: TokenBreakdown;
   sessions?: Record<string, SessionSummary>;
+  proxy?: ProxyStatusSummary;
   meta: {
     scannedConversations: number;
     updatedAt: string;
@@ -134,6 +167,8 @@ declare global {
   interface Window {
     __ANTIGRAVITY_STATS__?: AggregatedStats;
     __ANTIGRAVITY_STATS_ROOT__?: import('react-dom/client').Root | null;
+    __ANTIGRAVITY_STATUSBAR_ROOT__?: import('react-dom/client').Root | null;
+    __ANTIGRAVITY_STATUSBAR_CONTAINER__?: HTMLElement | null;
     __ANTIGRAVITY_OBSERVER__?: MutationObserver | null;
     __ANTIGRAVITY_KEY_HANDLER__?: ((e: KeyboardEvent) => void) | null;
     __ANTIGRAVITY_KEY_LISTENER__?: boolean;

@@ -10,62 +10,22 @@ const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const asar = require('@electron/asar');
-
-function getAntigravityResourcesDir() {
-  if (process.env.ANTIGRAVITY_RESOURCES && fs.existsSync(process.env.ANTIGRAVITY_RESOURCES)) {
-    return process.env.ANTIGRAVITY_RESOURCES;
-  }
-
-  const candidates = [
-    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'antigravity', 'resources') : null,
-    path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'antigravity', 'resources'),
-    process.env.PROGRAMFILES ? path.join(process.env.PROGRAMFILES, 'Antigravity', 'resources') : null,
-    process.env['PROGRAMFILES(X86)'] ? path.join(process.env['PROGRAMFILES(X86)'], 'Antigravity', 'resources') : null,
-    'C:\\Program Files\\Antigravity\\resources',
-    'C:\\Program Files (x86)\\Antigravity\\resources'
-  ].filter(Boolean);
-
-  for (const dir of candidates) {
-    if (fs.existsSync(dir)) return dir;
-  }
-
-  return path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'antigravity', 'resources');
-}
-
-function findAntigravityExe() {
-  if (process.env.ANTIGRAVITY_EXE && fs.existsSync(process.env.ANTIGRAVITY_EXE)) {
-    return process.env.ANTIGRAVITY_EXE;
-  }
-  const resDir = getAntigravityResourcesDir();
-  const exeInParent = path.join(path.dirname(resDir), 'Antigravity.exe');
-  if (fs.existsSync(exeInParent)) return exeInParent;
-  const candidates = [
-    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'antigravity', 'Antigravity.exe') : null,
-    path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'antigravity', 'Antigravity.exe'),
-    process.env.PROGRAMFILES ? path.join(process.env.PROGRAMFILES, 'Antigravity', 'Antigravity.exe') : null,
-    process.env['PROGRAMFILES(X86)'] ? path.join(process.env['PROGRAMFILES(X86)'], 'Antigravity', 'Antigravity.exe') : null
-  ].filter(Boolean);
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  throw new Error('Antigravity.exe not found');
-}
-
-function isAntigravityRunning() {
-  if (process.platform !== 'win32') return false;
-  try {
-    const out = execFileSync('tasklist', ['/FI', 'IMAGENAME eq Antigravity.exe', '/FO', 'CSV', '/NH'], { encoding: 'utf8' });
-    return out.toLowerCase().includes('antigravity.exe');
-  } catch {
-    return false;
-  }
-}
+const { getAntigravityResourcesDir, findAntigravityExe, isAntigravityRunning, getDevBundlePathFile } = require('./paths.cjs');
+const contract = require('../../../src/injection-contract.cjs');
 
 function safeAtomicReplace(sourceFile, targetFile) {
   const tempTarget = `${targetFile}.tmp.${Date.now()}`;
   try {
     fs.copyFileSync(sourceFile, tempTarget);
-    fs.renameSync(tempTarget, targetFile);
+    try {
+      fs.renameSync(tempTarget, targetFile);
+    } catch (renameErr) {
+      if (renameErr.code === 'EBUSY' || renameErr.code === 'EPERM') {
+        fs.copyFileSync(sourceFile, targetFile);
+      } else {
+        throw renameErr;
+      }
+    }
   } finally {
     if (fs.existsSync(tempTarget)) {
       try { fs.rmSync(tempTarget, { force: true }); } catch {}
@@ -113,31 +73,53 @@ async function patch(options = {}) {
   const resourcesDir = options.resourcesDir || getAntigravityResourcesDir();
   const asarPath = path.join(resourcesDir, 'app.asar');
   const backupPath = path.join(resourcesDir, 'app.asar.backup');
-  const projectRoot = path.resolve(__dirname, '..');
+
+  // Two layouts call this code: the repo checkout (three levels below the project
+  // root) and the release ZIP (esbuild-bundled to <zip>/bin/, where the banner from
+  // package-release.cjs defines __RELEASE_ROOT as the ZIP root).
+  const projectRoot = typeof __RELEASE_ROOT !== 'undefined'
+    ? __RELEASE_ROOT
+    : path.resolve(__dirname, '..', '..', '..');
 
   const bundleCandidates = [
     options.bundlePath,
     path.join(projectRoot, 'dist-bundle', 'antigravity-stats-bundle.js'),
-    path.join(projectRoot, 'dist', 'antigravity-stats-bundle.js'),
-    path.join(__dirname, '..', 'dist', 'antigravity-stats-bundle.js')
+    path.join(projectRoot, 'dist', 'antigravity-stats-bundle.js')
   ].filter(Boolean);
   const bundlePath = bundleCandidates.find(p => fs.existsSync(p)) || bundleCandidates[0];
 
   const loaderCandidates = [
     options.loaderSource,
     path.join(__dirname, 'loader.cjs'),
-    path.join(projectRoot, 'dist', 'loader.cjs'),
-    path.join(__dirname, '..', 'dist', 'loader.cjs')
+    path.join(projectRoot, 'dist', 'loader.cjs')
   ].filter(Boolean);
   const loaderSource = loaderCandidates.find(p => fs.existsSync(p)) || loaderCandidates[0];
 
   const aggregateCandidates = [
     options.aggregateSource,
-    path.join(__dirname, 'aggregate-stats.cjs'),
-    path.join(projectRoot, 'dist', 'aggregate-stats.cjs'),
-    path.join(__dirname, '..', 'dist', 'aggregate-stats.cjs')
+    path.join(projectRoot, 'scripts', 'aggregate-stats.cjs'),
+    path.join(projectRoot, 'dist', 'aggregate-stats.cjs')
   ].filter(Boolean);
   const aggregateSource = aggregateCandidates.find(p => fs.existsSync(p)) || aggregateCandidates[0];
+
+  const pathsSourceCandidates = [
+    path.join(__dirname, 'paths.cjs'),
+    path.join(projectRoot, 'dist', 'paths.cjs')
+  ];
+  const pathsSource = pathsSourceCandidates.find(p => fs.existsSync(p)) || pathsSourceCandidates[0];
+
+  const contractSourceCandidates = [
+    path.join(projectRoot, 'src', 'injection-contract.cjs'),
+    path.join(projectRoot, 'dist', 'injection-contract.cjs')
+  ];
+  const contractSource = contractSourceCandidates.find(p => fs.existsSync(p)) || contractSourceCandidates[0];
+
+  const proxyCandidates = [
+    options.proxyManagerSource,
+    path.join(projectRoot, 'scripts', 'proxy-manager.cjs'),
+    path.join(projectRoot, 'dist', 'proxy-manager.cjs')
+  ].filter(Boolean);
+  const proxyManagerSource = proxyCandidates.find(p => fs.existsSync(p)) || proxyCandidates[0];
 
   if (isAntigravityRunning()) {
     if (options.killRunning) {
@@ -166,9 +148,13 @@ async function patch(options = {}) {
     throw new Error(`Aggregate stats script not found at: ${aggregateSource}`);
   }
 
+  if (!fs.existsSync(proxyManagerSource)) {
+    throw new Error(`Proxy manager script not found at: ${proxyManagerSource}`);
+  }
+
   // Backup protection
   const initialContent = fs.readFileSync(asarPath);
-  const alreadyModified = initialContent.includes(Buffer.from('__ANTIGRAVITY_STATS_INJECTION__'));
+  const alreadyModified = initialContent.includes(Buffer.from(contract.MARKER_MAIN_HOOK));
 
   let backupCreated = false;
   if (!fs.existsSync(backupPath)) {
@@ -204,8 +190,8 @@ async function patch(options = {}) {
       throw new Error(`Expected dist/main.js in extracted archive at: ${mainFile}`);
     }
     let mainContent = fs.readFileSync(mainFile, 'utf8');
-    if (!mainContent.includes('__ANTIGRAVITY_STATS_INJECTION__')) {
-      const mainHook = "\n// __ANTIGRAVITY_STATS_INJECTION__\ntry { require('./antigravity-stats/loader.cjs'); } catch (e) { console.error('[TokenStats Loader Error]:', e); }\n";
+    if (!mainContent.includes(contract.MARKER_MAIN_HOOK)) {
+      const mainHook = `\n// ${contract.MARKER_MAIN_HOOK}\ntry { require('./antigravity-stats/loader.cjs'); } catch (e) { console.error('[TokenStats Loader Error]:', e); }\n`;
       const strictMatch = mainContent.match(/^(\s*['"]use strict['"];?\r?\n?)/);
       if (strictMatch) {
         mainContent = strictMatch[0] + mainHook + mainContent.slice(strictMatch[0].length);
@@ -224,22 +210,22 @@ async function patch(options = {}) {
       throw new Error(`Expected dist/preload.js in extracted archive at: ${preloadFile}`);
     }
     let preloadContent = fs.readFileSync(preloadFile, 'utf8');
-    if (!preloadContent.includes('__ANTIGRAVITY_STATS_PRELOAD_BRIDGE__')) {
+    if (!preloadContent.includes(contract.MARKER_PRELOAD_BRIDGE)) {
       const preloadHook = `
-// __ANTIGRAVITY_STATS_PRELOAD_BRIDGE__
+// ${contract.MARKER_PRELOAD_BRIDGE}
 try {
   const _electron = require('electron');
   const _cb = _electron.contextBridge || (typeof electron_1 !== 'undefined' ? electron_1.contextBridge : null);
   const _ipc = _electron.ipcRenderer || (typeof electron_1 !== 'undefined' ? electron_1.ipcRenderer : null);
   if (_cb && _ipc) {
-    _cb.exposeInMainWorld('__ANTIGRAVITY_SYNC_BRIDGE__', {
-      requestSync: (payload) => _ipc.invoke('antigravity:request-sync', payload),
+    _cb.exposeInMainWorld('${contract.WINDOW_SYNC_BRIDGE}', {
+      requestSync: (payload) => _ipc.invoke('${contract.IPC_REQUEST_SYNC}', payload),
     });
   }
 } catch (e) {
   try {
-    electron_1.contextBridge.exposeInMainWorld('__ANTIGRAVITY_SYNC_BRIDGE__', {
-      requestSync: (payload) => electron_1.ipcRenderer.invoke('antigravity:request-sync', payload),
+    electron_1.contextBridge.exposeInMainWorld('${contract.WINDOW_SYNC_BRIDGE}', {
+      requestSync: (payload) => electron_1.ipcRenderer.invoke('${contract.IPC_REQUEST_SYNC}', payload),
     });
   } catch (err) {}
 }
@@ -256,15 +242,16 @@ try {
     fs.mkdirSync(statsDir, { recursive: true });
     fs.copyFileSync(loaderSource, path.join(statsDir, 'loader.cjs'));
     fs.copyFileSync(aggregateSource, path.join(statsDir, 'aggregate-stats.cjs'));
+    fs.copyFileSync(pathsSource, path.join(statsDir, 'paths.cjs'));
+    fs.copyFileSync(contractSource, path.join(statsDir, 'injection-contract.cjs'));
+    fs.copyFileSync(proxyManagerSource, path.join(statsDir, 'proxy-manager.cjs'));
     fs.copyFileSync(bundlePath, path.join(statsDir, 'antigravity-stats-bundle.js'));
-    log('   ✓ Copied loader, aggregate engine, and UI bundle into dist/antigravity-stats/');
+    log('   ✓ Copied loader, aggregate engine, proxy manager, and UI bundle into dist/antigravity-stats/');
 
     // Record DX redirect
     if (!options.skipDevRedirect) {
       try {
-        const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-        const defaultDevBundleFile = path.join(localAppData, 'AntiToken', 'dev-bundle.path');
-        const devBundleFile = options.devBundleFile || defaultDevBundleFile;
+        const devBundleFile = options.devBundleFile || getDevBundlePathFile();
         fs.mkdirSync(path.dirname(devBundleFile), { recursive: true });
         fs.writeFileSync(devBundleFile, bundlePath, 'utf8');
         log(`   ✓ Configured dev-bundle redirect: ${bundlePath}`);
@@ -288,8 +275,8 @@ try {
     }
 
     const verifyBuf = fs.readFileSync(newAsarPath);
-    if (!verifyBuf.includes(Buffer.from('__ANTIGRAVITY_STATS_INJECTION__'))) {
-      throw new Error('Repacked asar does not contain __ANTIGRAVITY_STATS_INJECTION__ marker');
+    if (!verifyBuf.includes(Buffer.from(contract.MARKER_MAIN_HOOK))) {
+      throw new Error(`Repacked asar does not contain ${contract.MARKER_MAIN_HOOK} marker`);
     }
     log(`   ✓ Repacked archive validated (${(stat.size / 1024 / 1024).toFixed(2)} MB)`);
 
@@ -308,6 +295,19 @@ try {
         throw new Error('Failed to replace app.asar because Antigravity is currently running. Please close Antigravity and retry.');
       }
       throw err;
+    }
+
+    const shouldInstallProxy = options.withProxy !== false && !process.argv.includes('--no-proxy');
+    if (shouldInstallProxy) {
+      try {
+        const proxyManager = require(proxyManagerSource);
+        const port = Number(options.proxyPort || 7890);
+        const type = options.proxyType || 'socks5';
+        proxyManager.installProxy('desktop', { port, type, skipProcessCheck: true });
+        log(`   ✓ Transparent proxy deployed alongside Antigravity.exe (${type}://127.0.0.1:${port})`);
+      } catch (err) {
+        log(`   ⚠️ Proxy installation skipped: ${err.message}`);
+      }
     }
 
     log('\n======================================================');
@@ -329,7 +329,14 @@ try {
 }
 
 if (require.main === module) {
-  patch().catch(err => {
+  const cliOptions = {
+    killRunning: process.argv.includes('--kill') || process.argv.includes('--force'),
+    skipProcessCheck: process.argv.includes('--skip-process-check'),
+    withProxy: !process.argv.includes('--no-proxy'),
+    proxyPort: (process.argv.find(a => a.startsWith('--proxy-port=')) || '').split('=')[1] || undefined,
+    proxyType: (process.argv.find(a => a.startsWith('--proxy-type=')) || '').split('=')[1] || undefined,
+  };
+  patch(cliOptions).catch(err => {
     console.error('\n❌ [Patch Error]:', err.message || err);
     process.exit(1);
   });

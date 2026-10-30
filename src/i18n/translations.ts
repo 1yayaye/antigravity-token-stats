@@ -95,6 +95,23 @@ export const translations = {
     tierUltra20x: 'Google AI Ultra 20x ($199.99/mo)',
     perMonth: '/mo',
     netSavingsBooked: 'net value saved',
+
+    // Transparent Proxy
+    proxyTitle: 'Transparent Proxy (No TUN)',
+    proxyDesktopLabel: 'Desktop Client',
+    proxyIdeLabel: 'Antigravity IDE',
+    proxyInstalled: 'Active',
+    proxyNotInstalled: 'Inactive',
+    proxyProcessStatus: 'Process Status',
+    proxyRunning: 'Running',
+    proxyIdle: 'Idle',
+    proxyTestBtn: 'Test Proxy',
+    proxyTesting: 'Testing...',
+    proxyTestSuccess: 'Connected to Google API',
+    proxyTestFailed: 'Connection Failed',
+    proxyInstallHint: 'Manage via CLI:',
+    proxyLocationAlert: 'Egress IP Notice',
+    proxyLocationDesc: 'If dialog reports "User location is not supported", switch your proxy exit node to a non-datacenter supported ISP/residential IP.',
   },
   zh: {
     // Header
@@ -190,6 +207,23 @@ export const translations = {
     tierUltra20x: 'Google AI Ultra 20x ($199.99/月)',
     perMonth: '/月',
     netSavingsBooked: '净节省价值',
+
+    // Transparent Proxy
+    proxyTitle: '免 TUN 进程代理',
+    proxyDesktopLabel: '桌面端 (Desktop)',
+    proxyIdeLabel: 'IDE 扩展端',
+    proxyInstalled: '已启用',
+    proxyNotInstalled: '未启用',
+    proxyProcessStatus: '进程状态',
+    proxyRunning: '运行中',
+    proxyIdle: '未运行',
+    proxyTestBtn: '测试代理',
+    proxyTesting: '测试中...',
+    proxyTestSuccess: '成功连通 Google 接口',
+    proxyTestFailed: '连接失败',
+    proxyInstallHint: '终端管理命令：',
+    proxyLocationAlert: '出口 IP 限制提醒',
+    proxyLocationDesc: '若对话报错 "User location is not supported"，说明 Google 判定当前代理为机房或不支持地区，请更换为住宅或受支持 ISP 出口。',
   },
 };
 

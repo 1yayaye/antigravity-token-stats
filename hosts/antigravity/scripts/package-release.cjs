@@ -14,7 +14,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const esbuild = require('esbuild');
 
-const projectRoot = path.resolve(__dirname, '..');
+const projectRoot = path.resolve(__dirname, '..', '..', '..');
 const pkgPath = path.join(projectRoot, 'package.json');
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
 
@@ -44,7 +44,10 @@ fs.mkdirSync(path.join(stagingDir, 'dist'), { recursive: true });
 
 // 3. Bundle standalone patch & unpatch tools using esbuild
 console.log('\n[2/5] Bundling standalone patch & unpatch binaries with esbuild...');
-const esbuildBanner = 'process.noAsar = true;\nconst __import_meta_url = require("node:url").pathToFileURL(__filename).href;\n';
+const esbuildBanner = 'process.noAsar = true;\nconst __import_meta_url = require("node:url").pathToFileURL(__filename).href;\n' +
+  // The bundled binaries live at <zip>/bin/; patch-antigravity.cjs uses this to find
+  // the ZIP's dist/ assets (the repo layout instead walks up to the project root).
+  'const __RELEASE_ROOT = require("node:path").resolve(__dirname, "..");\n';
 const esbuildDefine = { 'import.meta.url': '__import_meta_url' };
 
 esbuild.buildSync({
@@ -73,7 +76,17 @@ esbuild.buildSync({
 console.log('[3/5] Copying runtime injection assets...');
 fs.copyFileSync(bundlePath, path.join(stagingDir, 'dist', 'antigravity-stats-bundle.js'));
 fs.copyFileSync(path.join(__dirname, 'loader.cjs'), path.join(stagingDir, 'dist', 'loader.cjs'));
-fs.copyFileSync(path.join(__dirname, 'aggregate-stats.cjs'), path.join(stagingDir, 'dist', 'aggregate-stats.cjs'));
+fs.copyFileSync(path.join(projectRoot, 'scripts', 'aggregate-stats.cjs'), path.join(stagingDir, 'dist', 'aggregate-stats.cjs'));
+fs.copyFileSync(path.join(__dirname, 'paths.cjs'), path.join(stagingDir, 'dist', 'paths.cjs'));
+fs.copyFileSync(path.join(projectRoot, 'src', 'injection-contract.cjs'), path.join(stagingDir, 'dist', 'injection-contract.cjs'));
+fs.copyFileSync(path.join(projectRoot, 'scripts', 'proxy-manager.cjs'), path.join(stagingDir, 'dist', 'proxy-manager.cjs'));
+
+const vendorProxyDir = path.join(stagingDir, 'vendor', 'proxy', 'win-x64');
+fs.mkdirSync(vendorProxyDir, { recursive: true });
+const srcVendor = path.join(projectRoot, 'vendor', 'proxy', 'win-x64');
+if (fs.existsSync(srcVendor)) {
+  fs.cpSync(srcVendor, vendorProxyDir, { recursive: true });
+}
 
 // 5. Generate release-tailored scripts
 console.log('[4/5] Generating release installer scripts...');
@@ -117,7 +130,10 @@ pause
 `;
 
 const releaseInstallPs1 = `param(
-  [switch]$Force
+  [switch]$Force,
+  [switch]$NoProxy,
+  [int]$ProxyPort = 7890,
+  [string]$ProxyType = 'socks5'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -167,8 +183,8 @@ try {
   Fail "Could not determine the installed Node.js version. Install Node.js 22.13+ and run the installer again."
 }
 
-function Run-Script([string]$scriptPath) {
-  & $nodeExe $scriptPath
+function Run-Script([string]$scriptPath, [string[]]$extraArgs = @()) {
+  & $nodeExe $scriptPath @extraArgs
   if ($LASTEXITCODE -ne 0) {
     Fail "Execution of $scriptPath failed."
   }
@@ -176,7 +192,14 @@ function Run-Script([string]$scriptPath) {
 
 # 3. Patch Antigravity
 Write-Host "\`nPatching Antigravity app.asar..." -ForegroundColor Yellow
-Run-Script (Join-Path $PSScriptRoot "bin\\patch.cjs")
+$patchArgs = @()
+if ($NoProxy) {
+  $patchArgs += "--no-proxy"
+} else {
+  $patchArgs += "--proxy-port=$ProxyPort"
+  $patchArgs += "--proxy-type=$ProxyType"
+}
+Run-Script (Join-Path $PSScriptRoot "bin\\patch.cjs") $patchArgs
 
 # Clean up any legacy redundant shortcuts
 $legacyShortcuts = @(

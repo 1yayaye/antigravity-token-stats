@@ -2,6 +2,20 @@
 
 All notable changes to Antigravity Token Stats will be documented in this file.
 
+## [1.4.0] - 2026-10-31
+
+### Added
+- **DeepSeek Harness (DSH) Status Bar & Telemetry**: Three-pill status bar embedded alongside the chat footer showing user interaction rounds, steps, text-only TPS, total tokens consumed, cache hit rate, and context window occupancy with a 256K auto-compaction threshold marker.
+- **MinHook Transparent Socket Proxy (No TUN)**: Integrated transparent Winsock socket interception (`version.dll`) routing Google API traffic through SOCKS5/HTTP while bypassing loopback TLS connections, manageable via `ProxyStatusCard` and `npm run proxy:*` CLI commands.
+- **Antigravity IDE Extension Host**: Adaptation for Antigravity IDE (`hosts/antigravity-ide/`) with independent webview bundle and telemetry aggregation.
+
+### Changed
+- **Host-based directory layout**: Desktop-specific code moved to `hosts/antigravity/` (injection entry `standalone.tsx`, host UI translation, ASAR patcher/loader, path probing, device acceptance scripts); `hosts/antigravity-ide/` host target; shared core in `src/`, shared tooling in `scripts/`.
+- **Single-source injection contract (`src/injection-contract.cjs`)**: ASAR markers, window globals, IPC channel, event names, and style element id defined once across patcher, loader, bundle, and UI components.
+- **Single-source desktop path probing (`hosts/antigravity/scripts/paths.cjs`)**: Install-directory, state-directory, and DevTools-port detection deduplicated across desktop tooling.
+- **Inverted i18n coupling**: `LanguageContext` communicates via standard custom events without direct dependency on host translation engine.
+- Documentation: project structure and proxy management documented in English and Chinese READMEs.
+
 ## [1.3.0] - 2026-10-26
 
 ### Added

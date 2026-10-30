@@ -205,17 +205,26 @@ liveTest('Time range filtering behaves correctly on AggregatedStats', () => {
 });
 
 test('loader.cjs has persistent watch and __ANTIGRAVITY_REQUEST_SYNC__ IPC bridge', () => {
-  const loaderCode = fs.readFileSync(path.join(__dirname, 'loader.cjs'), 'utf8');
-  assert(loaderCode.includes('antigravity:request-sync'), 'Must handle IPC sync');
-  assert(loaderCode.includes('__ANTIGRAVITY_REQUEST_SYNC__'), 'Must wire sync function');
-  assert(loaderCode.includes('antigravity:stats-updated'), 'Must emit stats-updated event');
+  const loaderCode = fs.readFileSync(
+    path.join(__dirname, '..', 'hosts', 'antigravity', 'scripts', 'loader.cjs'),
+    'utf8'
+  );
+  const contract = require('../src/injection-contract.cjs');
+  // The loader must drive the sync flow through the contract constants, never re-declared literals.
+  assert(loaderCode.includes('contract.IPC_REQUEST_SYNC'), 'Must handle IPC sync via contract.IPC_REQUEST_SYNC');
+  assert(loaderCode.includes('contract.WINDOW_REQUEST_SYNC'), 'Must wire sync function via contract.WINDOW_REQUEST_SYNC');
+  assert(loaderCode.includes('contract.EVENT_STATS_UPDATED'), 'Must emit stats-updated event via contract.EVENT_STATS_UPDATED');
+  // The contract itself must still carry the canonical channel/global/event names.
+  assert(contract.IPC_REQUEST_SYNC === 'antigravity:request-sync', 'IPC_REQUEST_SYNC must stay the canonical channel');
+  assert(contract.WINDOW_REQUEST_SYNC === '__ANTIGRAVITY_REQUEST_SYNC__', 'WINDOW_REQUEST_SYNC must stay the canonical global');
+  assert(contract.EVENT_STATS_UPDATED === 'antigravity:stats-updated', 'EVENT_STATS_UPDATED must stay the canonical event');
   assert(loaderCode.includes('fs.watch'), 'Must use fs.watch');
   assert(loaderCode.includes('debounce'), 'Must debounce updates');
 });
 
-test('Frontend StatsView listens to antigravity:stats-updated and calls __ANTIGRAVITY_REQUEST_SYNC__', () => {
+test('Frontend StatsView listens to stats-updated via contract and calls __ANTIGRAVITY_REQUEST_SYNC__', () => {
   const viewCode = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'stats', 'StatsView.tsx'), 'utf8');
-  assert(viewCode.includes('antigravity:stats-updated'), 'StatsView must listen to stats-updated');
+  assert(viewCode.includes('EVENT_STATS_UPDATED'), 'StatsView must listen to stats-updated via contract.EVENT_STATS_UPDATED');
   assert(viewCode.includes('__ANTIGRAVITY_REQUEST_SYNC__'), 'StatsView must trigger __ANTIGRAVITY_REQUEST_SYNC__');
   assert(!viewCode.includes('FALLBACK_STATS'), 'StatsView must not use fake FALLBACK_STATS');
   assert(viewCode.includes('EMPTY_STATS'), 'StatsView should use clean EMPTY_STATS');

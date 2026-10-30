@@ -26,7 +26,7 @@ assert(bundleContent.includes('系统设置') || bundleContent.includes('自定�
 console.log('PASS: Bundle includes i18n symbols and dictionary');
 
 // 2. Load dictionary definitions directly from TypeScript source for validation
-const dictPath = path.join(__dirname, '..', 'src', 'i18n', 'antigravity-ui-dict.ts');
+const dictPath = path.join(__dirname, '..', 'hosts', 'antigravity', 'src', 'i18n', 'antigravity-ui-dict.ts');
 assert(fs.existsSync(dictPath), 'Dictionary file should exist');
 const dictSource = fs.readFileSync(dictPath, 'utf8');
 
@@ -96,7 +96,7 @@ require.extensions['.ts'] = function (module, filename) {
 };
 
 const dict = require(dictPath);
-const { AntigravityUITranslator } = require(path.join(__dirname, '..', 'src', 'i18n', 'antigravity-ui-i18n.ts'));
+const { AntigravityUITranslator } = require(path.join(__dirname, '..', 'hosts', 'antigravity', 'src', 'i18n', 'antigravity-ui-i18n.ts'));
 const engine = new AntigravityUITranslator();
 
 function testTranslate(trimmed) {
@@ -175,7 +175,7 @@ global.document = {
   createTreeWalker: () => ({ nextNode: () => walkNodes.shift() || null }),
 };
 
-const { AntigravityUITranslator } = require(${JSON.stringify(path.join(repoRoot, 'src', 'i18n', 'antigravity-ui-i18n.ts'))});
+const { AntigravityUITranslator } = require(${JSON.stringify(path.join(repoRoot, 'hosts', 'antigravity', 'src', 'i18n', 'antigravity-ui-i18n.ts'))});
 const engine = new AntigravityUITranslator();
 const textNode = (value) => ({ nodeType: 3, nodeValue: value, parentElement: null });
 

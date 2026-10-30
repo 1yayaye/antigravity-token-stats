@@ -4,6 +4,7 @@
  */
 
 import { lookupTranslation, UI_DYNAMIC_RULES, EXCLUSION_SELECTORS } from './antigravity-ui-dict';
+import { EVENT_LANGUAGE_CHANGED } from '../../../../src/injection-contract.cjs';
 
 export type UILanguage = 'en' | 'zh';
 
@@ -47,7 +48,7 @@ export class AntigravityUITranslator {
     }
     // Dispatch synchronization event for any listening UI components
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('antigravity:language-changed', { detail: { lang } }));
+      window.dispatchEvent(new CustomEvent(EVENT_LANGUAGE_CHANGED, { detail: { lang } }));
     }
   }
 

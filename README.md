@@ -13,6 +13,7 @@ Seamlessly integrated into the UI (**Settings → Usage Stats** or `Alt+T`) via 
 - **Subscription Quota & Value**: Live tracking of weekly/monthly quota usage, reset countdowns, and subscription capacity evaluated at official Google API rates.
 - **Exact Breakdown**: Granular stats for Input, Cache Read, Thinking, and Output tokens.
 - **Activity Heatmap**: GitHub-style daily calendar with single-day drilldown and streaks.
+- **Transparent Proxy (No TUN)**: Integrated transparent Winsock socket proxy for Desktop and IDE. Directs traffic to local SOCKS5/HTTP without administrator rights or global TUN mode.
 - **Native Integration & One-Command Rollback**: Programmatically patched into `app.asar` with automatic factory backup and clean rollback (`npm run unpatch`).
 - **Local & Private**: Read-only access to `%USERPROFILE%\.gemini\antigravity`. Zero network telemetry.
 
@@ -21,6 +22,13 @@ Seamlessly integrated into the UI (**Settings → Usage Stats** or `Alt+T`) via 
 - Windows
 - Node.js **22.13+** (requires built-in `node:sqlite`)
 - [Google Antigravity 2.0](https://antigravity.google/)
+
+### Project Structure
+
+- `src/` — shared core: dashboard components (`components/stats/`), domain types, stats/pricing services, self i18n, and the injector↔UI contract (`injection-contract.cjs`)
+- `hosts/antigravity/` — desktop adapter layer: injection entry (`standalone.tsx`), host UI translation, and desktop scripts (ASAR patcher, loader, path probing, device acceptance)
+- `hosts/antigravity-ide/` — reserved for the future Antigravity IDE adaptation (see its README for the reuse/new-implementation split)
+- `scripts/` — shared tooling: data aggregation engine (`aggregate-stats.cjs`), test suites, mock data generation
 
 ### Quick Start
 
@@ -63,6 +71,11 @@ After installation, launch Antigravity directly or open it with your shortcut. T
 | `npm run aggregate` | Print aggregated metrics in terminal |
 | `npm run setup` | Run the Windows installer (build & patch) |
 | `npm test` | Run complete offline regression test suites |
+| `npm run proxy:status` | Check proxy status for Desktop and IDE |
+| `npm run proxy:install` | Deploy transparent proxy (`--target all/desktop/ide --port 7890`) |
+| `npm run proxy:uninstall` | Cleanly remove transparent proxy files |
+| `npm run proxy:test` | Test proxy connection and Google API reachability |
+| `npm run proxy:diagnose` | Scan logs for location restrictions (Code 400) |
 | `npm run mock:data` | Generate local mock data for non-Antigravity environments |
 
 ### Testing & Debugging

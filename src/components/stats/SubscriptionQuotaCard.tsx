@@ -8,6 +8,7 @@ import {
   tryFetchLiveQuotaFromHost,
 } from '../../services/pricing-service';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { EVENT_REQUEST_SYNC, EVENT_STATS_UPDATED, WINDOW_LIVE_QUOTA } from '../../injection-contract.cjs';
 
 export interface SubscriptionQuotaCardProps {
   stats: AggregatedStats;
@@ -22,7 +23,10 @@ export const SubscriptionQuotaCard: React.FC<SubscriptionQuotaCardProps> = ({
 }) => {
   const { lang, t } = useLanguage();
   const [liveQuota, setLiveQuota] = useState<LiveQuotaSummary | null>(() => {
-    return liveQuotaOverride || (typeof window !== 'undefined' ? window.__ANTIGRAVITY_LIVE_QUOTA__ || null : null);
+    if (liveQuotaOverride) return liveQuotaOverride;
+    if (typeof window === 'undefined') return null;
+    // Resolved through the contract constant; the literal-key declare lives in pricing.types.ts.
+    return (window as unknown as Record<string, LiveQuotaSummary | null | undefined>)[WINDOW_LIVE_QUOTA] || null;
   });
   const [selectedTier, setSelectedTier] = useState<SubscriptionTierId>(() => {
     if (typeof localStorage !== 'undefined') {
@@ -58,13 +62,13 @@ export const SubscriptionQuotaCard: React.FC<SubscriptionQuotaCardProps> = ({
     const handleSync = () => refreshQuota(true);
     const handleStatsUpdated = () => refreshQuota(false);
 
-    window.addEventListener('antigravity:request-sync', handleSync);
-    window.addEventListener('antigravity:stats-updated', handleStatsUpdated);
+    window.addEventListener(EVENT_REQUEST_SYNC, handleSync);
+    window.addEventListener(EVENT_STATS_UPDATED, handleStatsUpdated);
 
     return () => {
       isMounted = false;
-      window.removeEventListener('antigravity:request-sync', handleSync);
-      window.removeEventListener('antigravity:stats-updated', handleStatsUpdated);
+      window.removeEventListener(EVENT_REQUEST_SYNC, handleSync);
+      window.removeEventListener(EVENT_STATS_UPDATED, handleStatsUpdated);
     };
   }, [liveQuotaOverride]);
 

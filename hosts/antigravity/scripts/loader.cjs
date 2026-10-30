@@ -6,6 +6,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
+const { getDevBundlePathFile } = require('./paths.cjs');
 
 let electron;
 try {
@@ -14,16 +15,41 @@ try {
   electron = null;
 }
 
-let computeStats;
-let readSingleSession;
-try {
-  const agg = require('./aggregate-stats.cjs');
-  computeStats = agg.computeStats;
-  readSingleSession = agg.readSingleSession;
-} catch (e) {
-  computeStats = null;
-  readSingleSession = null;
+// Runs flat inside the patched asar (dist/antigravity-stats/) and from the repo
+// checkout (hosts/antigravity/scripts -> scripts/ and src/), so try both layouts.
+function loadModuleRelative(candidates) {
+  for (const p of candidates) {
+    try {
+      return require(p);
+    } catch (e) {}
+  }
+  throw new Error(`None of these modules could be loaded: ${candidates.join(', ')}`);
 }
+
+// The contract is required to hook anything; the aggregation engine degrades to
+// null so the UI/i18n bundle still injects when it is missing, and the null
+// guards below keep the rest of the loader inert.
+let aggregate = null;
+try {
+  let devCandidates = [];
+  try {
+    const redirectFile = getDevBundlePathFile();
+    if (fs.existsSync(redirectFile)) {
+      const devPath = fs.readFileSync(redirectFile, 'utf8').trim();
+      if (devPath) {
+        devCandidates.push(path.resolve(path.dirname(devPath), '..', 'scripts', 'aggregate-stats.cjs'));
+        devCandidates.push(path.resolve(path.dirname(devPath), 'aggregate-stats.cjs'));
+      }
+    }
+  } catch (e) {}
+
+  aggregate = loadModuleRelative([...devCandidates, './aggregate-stats.cjs', '../../../scripts/aggregate-stats.cjs']);
+} catch (e) {
+  console.warn('[TokenStats Loader] aggregate-stats.cjs unavailable, stats aggregation disabled:', e.message);
+}
+const computeStats = aggregate?.computeStats ?? null;
+const readSingleSession = aggregate?.readSingleSession ?? null;
+const contract = loadModuleRelative(['./injection-contract.cjs', '../../../src/injection-contract.cjs']);
 
 const { app, BrowserWindow, ipcMain } = electron || {};
 
@@ -39,11 +65,6 @@ const FULL_SCAN_MIN_GAP_MS = 2000;
 const pendingSessionIds = new Set();
 let sessionTimer = null;
 const hookedWindows = new WeakSet();
-
-function getDevBundlePathFile() {
-  const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
-  return path.join(localAppData, 'AntiToken', 'dev-bundle.path');
-}
 
 function getBundleCode() {
   try {
@@ -95,13 +116,13 @@ async function injectStatsIntoWindow(win) {
       (() => {
         const stats = ${statsPayload};
         if (stats) {
-          window.__ANTIGRAVITY_STATS__ = stats;
+          window.${contract.WINDOW_STATS} = stats;
         }
-        window.__ANTIGRAVITY_REQUEST_SYNC__ = (sessionId) => {
-          if (window.__ANTIGRAVITY_SYNC_BRIDGE__ && typeof window.__ANTIGRAVITY_SYNC_BRIDGE__.requestSync === 'function') {
-            window.__ANTIGRAVITY_SYNC_BRIDGE__.requestSync(sessionId).catch(() => {});
+        window.${contract.WINDOW_REQUEST_SYNC} = (sessionId) => {
+          if (window.${contract.WINDOW_SYNC_BRIDGE} && typeof window.${contract.WINDOW_SYNC_BRIDGE}.requestSync === 'function') {
+            window.${contract.WINDOW_SYNC_BRIDGE}.requestSync(sessionId).catch(() => {});
           }
-          window.dispatchEvent(new CustomEvent('antigravity:request-sync', { detail: { sessionId } }));
+          window.dispatchEvent(new CustomEvent('${contract.EVENT_REQUEST_SYNC}', { detail: { sessionId } }));
         };
         return true;
       })()
@@ -111,11 +132,11 @@ async function injectStatsIntoWindow(win) {
 
     const postScript = `
       (() => {
-        if (window.AntigravityStats && typeof window.AntigravityStats.showToast === 'function') {
-          window.AntigravityStats.showToast('✦ Token Stats & 汉化增强已就绪');
+        if (window.${contract.WINDOW_API} && typeof window.${contract.WINDOW_API}.showToast === 'function') {
+          window.${contract.WINDOW_API}.showToast('✦ Token Stats & 汉化增强已就绪');
         }
-        if (window.__ANTIGRAVITY_STATS__) {
-          window.dispatchEvent(new CustomEvent('antigravity:stats-updated', { detail: window.__ANTIGRAVITY_STATS__ }));
+        if (window.${contract.WINDOW_STATS}) {
+          window.dispatchEvent(new CustomEvent('${contract.EVENT_STATS_UPDATED}', { detail: window.${contract.WINDOW_STATS} }));
         }
         return true;
       })()
@@ -151,8 +172,8 @@ function broadcastStats(stats) {
       try {
         const script = `
           (() => {
-            window.__ANTIGRAVITY_STATS__ = ${JSON.stringify(stats)};
-            window.dispatchEvent(new CustomEvent('antigravity:stats-updated', { detail: window.__ANTIGRAVITY_STATS__ }));
+            window.${contract.WINDOW_STATS} = ${JSON.stringify(stats)};
+            window.dispatchEvent(new CustomEvent('${contract.EVENT_STATS_UPDATED}', { detail: window.${contract.WINDOW_STATS} }));
             return true;
           })()
         `;
@@ -171,10 +192,10 @@ function broadcastSessionUpdate(sessionId, sessionData) {
       try {
         const script = `
           (() => {
-            if (!window.__ANTIGRAVITY_STATS__) window.__ANTIGRAVITY_STATS__ = { sessions: {} };
-            if (!window.__ANTIGRAVITY_STATS__.sessions) window.__ANTIGRAVITY_STATS__.sessions = {};
-            window.__ANTIGRAVITY_STATS__.sessions[${JSON.stringify(sessionId)}] = ${JSON.stringify(sessionData)};
-            window.dispatchEvent(new CustomEvent('antigravity:stats-updated', { detail: window.__ANTIGRAVITY_STATS__ }));
+            if (!window.${contract.WINDOW_STATS}) window.${contract.WINDOW_STATS} = { sessions: {} };
+            if (!window.${contract.WINDOW_STATS}.sessions) window.${contract.WINDOW_STATS}.sessions = {};
+            window.${contract.WINDOW_STATS}.sessions[${JSON.stringify(sessionId)}] = ${JSON.stringify(sessionData)};
+            window.dispatchEvent(new CustomEvent('${contract.EVENT_STATS_UPDATED}', { detail: window.${contract.WINDOW_STATS} }));
             return true;
           })()
         `;
@@ -306,10 +327,10 @@ function init() {
   if (!ipcMain || !app) return;
 
   try {
-    ipcMain.removeHandler('antigravity:request-sync');
+    ipcMain.removeHandler(contract.IPC_REQUEST_SYNC);
   } catch (e) {}
   try {
-    ipcMain.handle('antigravity:request-sync', async (_event, payload) => {
+    ipcMain.handle(contract.IPC_REQUEST_SYNC, async (_event, payload) => {
       const sessionId = payload?.sessionId || (typeof payload === 'string' ? payload : null);
       // Session-scoped requests keep their promise: one DB read, no full rescan. Only the
       // dashboard (no sessionId) needs the whole aggregate refreshed.

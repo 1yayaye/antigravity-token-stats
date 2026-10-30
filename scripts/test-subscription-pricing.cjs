@@ -95,6 +95,8 @@ assert.equal(formatResetCountdown(new Date(baseNow - 1000).toISOString(), 'en', 
 console.log('PASS: formatResetCountdown handles day, hour, and expired states in both languages');
 
 console.log('--- Testing parseQuotaSummaryResponse ---');
+// Shape matches the real 200 response from retrieveUserQuotaSummary:
+// remainingFraction is a flat number field, not a remaining{value} oneof wrapper.
 const mockOfficialResponse = {
   description: 'Within each group, models share a weekly limit.',
   groups: [
@@ -104,13 +106,13 @@ const mockOfficialResponse = {
         {
           displayName: 'Weekly Limit Remaining',
           bucketId: 'gemini-weekly',
-          remaining: { case: 'remainingFraction', value: 0.6546 },
-          resetTime: { seconds: 1728959628 },
+          remainingFraction: 0.6546,
+          resetTime: '2026-10-31T12:12:20Z',
         },
         {
           displayName: 'Five Hour Limit Remaining',
           bucketId: 'gemini-5h',
-          remaining: { case: 'remainingFraction', value: 0.95 },
+          remainingFraction: 0.95,
         },
       ],
     },
@@ -120,8 +122,7 @@ const mockOfficialResponse = {
         {
           displayName: 'Weekly Limit Remaining',
           bucketId: '3p-weekly',
-          remaining: { case: 'remainingFraction', value: 1.0 },
-          resetTime: '2026-10-20T18:00:00Z',
+          remainingFraction: 1.0,
         },
       ],
     },
@@ -131,18 +132,41 @@ const mockOfficialResponse = {
 const parsed = parseQuotaSummaryResponse(mockOfficialResponse);
 assert.ok(parsed, 'parsed should not be null');
 assert.equal(parsed.weeklyGemini.bucketId, 'gemini-weekly');
-assert.equal(parsed.weeklyGemini.remainingFraction, 0.6546);
+assert.equal(parsed.weeklyGemini.remainingFraction, 0.6546, 'flat remainingFraction number must be read directly');
 assert.equal(parsed.weeklyGemini.usedFraction, 0.3454);
-assert.ok(parsed.weeklyGemini.resetTime.includes('2024') || parsed.weeklyGemini.resetTime.includes('2026') || parsed.weeklyGemini.resetTime.length > 10);
+assert.equal(parsed.weeklyGemini.resetTime, '2026-10-31T12:12:20Z', 'string resetTime must pass through unchanged');
+
+// Legacy captures wrapped the fraction in a remainingAmount string.
+const amountFallback = parseQuotaSummaryResponse({
+  groups: [{ buckets: [{ bucketId: 'gemini-weekly', displayName: 'Weekly Limit', remainingAmount: '0.42' }] }],
+});
+assert.equal(amountFallback.weeklyGemini.remainingFraction, 0.42, 'remainingAmount string is the fallback source');
+
+// A bucket with neither field means "no usage recorded" -> fully remaining.
+const missingFraction = parseQuotaSummaryResponse({
+  groups: [{ buckets: [{ bucketId: 'gemini-weekly', displayName: 'Weekly Limit' }] }],
+});
+assert.equal(missingFraction.weeklyGemini.remainingFraction, 1, 'absent fraction defaults to fully remaining');
+
+// Deployment variants put buckets directly on the response top level.
+const topLevelBuckets = parseQuotaSummaryResponse({
+  description: 'top-level bucket layout',
+  groups: [{ displayName: 'Gemini Models' }],
+  buckets: [{ bucketId: 'gemini-weekly', displayName: 'Weekly Limit Remaining', remainingFraction: 0.866898 }],
+});
+assert.ok(topLevelBuckets, 'top-level buckets fallback must produce a summary');
+assert.equal(topLevelBuckets.weeklyGemini.bucketId, 'gemini-weekly');
+assert.equal(topLevelBuckets.weeklyGemini.remainingFraction, 0.866898);
+
 const claudeFirst = parseQuotaSummaryResponse({
   groups: [{ buckets: [
-    { bucketId: '3p-weekly', displayName: 'Weekly Limit', remaining: { value: 0.8 } },
-    { bucketId: 'gemini-weekly', displayName: 'Weekly Limit', remaining: { value: 0.6 } },
+    { bucketId: '3p-weekly', displayName: 'Weekly Limit', remainingFraction: 0.8 },
+    { bucketId: 'gemini-weekly', displayName: 'Weekly Limit', remainingFraction: 0.6 },
   ] }],
 });
 assert.equal(claudeFirst.weeklyGemini.bucketId, 'gemini-weekly', 'Gemini bucket must be classified after Claude regardless of order');
 const claudeOnly = parseQuotaSummaryResponse({
-  groups: [{ buckets: [{ bucketId: '3p-weekly', displayName: 'Weekly Limit', remaining: { value: 0.7 } }] }],
+  groups: [{ buckets: [{ bucketId: '3p-weekly', displayName: 'Weekly Limit', remainingFraction: 0.7 }] }],
 });
 assert.equal(claudeOnly, null, 'Claude-only quota responses are ignored');
 assert.equal(parseQuotaSummaryResponse(null), null);
