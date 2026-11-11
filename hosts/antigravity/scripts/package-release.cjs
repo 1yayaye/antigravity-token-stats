@@ -131,6 +131,7 @@ pause
 
 const releaseInstallPs1 = `param(
   [switch]$Force,
+  [switch]$WithProxy,
   [switch]$NoProxy,
   [int]$ProxyPort = 7890,
   [string]$ProxyType = 'socks5'
@@ -144,7 +145,7 @@ function Fail([string]$Message) {
   exit 1
 }
 
-Write-Host "\`nAntigravity Token Stats — Release Installer" -ForegroundColor Cyan
+Write-Host "\`nAntigravity Token Stats - Release Installer" -ForegroundColor Cyan
 Write-Host "============================================\`n"
 
 # 1. Process Check
@@ -178,7 +179,7 @@ try {
     Fail "Node.js 22.13+ is required; found $vStr. Upgrade Node.js and run the installer again."
   }
   $nodeExe = $sysNode.Source
-  Write-Host "✓ Using system Node.js ($vStr)" -ForegroundColor Green
+  Write-Host "[OK] Using system Node.js ($vStr)" -ForegroundColor Green
 } catch {
   Fail "Could not determine the installed Node.js version. Install Node.js 22.13+ and run the installer again."
 }
@@ -193,11 +194,12 @@ function Run-Script([string]$scriptPath, [string[]]$extraArgs = @()) {
 # 3. Patch Antigravity
 Write-Host "\`nPatching Antigravity app.asar..." -ForegroundColor Yellow
 $patchArgs = @()
-if ($NoProxy) {
-  $patchArgs += "--no-proxy"
-} else {
+if ($WithProxy -and -not $NoProxy) {
+  $patchArgs += "--with-proxy"
   $patchArgs += "--proxy-port=$ProxyPort"
   $patchArgs += "--proxy-type=$ProxyType"
+} else {
+  $patchArgs += "--no-proxy"
 }
 Run-Script (Join-Path $PSScriptRoot "bin\\patch.cjs") $patchArgs
 
@@ -213,7 +215,7 @@ foreach ($sc in $legacyShortcuts) {
 }
 
 Write-Host "\`n======================================================" -ForegroundColor Green
-Write-Host "✓ Installation and patching complete!" -ForegroundColor Green
+Write-Host "[OK] Installation and patching complete!" -ForegroundColor Green
 Write-Host "Launch Antigravity normally from your existing shortcut or taskbar." -ForegroundColor Cyan
 Write-Host "Open Settings -> Usage Stats in Antigravity to view the dashboard." -ForegroundColor Cyan
 Write-Host "To restore pristine factory state at any time, run uninstall.cmd." -ForegroundColor Gray
@@ -242,7 +244,7 @@ function Fail([string]$Message) {
   exit 1
 }
 
-Write-Host "\`nAntigravity Token Stats — Uninstaller" -ForegroundColor Cyan
+Write-Host "\`nAntigravity Token Stats - Uninstaller" -ForegroundColor Cyan
 Write-Host "======================================\`n"
 
 $running = Get-Process -Name Antigravity -ErrorAction SilentlyContinue
@@ -298,7 +300,7 @@ foreach ($sc in $shortcutLocations) {
 }
 
 Write-Host "\`n======================================================" -ForegroundColor Green
-Write-Host "✓ Factory restore complete! Antigravity is unpatched." -ForegroundColor Green
+Write-Host "[OK] Factory restore complete! Antigravity is unpatched." -ForegroundColor Green
 Write-Host "======================================================\`n"
 `;
 

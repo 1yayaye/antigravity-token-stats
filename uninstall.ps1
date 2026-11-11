@@ -50,10 +50,10 @@ $shortcuts = @(
 foreach ($sc in $shortcuts) {
   if (Test-Path $sc) {
     Remove-Item -Force $sc -ErrorAction SilentlyContinue
-    Write-Host "   ✓ Removed: $sc" -ForegroundColor Gray
+    Write-Host "   [OK] Removed: $sc" -ForegroundColor Gray
   }
 }
 
 Write-Host "`n======================================================" -ForegroundColor Green
-Write-Host "✓ Factory restore complete! Antigravity is unpatched." -ForegroundColor Green
+Write-Host "[OK] Factory restore complete! Antigravity is unpatched." -ForegroundColor Green
 Write-Host "======================================================`n"

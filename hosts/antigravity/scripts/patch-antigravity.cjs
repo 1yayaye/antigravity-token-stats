@@ -297,7 +297,7 @@ try {
       throw err;
     }
 
-    const shouldInstallProxy = options.withProxy !== false && !process.argv.includes('--no-proxy');
+    const shouldInstallProxy = (options.withProxy === true || process.argv.includes('--with-proxy')) && !process.argv.includes('--no-proxy');
     if (shouldInstallProxy) {
       try {
         const proxyManager = require(proxyManagerSource);
@@ -332,7 +332,7 @@ if (require.main === module) {
   const cliOptions = {
     killRunning: process.argv.includes('--kill') || process.argv.includes('--force'),
     skipProcessCheck: process.argv.includes('--skip-process-check'),
-    withProxy: !process.argv.includes('--no-proxy'),
+    withProxy: (process.argv.includes('--with-proxy') || options.withProxy === true) && !process.argv.includes('--no-proxy'),
     proxyPort: (process.argv.find(a => a.startsWith('--proxy-port=')) || '').split('=')[1] || undefined,
     proxyType: (process.argv.find(a => a.startsWith('--proxy-type=')) || '').split('=')[1] || undefined,
   };

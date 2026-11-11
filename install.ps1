@@ -1,6 +1,7 @@
 param(
   [switch]$Dev,
   [switch]$Force,
+  [switch]$WithProxy,
   [switch]$NoProxy,
   [int]$ProxyPort = 7890,
   [string]$ProxyType = 'socks5'
@@ -69,24 +70,25 @@ if ($LASTEXITCODE -ne 0) { Fail 'The bundle build failed.' }
 
 Write-Host "[3/3] Patching Antigravity app.asar..." -ForegroundColor Yellow
 $patchArgs = @()
-if ($NoProxy) {
-  $patchArgs += "--no-proxy"
-} else {
+if ($WithProxy -and -not $NoProxy) {
+  $patchArgs += "--with-proxy"
   $patchArgs += "--proxy-port=$ProxyPort"
   $patchArgs += "--proxy-type=$ProxyType"
+} else {
+  $patchArgs += "--no-proxy"
 }
 & $npm.Source run patch -- $patchArgs
 if ($LASTEXITCODE -ne 0) { Fail 'app.asar patch failed. Make sure Antigravity is closed before installing.' }
 
 if ($Dev) {
-  Write-Host "   ⚡ Setting up Dev Bundle redirect link..." -ForegroundColor Cyan
+  Write-Host "   Setting up Dev Bundle redirect link..." -ForegroundColor Cyan
   $antiTokenDir = Join-Path $env:LOCALAPPDATA 'AntiToken'
   if (-not (Test-Path $antiTokenDir)) {
     New-Item -ItemType Directory -Path $antiTokenDir -Force | Out-Null
   }
   $bundlePath = Join-Path $PSScriptRoot 'dist-bundle\antigravity-stats-bundle.js'
   Set-Content -Path (Join-Path $antiTokenDir 'dev-bundle.path') -Value $bundlePath -Force
-  Write-Host "   ✓ Dev mode active: rebuilds will reload automatically in Antigravity." -ForegroundColor Green
+  Write-Host "   [OK] Dev mode active: rebuilds will reload automatically in Antigravity." -ForegroundColor Green
 }
 
 # Clean up any legacy redundant shortcuts
@@ -101,7 +103,7 @@ foreach ($sc in $legacyShortcuts) {
 }
 
 Write-Host "`n======================================================" -ForegroundColor Green
-Write-Host "✓ Installation and patching complete!" -ForegroundColor Green
+Write-Host "[OK] Installation and patching complete!" -ForegroundColor Green
 Write-Host "Launch Antigravity normally from your existing shortcut or taskbar."
 Write-Host "Press Alt+T or open Settings -> Usage Stats to view dashboard."
 Write-Host "To restore original factory state at any time, run:"
