@@ -157,7 +157,7 @@ async function injectStatsIntoWindow(win) {
 const hookedWebContents = new WeakSet();
 
 function hookWebContents(wc) {
-  if (!wc || (typeof wc.isDestroyed === 'function' && wc.isDestroyed())) return;
+  if (!wc || (typeof wc.isDestroyed === 'function' && wc.isDestroyed()) || hookedWebContents.has(wc)) return;
   hookedWebContents.add(wc);
 
   if (typeof wc.on === 'function') {
