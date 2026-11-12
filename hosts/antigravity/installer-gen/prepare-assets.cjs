@@ -58,6 +58,7 @@ fs.writeFileSync(
 const filesToCopy = [
   { src: bundlePath, name: 'antigravity-stats-bundle.js' },
   { src: path.join(projectRoot, 'hosts', 'antigravity', 'scripts', 'loader.cjs'), name: 'loader.cjs' },
+  { src: path.join(projectRoot, 'hosts', 'antigravity', 'scripts', 'update-checker.cjs'), name: 'update-checker.cjs' },
   { src: path.join(projectRoot, 'scripts', 'aggregate-stats.cjs'), name: 'aggregate-stats.cjs' },
   { src: path.join(projectRoot, 'hosts', 'antigravity', 'scripts', 'paths.cjs'), name: 'paths.cjs' },
   { src: path.join(projectRoot, 'src', 'injection-contract.cjs'), name: 'injection-contract.cjs' },

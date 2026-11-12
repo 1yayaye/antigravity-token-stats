@@ -14,7 +14,7 @@
 | `extension/out/` | 编译产物（esbuild 打包，见 `scripts/build-extension-ide.cjs`；类型检查由根 tsconfig 承担） |
 | `extension/media/` | 构建产物 `antigravity-stats-ide-bundle.js`（勿手改）+ 活动栏图标 |
 | `src/ide-contract.ts` | IDE 特有的 extension↔webview 消息契约（不进共享契约；视图/命令 id 同时存在于清单 JSON，属 VSCode 限制） |
-| `src/webview/standalone.tsx` | Webview 入口：收到消息后设置 `window.__ANTIGRAVITY_STATS__` / `window.__ANTIGRAVITY_LIVE_QUOTA__` 并派发 `antigravity:stats-updated`，共享 `StatsView` / `SubscriptionQuotaCard` 经既有取数路径自动渲染 |
+| `src/webview/standalone.tsx` | Webview 入口：收到消息后设置 `window.__ANTIGRAVITY_STATS__` / `window.__ANTIGRAVITY_LIVE_QUOTA__`，分别派发共享契约的统计更新与配额更新事件，驱动 `StatsView` / 配额视图渲染 |
 | `scripts/probe-quota.cjs` | 配额探测/回归工具：esbuild 打包 quota-service 后调用 `fetchLiveQuota(true)`，stdout 输出 weeklyGemini + capturedAt（退出码 0=拿到数据） |
 
 主题：扩展宿主读 `window.activeColorTheme.kind`（高对比度归并为 dark/light）下发；webview 在

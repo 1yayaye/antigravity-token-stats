@@ -74,7 +74,7 @@ let lastScanTime = 0;
 let lastAggregatedStats = null;
 let lastAggregatedDir = null;
 const FAST_SCAN_TTL = 300; // 300ms throttle for back-to-back incremental calls
-const PERSIST_CACHE_VERSION = 9;
+const PERSIST_CACHE_VERSION = 10;
 const CACHE_FLUSH_DELAY_MS = 50;
 const CACHE_LOCK_MAX_AGE_MS = 10000;
 let cacheDirty = false;
@@ -206,29 +206,11 @@ function serializeCache(dataDir) {
     if (!entry.fingerprint) continue;
     const file = path.relative(conversationsDir, filePath);
     if (!file || file.startsWith('..')) continue;
+    const { fingerprint, mtimeMs, ...metrics } = entry;
     dbs[path.basename(file, '.db')] = {
       file,
-      fingerprint: entry.fingerprint,
-      metrics: {
-        modelCalls: entry.modelCalls,
-        toolCalls: entry.toolCalls,
-        fastModeCalls: entry.fastModeCalls,
-        sessionInputTokens: entry.sessionInputTokens,
-        sessionOutputTokens: entry.sessionOutputTokens,
-        sessionCacheReadTokens: entry.sessionCacheReadTokens,
-        sessionThinkingTokens: entry.sessionThinkingTokens,
-        sessionResponseTokens: entry.sessionResponseTokens,
-        sessionSkills: entry.sessionSkills,
-        sessionSkillsCount: entry.sessionSkillsCount,
-        sessionModels: entry.sessionModels,
-        generationUsages: entry.generationUsages,
-        generationDates: entry.generationDates || [],
-        generationTimestampsMs: entry.generationTimestampsMs || [],
-        dailyTasks: entry.dailyTasks ? Array.from((entry.dailyTasks instanceof Map ? entry.dailyTasks : new Map(entry.dailyTasks)).entries()) : [],
-        duration: entry.duration || 0,
-        turnCalls: entry.turnCalls || 0,
-        turnStartedAt: entry.turnStartedAt || null,
-      },
+      fingerprint,
+      metrics: { ...metrics, dailyTasks: Array.from(metrics.dailyTasks) },
     };
   }
 
@@ -520,6 +502,177 @@ function createEmptyStats() {
   };
 }
 
+// Immutable usage snapshots are shared by full scans and session heartbeats; run state stays separate.
+function readSessionSnapshot(filePath) {
+  const fingerprint = getFileFingerprint(filePath, true);
+  const mtimeMs = fingerprint.db.mtimeMs;
+  const cached = dbCache.get(filePath);
+  if (cached && fingerprintsEqual(cached.fingerprint, fingerprint)) {
+    return { metrics: cached, stale: false, mtimeMs };
+  }
+
+  let db = null;
+  try {
+    db = new DatabaseSync(filePath, { readOnly: true });
+    let modelCalls = 0;
+    let toolCalls = 0;
+    let fastModeCalls = 0;
+    let sessionInputTokens = 0;
+    let sessionOutputTokens = 0;
+    let sessionCacheReadTokens = 0;
+    let sessionThinkingTokens = 0;
+    let sessionResponseTokens = 0;
+    let sessionSkills = new Set();
+    let sessionSkillsCount = 0;
+    let sessionModels = new Map();
+    let sessionGenerationUsages = [];
+    let sessionGenerationDates = [];
+    let sessionGenerationTimestampsMs = [];
+    let sessionDailyTasks = new Map();
+    let sessionStepDuration = 0;
+    let sessionTurnCalls = 0;
+    let sessionTurnStartedAt = null;
+    let sessionPerf = null;
+    let sessionCostUsd = 0;
+    // Step 1.1: Exact ModelUsageStats from gen_metadata protobuf BLOBs
+    const genRows = db.prepare('SELECT idx, data FROM gen_metadata ORDER BY idx').all();
+    for (const row of genRows) {
+      if (!row.data) continue;
+      const usage = decodeGenMetadata(Buffer.from(row.data));
+      if (!usage) continue;
+
+      modelCalls++;
+      sessionInputTokens += usage.inputTokens;
+      sessionOutputTokens += usage.outputTokens;
+      sessionCacheReadTokens += usage.cacheReadTokens;
+      sessionThinkingTokens += usage.thinkingTokens;
+      sessionResponseTokens += usage.responseTokens;
+      const costUsd = computeGenerationCostUsd(usage.modelName, usage.inputTokens, usage.cacheReadTokens, usage.outputTokens);
+      sessionCostUsd += costUsd;
+      sessionGenerationUsages.push({
+        modelName: usage.modelName,
+        inputTokens: usage.inputTokens,
+        cacheReadTokens: usage.cacheReadTokens,
+        outputTokens: usage.outputTokens,
+        thinkingTokens: usage.thinkingTokens,
+        responseTokens: usage.responseTokens,
+        totalTokens: usage.inputTokens + usage.cacheReadTokens + usage.outputTokens,
+        costUsd,
+      });
+
+      if (usage.thinkingTokens === 0) {
+        fastModeCalls++;
+      }
+
+      if (usage.modelName) {
+        sessionModels.set(usage.modelName, (sessionModels.get(usage.modelName) || 0) + 1);
+      }
+    }
+
+    // Step 1.2: Tool execution steps, Skill distinction & native step timestamps from steps table
+    let steps = [];
+    try {
+      steps = db.prepare('SELECT idx, step_type, step_payload, metadata FROM steps ORDER BY idx').all();
+    } catch (e) {
+      if (e.message && e.message.includes('no such column: metadata')) {
+        steps = db.prepare('SELECT idx, step_type, step_payload FROM steps ORDER BY idx').all();
+      } else {
+        throw e;
+      }
+    }
+    let firstStepTime = null;
+    let lastStepTime = null;
+
+    for (const step of steps) {
+      if (step.step_type === 132) { // Tool execution primitive
+        toolCalls++;
+        if (step.step_payload) {
+          const payloadStr = Buffer.from(step.step_payload).toString('utf8');
+          const match = payloadStr.match(/[\\/]skills[\\/]([^\\/]+)[\\/]SKILL\.md/i);
+          if (match) {
+            const skillName = match[1];
+            sessionSkills.add(skillName);
+            sessionSkillsCount++;
+          }
+        }
+      }
+
+      const stepDate = step.metadata ? decodeStepTimestamp(Buffer.from(step.metadata)) : null;
+      if (stepDate) {
+        const t = stepDate.getTime();
+        if (!firstStepTime || t < firstStepTime) firstStepTime = t;
+        if (!lastStepTime || t > lastStepTime) lastStepTime = t;
+        const dKey = toLocalDateKey(stepDate);
+        if (step.step_type === 14) {
+          sessionDailyTasks.set(dKey, (sessionDailyTasks.get(dKey) || 0) + 1);
+        }
+        if (step.step_type === 15) {
+          sessionGenerationDates.push(dKey);
+          sessionGenerationTimestampsMs.push(t);
+        }
+      }
+
+      // Turn boundary: a user input step (14) resets the counter, so the tally is
+      // "model calls since the last user message" (i.e. the run currently on screen).
+      if (step.step_type === 14) {
+        sessionTurnCalls = 0;
+        sessionTurnStartedAt = stepDate ? stepDate.getTime() : null;
+      } else if (step.step_type === 15) {
+        sessionTurnCalls++;
+      }
+    }
+    sessionStepDuration = firstStepTime && lastStepTime ? lastStepTime - firstStepTime : 0;
+    sessionPerf = extractSessionPerformanceMetrics(steps);
+
+    let topModel = '';
+    let topModelCalls = 0;
+    for (const [name, count] of sessionModels) {
+      if (count > topModelCalls) { topModel = name; topModelCalls = count; }
+    }
+    const turnUsages = sessionGenerationUsages.slice(Math.max(0, sessionGenerationUsages.length - sessionTurnCalls));
+    const metrics = {
+      fingerprint,
+      mtimeMs,
+      modelCalls,
+      toolCalls,
+      fastModeCalls,
+      inputTokens: sessionInputTokens,
+      outputTokens: sessionOutputTokens,
+      cacheReadTokens: sessionCacheReadTokens,
+      thinkingTokens: sessionThinkingTokens,
+      responseTokens: sessionResponseTokens,
+      skillsInvoked: sessionSkillsCount,
+      skillNames: Array.from(sessionSkills),
+      modelCounts: Array.from(sessionModels),
+      tokensFromDb: sessionInputTokens + sessionCacheReadTokens + sessionOutputTokens,
+      generationUsages: sessionGenerationUsages,
+      generationRowCount: genRows.length,
+      generationDates: sessionGenerationDates,
+      generationTimestampsMs: sessionGenerationTimestampsMs,
+      dailyTasks: sessionDailyTasks,
+      duration: sessionStepDuration,
+      turnCalls: sessionTurnCalls,
+      turnStartedAt: sessionTurnStartedAt,
+      turnTokens: turnUsages.reduce((sum, usage) => sum + usage.totalTokens, 0),
+      turnOutputTokens: turnUsages.reduce((sum, usage) => sum + usage.outputTokens, 0),
+      perf: sessionPerf,
+      costUsd: Math.round(sessionCostUsd * 10000) / 10000,
+      topModel,
+    };
+    if (fingerprintsEqual(fingerprint, getFileFingerprint(filePath, true))) {
+      dbCache.set(filePath, metrics);
+      markCacheDirty();
+    }
+    return { metrics, stale: false, mtimeMs };
+  } catch (error) {
+    const isTemporaryLock = error.code === 'SQLITE_BUSY' || error.message?.includes('database is locked') || error.message?.includes('SQLITE_BUSY');
+    if (isTemporaryLock) return { metrics: cached || null, stale: true, mtimeMs };
+    throw error;
+  } finally {
+    if (db) { try { db.close(); } catch {} }
+  }
+}
+
 function computeStats(force = false, dataDir) {
   const nowMs = Date.now();
   const agDir = resolveAntigravityDir(dataDir);
@@ -596,276 +749,57 @@ function computeStats(force = false, dataDir) {
   const modelFrequency = new Map();
   let hasStaleSessions = false;
 
+  function accumulateGenerations(pairs) {
+    for (const { usage, date: dKey, tsMs } of pairs) {
+      if (!realDailyMap.has(dKey)) realDailyMap.set(dKey, { tokens: 0, tasks: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, thinkingTokens: 0, responseTokens: 0, costUsd: 0 });
+      const e = realDailyMap.get(dKey);
+      const genCost = typeof usage.costUsd === 'number'
+        ? usage.costUsd
+        : computeGenerationCostUsd(usage.modelName, usage.inputTokens, usage.cacheReadTokens, usage.outputTokens);
+      e.tokens += usage.totalTokens;
+      e.inputTokens = (e.inputTokens || 0) + usage.inputTokens;
+      e.cacheReadTokens = (e.cacheReadTokens || 0) + usage.cacheReadTokens;
+      e.outputTokens = (e.outputTokens || 0) + usage.outputTokens;
+      e.thinkingTokens = (e.thinkingTokens || 0) + usage.thinkingTokens;
+      e.responseTokens = (e.responseTokens || 0) + usage.responseTokens;
+      e.costUsd = (e.costUsd || 0) + genCost;
+      if (genCost > 0 && typeof tsMs === 'number' && !isNaN(tsMs)) {
+        const bucketTs = Math.floor(tsMs / 60000) * 60000;
+        const pool = classifyQuotaPool(usage.modelName);
+        const key = `${bucketTs}:${pool}`;
+        const existing = realCostTimelineMap.get(key);
+        if (existing) {
+          existing.costUsd += genCost;
+        } else {
+          realCostTimelineMap.set(key, { ts: bucketTs, costUsd: genCost, pool });
+        }
+      }
+    }
+  }
+
   // Phase 1: Scan SQLite databases (metadata & exact ModelUsageStats)
   for (const file of dbFiles) {
     const sessionId = path.basename(file, '.db');
-    const filePath = path.join(convDir, file);
     try {
-      const fingerprint = getFileFingerprint(filePath, true);
-      const effectiveMtimeMs = fingerprint.db.mtimeMs;
-      const cached = dbCache.get(filePath);
-
-      let modelCalls = 0;
-      let toolCalls = 0;
-      let fastModeCalls = 0;
-      let sessionInputTokens = 0;
-      let sessionOutputTokens = 0;
-      let sessionCacheReadTokens = 0;
-      let sessionThinkingTokens = 0;
-      let sessionResponseTokens = 0;
-      let sessionSkills = new Set();
-      let sessionSkillsCount = 0;
-      let sessionModels = new Map();
-      let sessionGenerationUsages = [];
-      let sessionGenerationDates = [];
-      let sessionGenerationTimestampsMs = [];
-      let sessionDailyTasks = new Map();
-      let sessionStepDuration = 0;
-      let sessionTurnCalls = 0;
-      let sessionTurnStartedAt = null;
-      let sessionPerf = null;
-      let parsedCacheEntry = null;
-
-      if (cached && fingerprintsEqual(cached.fingerprint, fingerprint)) {
-        // Reuse cached metrics instantly (<5ms incremental scan)
-        modelCalls = cached.modelCalls;
-        toolCalls = cached.toolCalls;
-        fastModeCalls = cached.fastModeCalls;
-        sessionInputTokens = cached.sessionInputTokens;
-        sessionOutputTokens = cached.sessionOutputTokens;
-        sessionCacheReadTokens = cached.sessionCacheReadTokens;
-        sessionThinkingTokens = cached.sessionThinkingTokens;
-        sessionResponseTokens = cached.sessionResponseTokens;
-        sessionSkills = new Set(cached.sessionSkills);
-        sessionSkillsCount = cached.sessionSkillsCount;
-        sessionModels = new Map(cached.sessionModels);
-        // Usage rows are immutable after parse (pairing builds new objects, summaries only
-        // read), so the cached array is shared by reference — cloning it made every warm
-        // scan O(all generations) in object churn.
-        sessionGenerationUsages = cached.generationUsages || [];
-        sessionGenerationDates = cached.generationDates || [];
-        sessionGenerationTimestampsMs = cached.generationTimestampsMs || [];
-        sessionDailyTasks = cached.dailyTasks instanceof Map ? cached.dailyTasks : new Map(cached.dailyTasks || []);
-        sessionStepDuration = cached.duration || 0;
-        sessionTurnCalls = cached.turnCalls || 0;
-        sessionTurnStartedAt = cached.turnStartedAt || null;
-        sessionPerf = cached.perf || null;
-      } else {
-        let db = null;
-        try {
-          db = new DatabaseSync(filePath, { readOnly: true });
-
-          // Step 1.1: Exact ModelUsageStats from gen_metadata protobuf BLOBs
-          const genRows = db.prepare('SELECT idx, data FROM gen_metadata ORDER BY idx').all();
-          for (const row of genRows) {
-            if (!row.data) continue;
-            const usage = decodeGenMetadata(Buffer.from(row.data));
-            if (!usage) continue;
-
-            modelCalls++;
-            sessionInputTokens += usage.inputTokens;
-            sessionOutputTokens += usage.outputTokens;
-            sessionCacheReadTokens += usage.cacheReadTokens;
-            sessionThinkingTokens += usage.thinkingTokens;
-            sessionResponseTokens += usage.responseTokens;
-            sessionGenerationUsages.push({
-              modelName: usage.modelName,
-              inputTokens: usage.inputTokens,
-              cacheReadTokens: usage.cacheReadTokens,
-              outputTokens: usage.outputTokens,
-              thinkingTokens: usage.thinkingTokens,
-              responseTokens: usage.responseTokens,
-              totalTokens: usage.inputTokens + usage.cacheReadTokens + usage.outputTokens,
-              costUsd: computeGenerationCostUsd(usage.modelName, usage.inputTokens, usage.cacheReadTokens, usage.outputTokens),
-            });
-
-            if (usage.thinkingTokens === 0) {
-              fastModeCalls++;
-            }
-
-            if (usage.modelName) {
-              sessionModels.set(usage.modelName, (sessionModels.get(usage.modelName) || 0) + 1);
-            }
-          }
-
-          // Step 1.2: Tool execution steps, Skill distinction & native step timestamps from steps table
-          let steps = [];
-          try {
-            steps = db.prepare('SELECT idx, step_type, step_payload, metadata FROM steps ORDER BY idx').all();
-          } catch (e) {
-            if (e.message && e.message.includes('no such column: metadata')) {
-              steps = db.prepare('SELECT idx, step_type, step_payload FROM steps ORDER BY idx').all();
-            } else {
-              throw e;
-            }
-          }
-          let firstStepTime = null;
-          let lastStepTime = null;
-
-          for (const step of steps) {
-            if (step.step_type === 132) { // Tool execution primitive
-              toolCalls++;
-              if (step.step_payload) {
-                const payloadStr = Buffer.from(step.step_payload).toString('utf8');
-                const match = payloadStr.match(/[\\/]skills[\\/]([^\\/]+)[\\/]SKILL\.md/i);
-                if (match) {
-                  const skillName = match[1];
-                  sessionSkills.add(skillName);
-                  sessionSkillsCount++;
-                }
-              }
-            }
-
-            const stepDate = step.metadata ? decodeStepTimestamp(Buffer.from(step.metadata)) : null;
-            if (stepDate) {
-              const t = stepDate.getTime();
-              if (!firstStepTime || t < firstStepTime) firstStepTime = t;
-              if (!lastStepTime || t > lastStepTime) lastStepTime = t;
-              const dKey = toLocalDateKey(stepDate);
-              if (step.step_type === 14) {
-                sessionDailyTasks.set(dKey, (sessionDailyTasks.get(dKey) || 0) + 1);
-              }
-              if (step.step_type === 15) {
-                sessionGenerationDates.push(dKey);
-                sessionGenerationTimestampsMs.push(t);
-              }
-            }
-
-            // Turn boundary: a user input step (14) resets the counter, so the tally is
-            // "model calls since the last user message" (i.e. the run currently on screen).
-            if (step.step_type === 14) {
-              sessionTurnCalls = 0;
-              sessionTurnStartedAt = stepDate ? stepDate.getTime() : null;
-            } else if (step.step_type === 15) {
-              sessionTurnCalls++;
-            }
-          }
-          sessionStepDuration = firstStepTime && lastStepTime ? lastStepTime - firstStepTime : 0;
-          sessionPerf = extractSessionPerformanceMetrics(steps);
-
-          parsedCacheEntry = {
-            mtimeMs: effectiveMtimeMs,
-            fingerprint,
-            modelCalls,
-            toolCalls,
-            fastModeCalls,
-            sessionInputTokens,
-            sessionOutputTokens,
-            sessionCacheReadTokens,
-            sessionThinkingTokens,
-            sessionResponseTokens,
-            sessionSkills: Array.from(sessionSkills),
-            sessionSkillsCount,
-            sessionModels: Array.from(sessionModels.entries()),
-            generationUsages: sessionGenerationUsages,
-            generationDates: sessionGenerationDates,
-            generationTimestampsMs: sessionGenerationTimestampsMs,
-            dailyTasks: sessionDailyTasks,
-            duration: sessionStepDuration,
-            turnCalls: sessionTurnCalls,
-            turnStartedAt: sessionTurnStartedAt,
-            perf: sessionPerf,
-          };
-        } catch (dbErr) {
-          const isTemporaryLock =
-            dbErr.code === 'SQLITE_BUSY' ||
-            dbErr.message?.includes('database is locked') ||
-            dbErr.message?.includes('SQLITE_BUSY');
-
-          if (isTemporaryLock && cached) {
-            // Graceful fallback on active lock: reuse previous cached snapshot rather than dropping to zero
-            modelCalls = cached.modelCalls;
-            toolCalls = cached.toolCalls;
-            fastModeCalls = cached.fastModeCalls;
-            sessionInputTokens = cached.sessionInputTokens;
-            sessionOutputTokens = cached.sessionOutputTokens;
-            sessionCacheReadTokens = cached.sessionCacheReadTokens;
-            sessionThinkingTokens = cached.sessionThinkingTokens;
-            sessionResponseTokens = cached.sessionResponseTokens;
-            sessionSkills = new Set(cached.sessionSkills);
-            sessionSkillsCount = cached.sessionSkillsCount;
-            sessionModels = new Map(cached.sessionModels);
-            // Usage rows are immutable after parse (pairing builds new objects, summaries only
-        // read), so the cached array is shared by reference — cloning it made every warm
-        // scan O(all generations) in object churn.
-        sessionGenerationUsages = cached.generationUsages || [];
-            sessionGenerationDates = cached.generationDates || [];
-            sessionGenerationTimestampsMs = cached.generationTimestampsMs || [];
-            sessionDailyTasks = cached.dailyTasks instanceof Map ? cached.dailyTasks : new Map(cached.dailyTasks || []);
-            sessionStepDuration = cached.duration || 0;
-            sessionTurnCalls = cached.turnCalls || 0;
-            sessionTurnStartedAt = cached.turnStartedAt || null;
-            sessionPerf = cached.perf || null;
-            hasStaleSessions = true;
-          } else {
-            if (isTemporaryLock) {
-              hasStaleSessions = true;
-            }
-            throw dbErr;
-          }
-        } finally {
-          if (db) {
-            try { db.close(); } catch {}
-          }
-        }
-        if (parsedCacheEntry) {
-          const afterFingerprint = getFileFingerprint(filePath, true);
-          if (fingerprintsEqual(fingerprint, afterFingerprint)) {
-            dbCache.set(filePath, parsedCacheEntry);
-            markCacheDirty();
-          }
-        }
+      const { metrics, stale, mtimeMs } = readSessionSnapshot(path.join(convDir, file));
+      if (stale) hasStaleSessions = true;
+      if (!metrics) continue;
+      sessionMetrics.set(sessionId, stale ? { ...metrics, mtimeMs } : metrics);
+      totalModelCalls += metrics.modelCalls;
+      totalToolCalls += metrics.toolCalls;
+      totalFastModeCalls += metrics.fastModeCalls;
+      totalInputTokens += metrics.inputTokens;
+      totalOutputTokens += metrics.outputTokens;
+      totalCacheReadTokens += metrics.cacheReadTokens;
+      totalThinkingTokens += metrics.thinkingTokens;
+      totalResponseTokens += metrics.responseTokens;
+      totalSkillsInvoked += metrics.skillsInvoked;
+      metrics.skillNames.forEach(skill => uniqueSkills.add(skill));
+      for (const [name, count] of metrics.modelCounts) {
+        modelFrequency.set(name, (modelFrequency.get(name) || 0) + count);
       }
-
-      const sessionTotalTokens = sessionInputTokens + sessionCacheReadTokens + sessionOutputTokens;
-
-      sessionMetrics.set(sessionId, {
-        modelCalls,
-        toolCalls,
-        fastModeCalls,
-        inputTokens: sessionInputTokens,
-        outputTokens: sessionOutputTokens,
-        cacheReadTokens: sessionCacheReadTokens,
-        thinkingTokens: sessionThinkingTokens,
-        responseTokens: sessionResponseTokens,
-        skillsInvoked: sessionSkillsCount,
-        skillNames: Array.from(sessionSkills),
-        tokensFromDb: sessionTotalTokens,
-        generationUsages: sessionGenerationUsages,
-        generationDates: sessionGenerationDates,
-        generationTimestampsMs: sessionGenerationTimestampsMs,
-        dailyTasks: sessionDailyTasks,
-        duration: sessionStepDuration,
-        turnCalls: sessionTurnCalls,
-        turnStartedAt: sessionTurnStartedAt,
-        mtimeMs: effectiveMtimeMs,
-        perf: sessionPerf,
-      });
-
-      totalModelCalls += modelCalls;
-      totalToolCalls += toolCalls;
-      totalFastModeCalls += fastModeCalls;
-      totalInputTokens += sessionInputTokens;
-      totalOutputTokens += sessionOutputTokens;
-      totalCacheReadTokens += sessionCacheReadTokens;
-      totalThinkingTokens += sessionThinkingTokens;
-      totalResponseTokens += sessionResponseTokens;
-      totalSkillsInvoked += sessionSkillsCount;
-      sessionSkills.forEach(s => uniqueSkills.add(s));
-
-      for (const [mName, cnt] of sessionModels) {
-        modelFrequency.set(mName, (modelFrequency.get(mName) || 0) + cnt);
-      }
-
-    } catch (err) {
-      const isTemporaryLock =
-        err.code === 'SQLITE_BUSY' ||
-        err.message?.includes('database is locked') ||
-        err.message?.includes('SQLITE_BUSY');
-
-      if (!isTemporaryLock) {
-        console.warn(`[Stats] Failed to read ${file}: ${err.message}`);
-      }
+    } catch (error) {
+      console.warn(`[Stats] Failed to read ${file}: ${error.message}`);
     }
   }
 
@@ -991,31 +925,7 @@ function computeStats(force = false, dataDir) {
             const dbComplete = dbDates.length >= sessionData.generationUsages.length && dbTimestamps.length >= sessionData.generationUsages.length;
             const effectiveDates = dbComplete ? dbDates : generationDates.length > 0 ? generationDates : dbDates;
             const effectiveTimestamps = dbComplete ? dbTimestamps : generationTimestampsMs.length > 0 ? generationTimestampsMs : dbTimestamps;
-            for (const { usage, date: dKey, tsMs } of pairGenerationDates(sessionData.generationUsages, effectiveDates, fallbackDateKey, effectiveTimestamps, fallbackTs)) {
-              if (!realDailyMap.has(dKey)) realDailyMap.set(dKey, { tokens: 0, tasks: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, thinkingTokens: 0, responseTokens: 0, costUsd: 0 });
-              const e = realDailyMap.get(dKey);
-              const genCost = typeof usage.costUsd === 'number'
-                ? usage.costUsd
-                : computeGenerationCostUsd(usage.modelName, usage.inputTokens, usage.cacheReadTokens, usage.outputTokens);
-              e.tokens += usage.totalTokens;
-              e.inputTokens = (e.inputTokens || 0) + usage.inputTokens;
-              e.cacheReadTokens = (e.cacheReadTokens || 0) + usage.cacheReadTokens;
-              e.outputTokens = (e.outputTokens || 0) + usage.outputTokens;
-              e.thinkingTokens = (e.thinkingTokens || 0) + usage.thinkingTokens;
-              e.responseTokens = (e.responseTokens || 0) + usage.responseTokens;
-              e.costUsd = (e.costUsd || 0) + genCost;
-              if (genCost > 0 && typeof tsMs === 'number' && !isNaN(tsMs)) {
-                const bucketTs = Math.floor(tsMs / 60000) * 60000;
-                const pool = classifyQuotaPool(usage.modelName);
-                const key = `${bucketTs}:${pool}`;
-                const existing = realCostTimelineMap.get(key);
-                if (existing) {
-                  existing.costUsd += genCost;
-                } else {
-                  realCostTimelineMap.set(key, { ts: bucketTs, costUsd: genCost, pool });
-                }
-              }
-            }
+            accumulateGenerations(pairGenerationDates(sessionData.generationUsages, effectiveDates, fallbackDateKey, effectiveTimestamps, fallbackTs));
           }
           processedSessions.add(sessionId);
 
@@ -1052,32 +962,9 @@ function computeStats(force = false, dataDir) {
       }
     }
 
-    for (const { usage, date: dKey, tsMs } of pairGenerationDates(sessionData.generationUsages, finalDates, fallbackDateKey, finalTimestamps, fallbackTs)) {
-      realActiveDates.add(dKey);
-      if (!realDailyMap.has(dKey)) realDailyMap.set(dKey, { tokens: 0, tasks: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, thinkingTokens: 0, responseTokens: 0, costUsd: 0 });
-      const e = realDailyMap.get(dKey);
-      const genCost = typeof usage.costUsd === 'number'
-        ? usage.costUsd
-        : computeGenerationCostUsd(usage.modelName, usage.inputTokens, usage.cacheReadTokens, usage.outputTokens);
-      e.tokens += usage.totalTokens;
-      e.inputTokens = (e.inputTokens || 0) + usage.inputTokens;
-      e.cacheReadTokens = (e.cacheReadTokens || 0) + usage.cacheReadTokens;
-      e.outputTokens = (e.outputTokens || 0) + usage.outputTokens;
-      e.thinkingTokens = (e.thinkingTokens || 0) + usage.thinkingTokens;
-      e.responseTokens = (e.responseTokens || 0) + usage.responseTokens;
-      e.costUsd = (e.costUsd || 0) + genCost;
-      if (genCost > 0 && typeof tsMs === 'number' && !isNaN(tsMs)) {
-        const bucketTs = Math.floor(tsMs / 60000) * 60000;
-        const pool = classifyQuotaPool(usage.modelName);
-        const key = `${bucketTs}:${pool}`;
-        const existing = realCostTimelineMap.get(key);
-        if (existing) {
-          existing.costUsd += genCost;
-        } else {
-          realCostTimelineMap.set(key, { ts: bucketTs, costUsd: genCost, pool });
-        }
-      }
-    }
+    const pairs = pairGenerationDates(sessionData.generationUsages, finalDates, fallbackDateKey, finalTimestamps, fallbackTs);
+    for (const { date } of pairs) realActiveDates.add(date);
+    accumulateGenerations(pairs);
 
     if (sessionData.duration && sessionData.duration > longestDurationMs) {
       longestDurationMs = sessionData.duration;
@@ -1105,23 +992,7 @@ function computeStats(force = false, dataDir) {
     realTotalTokens += finalTokens;
     if (finalTokens > realPeakTokens) realPeakTokens = finalTokens;
 
-    let sessionCostUsd = 0;
-    const perModelCalls = new Map();
-    for (const usage of usages) {
-      sessionCostUsd += typeof usage.costUsd === 'number'
-        ? usage.costUsd
-        : computeGenerationCostUsd(usage.modelName, usage.inputTokens, usage.cacheReadTokens, usage.outputTokens);
-      if (usage.modelName) perModelCalls.set(usage.modelName, (perModelCalls.get(usage.modelName) || 0) + 1);
-    }
-    let topModel = '';
-    let topModelCalls = 0;
-    for (const [mName, cnt] of perModelCalls) {
-      if (cnt > topModelCalls) {
-        topModel = mName;
-        topModelCalls = cnt;
-      }
-    }
-    const sessionCostRounded = Math.round(sessionCostUsd * 10000) / 10000;
+    const sessionCostRounded = metrics.costUsd;
     const isRunning = runningSessions.has(sId);
     const lastActiveAt = metrics.mtimeMs || null;
 
@@ -1131,54 +1002,12 @@ function computeStats(force = false, dataDir) {
       costUsd: sessionCostRounded,
       turnsCount: usages.length,
       modelCalls: metrics.modelCalls || 0,
-      topModel,
+      topModel: metrics.topModel,
       lastActiveAt,
       isRunning,
     });
 
-    const lastUsage = usages.length > 0 ? usages[usages.length - 1] : null;
-    const promptTokens = lastUsage ? (lastUsage.inputTokens + lastUsage.cacheReadTokens) : 0;
-    const turnCalls = metrics.turnCalls || 0;
-    const turnTokens = usages
-      .slice(Math.max(0, usages.length - turnCalls))
-      .reduce((sum, usage) => sum + usage.inputTokens + usage.cacheReadTokens + usage.outputTokens, 0);
-    const perf = metrics.perf || { rounds: 1, steps: 0, tps: null, modelDurationSec: 0, toolDurationSec: 0, ttftSec: null };
-    const dshTelemetry = buildDshTelemetry({
-      sessionId: sId,
-      isStreaming: isRunning,
-      perf,
-      promptTokens,
-      totalInput: metrics.inputTokens || 0,
-      totalCache: metrics.cacheReadTokens || 0,
-      totalOutput: metrics.outputTokens || 0,
-    });
-    const summary = {
-      isRunning,
-      turnCalls,
-      turnTokens,
-      turnStartedAt: metrics.turnStartedAt || null,
-      promptTokens,
-      latestInput: lastUsage ? lastUsage.inputTokens : 0,
-      latestCacheRead: lastUsage ? lastUsage.cacheReadTokens : 0,
-      latestOutput: lastUsage ? lastUsage.outputTokens : 0,
-      latestThinking: lastUsage ? lastUsage.thinkingTokens : 0,
-      latestResponse: lastUsage ? lastUsage.responseTokens : 0,
-      modelName: lastUsage ? (lastUsage.modelName || '') : '',
-      totalTokens: finalTokens,
-      totalInputTokens: metrics.inputTokens || 0,
-      totalCacheReadTokens: metrics.cacheReadTokens || 0,
-      totalOutputTokens: metrics.outputTokens || 0,
-      compactionLimit: 256000,
-      turnsCount: usages.length,
-      costUsd: sessionCostRounded,
-      rounds: perf.rounds,
-      steps: perf.steps,
-      tps: perf.tps,
-      modelDurationSec: perf.modelDurationSec,
-      toolDurationSec: perf.toolDurationSec,
-      ttftSec: perf.ttftSec,
-      dshTelemetry,
-    };
+    const summary = { ...buildSessionSummary(sId, metrics, isRunning), costUsd: sessionCostRounded };
     if (isRunning || (lastActiveAt !== null && nowMs - lastActiveAt < SESSION_LIVE_WINDOW_MS)) {
       sessionsSummary[sId] = summary;
     }
@@ -1622,113 +1451,68 @@ function buildDshTelemetry({
   };
 }
 
+function buildSessionSummary(sId, metrics, isRunning) {
+  const usages = metrics.generationUsages;
+  const lastUsage = usages.length > 0 ? usages[usages.length - 1] : null;
+  const promptTokens = lastUsage ? (lastUsage.inputTokens + lastUsage.cacheReadTokens) : 0;
+  const turnCalls = metrics.turnCalls || 0;
+  const turnTokens = metrics.turnTokens;
+  const perf = metrics.perf || { rounds: 1, steps: 0, tps: null, modelDurationSec: 0, toolDurationSec: 0, ttftSec: null };
+  const dshTelemetry = buildDshTelemetry({
+    sessionId: sId,
+    isStreaming: isRunning,
+    perf,
+    promptTokens,
+    totalInput: metrics.inputTokens || 0,
+    totalCache: metrics.cacheReadTokens || 0,
+    totalOutput: metrics.outputTokens || 0,
+  });
+  return {
+    isRunning,
+    turnCalls,
+    turnTokens,
+    turnStartedAt: metrics.turnStartedAt || null,
+    promptTokens,
+    latestInput: lastUsage ? lastUsage.inputTokens : 0,
+    latestCacheRead: lastUsage ? lastUsage.cacheReadTokens : 0,
+    latestOutput: lastUsage ? lastUsage.outputTokens : 0,
+    latestThinking: lastUsage ? lastUsage.thinkingTokens : 0,
+    latestResponse: lastUsage ? lastUsage.responseTokens : 0,
+    modelName: lastUsage ? (lastUsage.modelName || '') : '',
+    totalTokens: metrics.tokensFromDb || 0,
+    totalInputTokens: metrics.inputTokens || 0,
+    totalCacheReadTokens: metrics.cacheReadTokens || 0,
+    totalOutputTokens: metrics.outputTokens || 0,
+    compactionLimit: 256000,
+    turnsCount: usages.length,
+    rounds: perf.rounds,
+    steps: perf.steps,
+    tps: perf.tps,
+    modelDurationSec: perf.modelDurationSec,
+    toolDurationSec: perf.toolDurationSec,
+    ttftSec: perf.ttftSec,
+    dshTelemetry,
+  };
+}
+
 function readSingleSession(sessionId, dataDir) {
   if (!sessionId || typeof sessionId !== 'string') return null;
   if (sessionId.includes('..') || sessionId.includes('/') || sessionId.includes('\\')) return null;
-
   const agDir = resolveAntigravityDir(dataDir);
-  const filePath = path.join(agDir, 'conversations', `${sessionId}.db`);
-  if (!fs.existsSync(filePath)) return null;
-
-  let db = null;
   try {
-    db = new DatabaseSync(filePath, { readOnly: true });
-    // A fresh conversation has no gen_metadata rows yet. Returning a zero snapshot (instead of
-    // null) is what lets the pill show "generating, 0 calls" without waiting for a full rescan.
-    const genRows = db.prepare('SELECT idx, data FROM gen_metadata ORDER BY idx').all() || [];
-
-    const usages = [];
-    let totalTokens = 0;
-    let totalInput = 0;
-    let totalCache = 0;
-    let totalOutput = 0;
-    let totalThinking = 0;
-    let totalResponse = 0;
-
-    for (const row of genRows) {
-      if (!row.data) continue;
-      const usage = decodeGenMetadata(Buffer.from(row.data));
-      if (!usage) continue;
-      usages.push(usage);
-      totalTokens += (usage.inputTokens + usage.cacheReadTokens + usage.outputTokens);
-      totalInput += usage.inputTokens;
-      totalCache += usage.cacheReadTokens;
-      totalOutput += usage.outputTokens;
-      totalThinking += usage.thinkingTokens;
-      totalResponse += usage.responseTokens;
-    }
-
-    // Turn boundary mirrors computeStats: calls since the last user input step (type 14).
-    let steps = [];
-    try {
-      steps = db.prepare('SELECT idx, step_type, metadata, step_payload FROM steps ORDER BY idx').all();
-    } catch (e) {
-      steps = db.prepare('SELECT idx, step_type FROM steps ORDER BY idx').all();
-    }
-    let turnCalls = 0;
-    let turnStartedAt = null;
-    for (const step of steps) {
-      if (step.step_type === 14) {
-        turnCalls = 0;
-        const startedAt = step.metadata ? decodeStepTimestamp(Buffer.from(step.metadata)) : null;
-        turnStartedAt = startedAt ? startedAt.getTime() : null;
-      } else if (step.step_type === 15) {
-        turnCalls++;
-      }
-    }
-    const turnUsages = usages.slice(Math.max(0, usages.length - turnCalls));
-    const turnTokens = turnUsages.reduce((sum, usage) => sum + usage.inputTokens + usage.cacheReadTokens + usage.outputTokens, 0);
-    const turnOutputTokens = turnUsages.reduce((sum, usage) => sum + usage.outputTokens, 0);
-
-    const lastUsage = usages.length > 0 ? usages[usages.length - 1] : null;
-    const promptTokens = lastUsage ? lastUsage.inputTokens + lastUsage.cacheReadTokens : 0;
-    const perf = extractSessionPerformanceMetrics(steps);
-    const isRunning = readRunningSessions(agDir).has(sessionId);
-    const dshTelemetry = buildDshTelemetry({
-      sessionId,
-      isStreaming: isRunning,
-      perf,
-      promptTokens,
-      totalInput,
-      totalCache,
-      totalOutput,
-    });
+    hydrateCacheFromDisk(agDir);
+    const { metrics } = readSessionSnapshot(path.join(agDir, 'conversations', `${sessionId}.db`));
+    if (!metrics) return null;
     return {
       sessionId,
-      isRunning,
-      promptTokens,
-      latestInput: lastUsage ? lastUsage.inputTokens : 0,
-      latestCacheRead: lastUsage ? lastUsage.cacheReadTokens : 0,
-      latestOutput: lastUsage ? lastUsage.outputTokens : 0,
-      latestThinking: lastUsage ? lastUsage.thinkingTokens : 0,
-      latestResponse: lastUsage ? lastUsage.responseTokens : 0,
-      modelName: lastUsage ? (lastUsage.modelName || '') : '',
-      totalTokens,
-      totalInputTokens: totalInput,
-      totalCacheReadTokens: totalCache,
-      totalOutputTokens: totalOutput,
-      totalThinkingTokens: totalThinking,
-      totalResponseTokens: totalResponse,
-      turnCalls,
-      turnTokens,
-      turnOutputTokens,
-      turnStartedAt,
-      compactionLimit: 256000,
-      turnsCount: genRows.length,
-      rounds: perf.rounds,
-      steps: perf.steps,
-      tps: perf.tps,
-      modelDurationSec: perf.modelDurationSec,
-      toolDurationSec: perf.toolDurationSec,
-      ttftSec: perf.ttftSec,
-      dshTelemetry,
+      ...buildSessionSummary(sessionId, metrics, readRunningSessions(agDir).has(sessionId)),
+      totalThinkingTokens: metrics.thinkingTokens,
+      totalResponseTokens: metrics.responseTokens,
+      turnOutputTokens: metrics.turnOutputTokens,
+      turnsCount: metrics.generationRowCount,
     };
-  } catch (err) {
+  } catch {
     return null;
-  } finally {
-    if (db) {
-      try { db.close(); } catch {}
-    }
   }
 }
 

@@ -8,6 +8,7 @@ export const WINDOW_API: string;
 export const IPC_REQUEST_SYNC: string;
 export const EVENT_REQUEST_SYNC: string;
 export const EVENT_STATS_UPDATED: string;
+export const EVENT_QUOTA_UPDATED: string;
 export const EVENT_LANGUAGE_CHANGED: string;
 export const STYLE_ELEMENT_ID: string;
 export const CONTAINER_STATUSBAR_ID: string;

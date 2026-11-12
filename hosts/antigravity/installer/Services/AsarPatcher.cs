@@ -18,6 +18,8 @@ namespace AntiTokenSetup.Services
         private static readonly string[] InjectedAssetNames =
         {
             "loader.cjs",
+            "update-checker.cjs",
+            "contract.json",
             "aggregate-stats.cjs",
             "paths.cjs",
             "injection-contract.cjs",

@@ -49,13 +49,8 @@ test('Bundle has CSS version tag', () => {
   assert(content.includes('antigravity-stats-styles'), 'Should have style ID');
 });
 
-test('Aggregate script has sessionMetrics deduplication', () => {
-  const aggregateScript = fs.readFileSync(path.join(__dirname, 'aggregate-stats.cjs'), 'utf8');
-
-  assert(aggregateScript.includes('sessionMetrics = new Map()'), 'Should have sessionMetrics Map');
-  assert(aggregateScript.includes('tokensFromDb'), 'Should track db tokens');
-  assert(aggregateScript.includes('generationUsages'), 'Should retain per-generation usage rows');
-  assert(!aggregateScript.includes('tokensFromTranscript'), 'Must not invent transcript token totals');
+test('Full and single-session reads share snapshots without counting usage twice', () => {
+  require('node:child_process').execFileSync(process.execPath, [path.join(__dirname, 'test-session-cache.cjs')], { stdio: 'inherit' });
 });
 
 test('Daily token allocation falls back when generation/date counts differ', () => {
@@ -254,11 +249,7 @@ test('Live Sync keeps debounce, in-flight, and busy-lock safeguards', () => {
   assert(loaderCode.includes('retry-after-busy'), 'Must retry after SQLITE_BUSY');
 });
 
-test('SQLITE_BUSY fallback and auto-retry on busy lock exist', () => {
-  const aggregateCode = fs.readFileSync(path.join(__dirname, 'aggregate-stats.cjs'), 'utf8');
-  assert(aggregateCode.includes('hasStaleSessions'), 'aggregate-stats must track hasStaleSessions');
-  assert(aggregateCode.includes('isTemporaryLock && cached'), 'aggregate-stats must fall back to cached data on active lock');
-
+test('Loader retries busy reads and StatsView requests an initial sync', () => {
   const loaderCode = fs.readFileSync(path.join(__dirname, '..', 'hosts', 'antigravity', 'scripts', 'loader.cjs'), 'utf8');
   assert(loaderCode.includes('retry-after-busy'), 'loader must schedule push retry after busy lock');
   assert(loaderCode.includes('retryBusyTimer'), 'loader must manage retry timer');

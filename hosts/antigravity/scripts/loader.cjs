@@ -226,6 +226,12 @@ async function injectStatsIntoWindow(target) {
       })()
     `;
     await wc.executeJavaScript(postScript);
+    try {
+      const { version } = require('./contract.json');
+      require('./update-checker.cjs').startUpdateChecks(electron, version);
+    } catch (error) {
+      console.warn('[TokenStats Update] Could not start update checks:', error.message);
+    }
   } catch (err) {
     // Window may have navigated, reloaded, or closed
   }

@@ -216,44 +216,6 @@ assert.equal(parseQuotaSummaryResponse({}), null);
 assert.equal(parseQuotaSummaryResponse({ groups: [] }), null);
 console.log('PASS: parseQuotaSummaryResponse parses Gemini weekly buckets and ignores Claude buckets');
 
-console.log('--- Testing tryFetchLiveQuotaFromHost TTL and Force Logic ---');
-let mockLastQuotaFetchTime = 0;
-const MOCK_TTL_MS = 30000;
-let mockRpcCalls = 0;
-let mockWindowQuota = null;
-
-function mockTryFetch(force = false, now = Date.now()) {
-  if (!force && mockWindowQuota && (now - mockLastQuotaFetchTime < MOCK_TTL_MS)) {
-    return mockWindowQuota;
-  }
-  mockRpcCalls++;
-  mockLastQuotaFetchTime = now;
-  mockWindowQuota = { capturedAt: new Date(now).toISOString(), value: mockRpcCalls };
-  return mockWindowQuota;
-}
-
-// 1. First call fetches fresh
-const q1 = mockTryFetch(false, 1000);
-assert.equal(mockRpcCalls, 1);
-assert.equal(q1.value, 1);
-
-// 2. Call within TTL returns cached value without RPC
-const q2 = mockTryFetch(false, 5000);
-assert.equal(mockRpcCalls, 1);
-assert.equal(q2.value, 1);
-
-// 3. Force call bypasses TTL and performs fresh RPC
-const q3 = mockTryFetch(true, 6000);
-assert.equal(mockRpcCalls, 2);
-assert.equal(q3.value, 2);
-
-// 4. Call after TTL expires (30s later) performs fresh RPC
-const q4 = mockTryFetch(false, 40000);
-assert.equal(mockRpcCalls, 3);
-assert.equal(q4.value, 3);
-console.log('PASS: tryFetchLiveQuotaFromHost correctly respects 30s TTL and force bypass');
-
-
 console.log('--- Testing i18n Translations Completeness ---');
 const content = fs.readFileSync('src/i18n/translations.ts', 'utf8');
 const requiredKeys = [

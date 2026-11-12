@@ -239,6 +239,11 @@ try {
     fs.copyFileSync(aggregateSource, path.join(statsDir, 'aggregate-stats.cjs'));
     fs.copyFileSync(pathsSource, path.join(statsDir, 'paths.cjs'));
     fs.copyFileSync(contractSource, path.join(statsDir, 'injection-contract.cjs'));
+    fs.copyFileSync(path.join(__dirname, 'update-checker.cjs'), path.join(statsDir, 'update-checker.cjs'));
+    fs.writeFileSync(path.join(statsDir, 'contract.json'), JSON.stringify({
+      version: JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8')).version,
+      ...contract,
+    }, null, 2), 'utf8');
     fs.copyFileSync(proxyManagerSource, path.join(statsDir, 'proxy-manager.cjs'));
     fs.copyFileSync(bundlePath, path.join(statsDir, 'antigravity-stats-bundle.js'));
     log('   ✓ Copied loader, aggregate engine, proxy manager, and UI bundle into dist/antigravity-stats/');

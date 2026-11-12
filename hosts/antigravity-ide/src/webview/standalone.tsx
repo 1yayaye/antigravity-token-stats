@@ -5,7 +5,7 @@ import '../../../../src/index.css';
 import { StatsView } from '../../../../src/components/stats/StatsView';
 import { LanguageProvider } from '../../../../src/i18n/LanguageContext';
 import { syncThemeToElement } from '../../../../src/services/stats-service';
-import { EVENT_STATS_UPDATED, WINDOW_LIVE_QUOTA, WINDOW_REQUEST_SYNC, WINDOW_STATS } from '../../../../src/injection-contract.cjs';
+import { EVENT_QUOTA_UPDATED, EVENT_STATS_UPDATED, WINDOW_LIVE_QUOTA, WINDOW_REQUEST_SYNC, WINDOW_STATS } from '../../../../src/injection-contract.cjs';
 import { EXT_TO_WEBVIEW, WEBVIEW_TO_EXT, type ExtensionToWebviewMessage, type ThemeKind } from '../ide-contract';
 import '../../../../src/domain/stats.types';
 
@@ -43,12 +43,8 @@ window.addEventListener('message', (event: MessageEvent) => {
       window.dispatchEvent(new CustomEvent(EVENT_STATS_UPDATED, { detail: msg.stats }));
       break;
     case EXT_TO_WEBVIEW.QUOTA:
-      // Mirror the quota into the shared window global so QuotaHeroCard's
-      // tryFetchLiveQuotaFromHost() picks it up. Dispatched WITHOUT a detail: the
-      // shared StatsView handler treats detail as AggregatedStats, and the stats
-      // side was already pushed via EXT_TO_WEBVIEW.STATS.
       (window as unknown as Record<string, unknown>)[WINDOW_LIVE_QUOTA] = msg.quota;
-      window.dispatchEvent(new CustomEvent(EVENT_STATS_UPDATED));
+      window.dispatchEvent(new CustomEvent(EVENT_QUOTA_UPDATED, { detail: msg.quota }));
       break;
     case EXT_TO_WEBVIEW.THEME:
       applyTheme(msg.themeKind);

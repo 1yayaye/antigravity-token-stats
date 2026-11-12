@@ -39,6 +39,14 @@ Seamlessly integrated into the UI (**Settings → Usage Stats**) via native app.
 3. Click **Install / Update Patch**, then launch Antigravity and open **Settings → Usage Stats**.
 > **Note**: To restore factory state at any time, open the same `.exe` installer and click **Restore Factory**.
 
+#### Update notifications
+
+The desktop client checks GitHub Releases 10 seconds after its first main-window load, then every 6 hours. A newer stable release with an uploaded installer shows a **Download update / Later** dialog. **Download update** opens the matching `.exe` in your default browser; run it and click **Install / Update Patch** to upgrade. **Later**, closing the dialog, or pressing Esc defers the reminder until the next launch. Each version is shown once per launch, in Chinese or English according to your system language.
+
+Existing installations need one manual upgrade to a build containing this feature. Checks send no usage data or transcripts. If GitHub is unavailable or rate-limits requests, the client logs the failure and tries again at the next scheduled check.
+
+For maintainers: increase `package.json.version` and publish the matching `vX.Y.Z` tag with `antigravity-token-stats-vX.Y.Z-setup.exe` attached to the stable Release. The release workflow rejects mismatched tags. Rebuilding the same version does not trigger an update reminder.
+
 #### Option 2: From Source / Developer Mode
 
 ```bash

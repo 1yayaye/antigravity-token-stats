@@ -28,12 +28,31 @@ function makeUsagePayload() {
   return Buffer.concat([Buffer.from([0x0a, msg1.length]), msg1]);
 }
 
+function timestamp(tag, seconds) {
+  const bytes = [];
+  let value = seconds;
+  while (value > 127) { bytes.push((value % 128) | 128); value = Math.floor(value / 128); }
+  bytes.push(value);
+  return Buffer.from([(tag << 3) | 2, bytes.length + 1, 8, ...bytes]);
+}
+
 function prepareData() {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   fs.mkdirSync(path.dirname(transcriptPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
   db.exec('CREATE TABLE gen_metadata (idx INTEGER, data BLOB); CREATE TABLE steps (idx INTEGER, step_type INTEGER, step_payload BLOB, metadata BLOB);');
   db.prepare('INSERT INTO gen_metadata (idx, data) VALUES (?, ?)').run(1, makeUsagePayload());
+  const start = 1789689600;
+  const step = db.prepare('INSERT INTO steps (idx, step_type, step_payload, metadata) VALUES (?, ?, ?, ?)');
+  step.run(0, 14, null, timestamp(1, start));
+  const planner = Buffer.concat([Buffer.from([0x0a, 1, 0x78]), timestamp(11, 1)]);
+  const usage = Buffer.from([0x18, 0xc8, 1, 0x48, 0x96, 1, 0x50, 0x32]);
+  step.run(1, 15, Buffer.concat([Buffer.from([0xa2, 1, planner.length]), planner]), Buffer.concat([
+    timestamp(1, start + 1), timestamp(6, start + 2), timestamp(7, start + 4), timestamp(8, start + 4),
+    Buffer.from([0x4a, usage.length]), usage,
+  ]));
+  step.run(2, 132, null, Buffer.concat([timestamp(1, start + 5), timestamp(8, start + 7)]));
+  step.run(3, 132, null, Buffer.concat([timestamp(1, start + 8), timestamp(8, start + 9)]));
   db.close();
   fs.writeFileSync(transcriptPath, [
     JSON.stringify({ created_at: '2026-09-18T00:00:00.000Z', type: 'USER_INPUT' }),
@@ -66,9 +85,14 @@ function withoutUpdatedAt(stats) {
 try {
   prepareData();
   const first = runAggregator();
+  assert.strictEqual(first.sessions['cache-session'].steps, 3, 'The fixture must contain nonzero telemetry');
+  assert.strictEqual(first.sessions['cache-session'].tps, 25);
+  assert.strictEqual(first.sessions['cache-session'].modelDurationSec, 3);
+  assert.strictEqual(first.sessions['cache-session'].toolDurationSec, 3);
+  assert.strictEqual(first.sessions['cache-session'].ttftSec, 1);
   assert(fs.existsSync(cachePath), 'Process A should write the persistent cache');
   const firstCache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-  assert.strictEqual(firstCache.version, 9, 'Cache version should be 9');
+  assert.strictEqual(firstCache.version, 10, 'Cache version should be 10');
   assert(firstCache.dbs['cache-session'], 'Cache should contain database metrics');
   assert(firstCache.transcripts['cache-session'], 'Cache should contain transcript metrics');
 

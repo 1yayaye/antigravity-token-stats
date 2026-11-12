@@ -5,9 +5,8 @@ import {
   computeQuotaCycleMetrics,
   QuotaCycleMetrics,
   SUBSCRIPTION_PRESETS,
-  tryFetchLiveQuotaFromHost,
 } from '../../services/pricing-service';
-import { EVENT_REQUEST_SYNC, EVENT_STATS_UPDATED, WINDOW_LIVE_QUOTA } from '../../injection-contract.cjs';
+import { EVENT_QUOTA_UPDATED, WINDOW_LIVE_QUOTA } from '../../injection-contract.cjs';
 
 const TIER_STORAGE_KEY = 'antigravity_selected_tier';
 
@@ -20,10 +19,7 @@ export interface QuotaMetrics {
   nowMs: number;
 }
 
-// Owns every stateful concern of the subscription quota view: live quota
-// fetching and refresh listeners, tier persistence, the per-minute clock that
-// drives the reset countdown, and the derived cycle metrics. Consumers stay
-// purely presentational.
+// Hosts own quota retrieval; the view subscribes to snapshots and derives display metrics.
 export function useQuotaMetrics(stats: AggregatedStats): QuotaMetrics {
   const [liveQuota, setLiveQuota] = useState<LiveQuotaSummary | null>(() => {
     if (typeof window === 'undefined') return null;
@@ -44,29 +40,13 @@ export function useQuotaMetrics(stats: AggregatedStats): QuotaMetrics {
     return () => clearInterval(timer);
   }, []);
 
-  // Auto-fetch latest live quota on mount, and refresh on manual sync or stats update
   useEffect(() => {
-    let isMounted = true;
-    const refreshQuota = async (force = false) => {
-      const quota = await tryFetchLiveQuotaFromHost(force);
-      if (isMounted && quota) {
-        setLiveQuota(quota);
-      }
+    const handleQuotaUpdated = () => {
+      setLiveQuota((window as unknown as Record<string, LiveQuotaSummary | null | undefined>)[WINDOW_LIVE_QUOTA] || null);
     };
-
-    refreshQuota(true);
-
-    const handleSync = () => refreshQuota(true);
-    const handleStatsUpdated = () => refreshQuota(false);
-
-    window.addEventListener(EVENT_REQUEST_SYNC, handleSync);
-    window.addEventListener(EVENT_STATS_UPDATED, handleStatsUpdated);
-
-    return () => {
-      isMounted = false;
-      window.removeEventListener(EVENT_REQUEST_SYNC, handleSync);
-      window.removeEventListener(EVENT_STATS_UPDATED, handleStatsUpdated);
-    };
+    window.addEventListener(EVENT_QUOTA_UPDATED, handleQuotaUpdated);
+    handleQuotaUpdated();
+    return () => window.removeEventListener(EVENT_QUOTA_UPDATED, handleQuotaUpdated);
   }, []);
 
   const metrics = useMemo(

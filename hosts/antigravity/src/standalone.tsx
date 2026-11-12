@@ -5,6 +5,7 @@ import { StatsView } from '../../../src/components/stats/StatsView';
 import { LanguageProvider } from '../../../src/i18n/LanguageContext';
 import { detectAntigravityTheme, syncThemeToElement } from '../../../src/services/stats-service';
 import { antigravityI18n } from './i18n/antigravity-ui-i18n';
+import { startQuotaUpdates } from './quota';
 import { DshStatusBar } from '../../../src/components/dsh/DshStatusBar';
 import type { DshHostStyle } from '../../../src/components/dsh/DshStatusBar';
 import type { DshTelemetryData } from '../../../src/types/dsh-telemetry';
@@ -90,9 +91,9 @@ export function getCurrentConversationId(): string | null {
 
 let lastSyncRequestTime = 0;
 export function requestDataSync(sessionId?: string | null) {
-  const targetSessionId = sessionId || getCurrentConversationId();
+  const targetSessionId = sessionId ?? null;
   const now = Date.now();
-  if (now - lastSyncRequestTime < 100) return; // 100ms throttle
+  if (targetSessionId && now - lastSyncRequestTime < 100) return; // 100ms heartbeat throttle
   lastSyncRequestTime = now;
 
   // Tier 1: ContextBridge Preload bridge
@@ -533,6 +534,7 @@ export function initAntigravitySettingsInjector() {
     window.removeEventListener(EVENT_STATS_UPDATED, prevListeners.onStatsUpdated);
     window.removeEventListener(EVENT_LANGUAGE_CHANGED, prevListeners.onLanguageChanged);
     window.removeEventListener('focus', prevListeners.onFocus);
+    prevListeners.disposeQuotaUpdates?.();
   }
 
   const onStatsUpdated: EventListener = () => {
@@ -553,7 +555,7 @@ export function initAntigravitySettingsInjector() {
   window.addEventListener(EVENT_STATS_UPDATED, onStatsUpdated);
   window.addEventListener(EVENT_LANGUAGE_CHANGED, onLanguageChanged);
   window.addEventListener('focus', onFocus);
-  window.__ANTIGRAVITY_STATS_LISTENER__ = { onStatsUpdated, onLanguageChanged, onFocus };
+  window.__ANTIGRAVITY_STATS_LISTENER__ = { onStatsUpdated, onLanguageChanged, onFocus, disposeQuotaUpdates: startQuotaUpdates() };
 
   const debouncedScanAndInject = () => {
     if (window.__ANTIGRAVITY_SCAN_TIMER__) clearTimeout(window.__ANTIGRAVITY_SCAN_TIMER__);

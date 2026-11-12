@@ -31,7 +31,7 @@
     "proxy:diagnose": "node scripts/proxy-manager.cjs diagnose",
     "mock:data": "node scripts/generate-mock-data.cjs",
     "test:integration": "node scripts/test-integration.cjs",
-    "test": "node scripts/test-all.cjs && node scripts/test-persistent-cache.cjs && node scripts/test-subscription-pricing.cjs && node scripts/test-context-widget.cjs && node scripts/test-proxy-manager.cjs && node scripts/test-dsh-metrics.cjs && node scripts/test-dsh-components.cjs"
+    "test": "node scripts/test-all.cjs && node scripts/test-persistent-cache.cjs && node scripts/test-subscription-pricing.cjs && node scripts/test-context-widget.cjs && node scripts/test-proxy-manager.cjs && node scripts/test-dsh-metrics.cjs && node scripts/test-dsh-components.cjs && node scripts/test-update-checker.cjs && node scripts/test-live-quota.cjs"
   },
   "dependencies": {
     "react": "^19.0.0",

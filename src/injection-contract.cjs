@@ -29,6 +29,7 @@ module.exports = {
   EVENT_REQUEST_SYNC: 'antigravity:request-sync',
 
   EVENT_STATS_UPDATED: 'antigravity:stats-updated',
+  EVENT_QUOTA_UPDATED: 'antigravity:quota-updated',
   EVENT_LANGUAGE_CHANGED: 'antigravity:language-changed',
 
   // <style> element the bundle build inlines its CSS into.

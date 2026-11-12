@@ -39,6 +39,17 @@ function assert(condition, message) {
   }
 }
 
+function verifyUpdateAssets(archive) {
+  asar.uncacheAll();
+  const prefix = path.join('dist', 'antigravity-stats');
+  const metadata = JSON.parse(asar.extractFile(archive, path.join(prefix, 'contract.json')).toString('utf8'));
+  assert(metadata.version === require('../package.json').version, 'Injected version must match the AntiToken package');
+  assert(Object.entries(contract).every(([key, value]) => metadata[key] === value), 'Injected contract metadata must match the shared contract');
+  const installed = asar.extractFile(archive, path.join(prefix, 'update-checker.cjs'));
+  const source = fs.readFileSync(path.join(__dirname, '../hosts/antigravity/scripts/update-checker.cjs'));
+  assert(installed.equals(source), 'Injected checker must match the current source');
+}
+
 // ============================================================================
 // TESTS
 // ============================================================================
@@ -178,6 +189,7 @@ test('Mock ASAR: full patch lifecycle, hooks injection, and unpack preservation'
     assert(fs.existsSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', 'injection-contract.cjs')), 'injection-contract.cjs must exist in dist/antigravity-stats/');
     assert(fs.existsSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', 'proxy-manager.cjs')), 'proxy-manager.cjs must exist in dist/antigravity-stats/');
     assert(fs.existsSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', 'antigravity-stats-bundle.js')), 'antigravity-stats-bundle.js must exist in dist/antigravity-stats/');
+    verifyUpdateAssets(asarPath);
 
     // Unpack folder must remain intact
     const unpackedMcpFile = path.join(asarPath + '.unpacked', 'node_modules', 'chrome-devtools-mcp', 'build', 'index.js');
@@ -203,6 +215,7 @@ test('Mock ASAR: full patch lifecycle, hooks injection, and unpack preservation'
     const mainAfterSecondPatch = fs.readFileSync(path.join(verifyExtractDir2, 'dist', 'main.js'), 'utf8');
     const hookMatches = mainAfterSecondPatch.match(new RegExp(contract.MARKER_MAIN_HOOK, 'g')) || [];
     assert(hookMatches.length === 1, 'Hook must appear exactly once in dist/main.js');
+    verifyUpdateAssets(asarPath);
 
     // 3. Rollback (unpatch)
     const unpatchResult = unpatch({
@@ -374,9 +387,10 @@ test('Standalone C# .exe installer: mock ASAR patch, @electron/asar interop, pro
     assert(patchedPreload.includes(contract.MARKER_PRELOAD_BRIDGE), 'dist/preload.js must contain MARKER_PRELOAD_BRIDGE');
     assert(patchedPreload.includes(contract.WINDOW_SYNC_BRIDGE), 'dist/preload.js must expose WINDOW_SYNC_BRIDGE');
 
-    for (const file of ['loader.cjs', 'aggregate-stats.cjs', 'paths.cjs', 'injection-contract.cjs', 'proxy-manager.cjs', 'antigravity-stats-bundle.js']) {
+    for (const file of ['loader.cjs', 'update-checker.cjs', 'contract.json', 'aggregate-stats.cjs', 'paths.cjs', 'injection-contract.cjs', 'proxy-manager.cjs', 'antigravity-stats-bundle.js']) {
       assert(fs.existsSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', file)), `Missing injected asset: ${file}`);
     }
+    verifyUpdateAssets(asarPath);
     assert(fs.readFileSync(path.join(verifyExtractDir, 'dist', 'empty.txt')).length === 0, 'Empty file must remain 0 bytes');
     assert(fs.readFileSync(path.join(verifyExtractDir, 'dist', 'dup-a.txt'), 'utf8') === dupContent, 'dup-a.txt must retain content');
     assert(fs.readFileSync(path.join(verifyExtractDir, 'dist', 'dup-b.txt'), 'utf8') === dupContent, 'dup-b.txt must retain content');
@@ -398,6 +412,7 @@ test('Standalone C# .exe installer: mock ASAR patch, @electron/asar interop, pro
     const main2 = fs.readFileSync(path.join(verifyExtractDir2, 'dist', 'main.js'), 'utf8');
     assert((main2.match(new RegExp(contract.MARKER_MAIN_HOOK, 'g')) || []).length === 1, 'Repeated C# patch must not double-hook main.js');
     assert(fs.readFileSync(backupPath).equals(pristineAsarBuf), 'Repeated C# patch must preserve original backup');
+    verifyUpdateAssets(asarPath);
 
     // 3. Unpatch + proxy removal
     execFileSync(isolatedExe, [
@@ -667,6 +682,7 @@ test('Standalone C# .exe installer: real Antigravity app.asar copy patch and rol
       asar.uncacheAll();
       const pkgEntries = asar.listPackage(asarCopy);
       assert(pkgEntries.some((e) => e.replace(/\\/g, '/').endsWith('/dist/antigravity-stats/loader.cjs')), '@electron/asar must list injected loader.cjs in real app.asar copy');
+      verifyUpdateAssets(asarCopy);
 
       execFileSync(builtExe, [
         '--unpatch-dir', resourcesCopy,
@@ -696,6 +712,7 @@ test('Standalone C# .exe installer: real Antigravity app.asar copy patch and rol
       ], { encoding: 'utf8' });
 
       execFileSync(builtExe, ['--verify-asar', updateAsar, '--require-patched'], { encoding: 'utf8' });
+      verifyUpdateAssets(updateAsar);
 
       if (hasPristineBackup) {
         execFileSync(builtExe, [

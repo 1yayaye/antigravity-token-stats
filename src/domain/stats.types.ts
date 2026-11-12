@@ -197,6 +197,7 @@ declare global {
       onStatsUpdated: EventListener;
       onLanguageChanged: EventListener;
       onFocus: EventListener;
+      disposeQuotaUpdates: () => void;
     } | boolean;
     __ANTIGRAVITY_PILL_HEARTBEAT__?: ReturnType<typeof setInterval> | null;
     __ANTIGRAVITY_SCAN_TIMER__?: ReturnType<typeof setTimeout> | null;

@@ -1,13 +1,5 @@
 import { CapturedQuotaBucket, LiveQuotaSummary, SubscriptionTierConfig, SubscriptionTierId } from '../domain/pricing.types';
 import { AggregatedStats } from '../domain/stats.types';
-import { WINDOW_LIVE_QUOTA } from '../injection-contract.cjs';
-
-// Live quota crosses the injector/UI boundary through the contract-defined window global;
-// resolve it via the contract constant so the key string is owned by injection-contract.cjs.
-// (The Window declaration in pricing.types.ts keeps the literal key for type checking.)
-function liveQuotaStore(): Record<string, LiveQuotaSummary | null | undefined> {
-  return window as unknown as Record<string, LiveQuotaSummary | null | undefined>;
-}
 
 // Official developer API pricing per 1M tokens (USD)
 export const OFFICIAL_PRICING = {
@@ -249,58 +241,4 @@ export function parseQuotaSummaryResponse(resp: any): LiveQuotaSummary | null {
     weeklyGemini,
     description: resp.description,
   };
-}
-
-let lastQuotaFetchTime = 0;
-const QUOTA_CACHE_TTL_MS = 30_000;
-
-/**
- * Searches React Fiber tree for Antigravity's cloudCodeService and calls retrieveUserQuotaSummary
- */
-export async function tryFetchLiveQuotaFromHost(force = false): Promise<LiveQuotaSummary | null> {
-  if (typeof window === 'undefined') return null;
-
-  const now = Date.now();
-  const cached = liveQuotaStore()[WINDOW_LIVE_QUOTA];
-  if (!force && cached && now - lastQuotaFetchTime < QUOTA_CACHE_TTL_MS) {
-    return cached;
-  }
-
-  try {
-    const root = document.querySelector('#root, #app') || document.body.firstElementChild;
-    if (!root) return liveQuotaStore()[WINDOW_LIVE_QUOTA] || null;
-
-    let cloudCodeService: any = null;
-    function searchFiber(fiber: any, depth = 0) {
-      if (!fiber || depth > 200 || cloudCodeService) return;
-      const p = fiber.memoizedProps;
-      if (p?.services?.core?.cloudCodeService) {
-        cloudCodeService = p.services.core.cloudCodeService;
-        return;
-      }
-      searchFiber(fiber.child, depth + 1);
-      searchFiber(fiber.sibling, depth + 1);
-    }
-
-    for (const key in root) {
-      if (key.startsWith('__reactFiber') || key.startsWith('__reactContainer')) {
-        searchFiber((root as any)[key]);
-        if (cloudCodeService) break;
-      }
-    }
-
-    if (cloudCodeService && typeof cloudCodeService.retrieveUserQuotaSummary === 'function') {
-      const res = await cloudCodeService.retrieveUserQuotaSummary({}, true);
-      const summary = parseQuotaSummaryResponse(res?.response);
-      if (summary) {
-        lastQuotaFetchTime = now;
-        liveQuotaStore()[WINDOW_LIVE_QUOTA] = summary;
-        return summary;
-      }
-    }
-  } catch (err) {
-    // Graceful silence on failure
-  }
-
-  return liveQuotaStore()[WINDOW_LIVE_QUOTA] || null;
 }
