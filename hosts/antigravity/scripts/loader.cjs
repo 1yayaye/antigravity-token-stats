@@ -439,7 +439,11 @@ function init() {
         pushSessionUpdate(sessionId);
         return { success: true };
       }
-      flush('ipc-request');
+      if (!lastStats || Date.now() - lastFullScanAt >= FULL_SCAN_MIN_GAP_MS) {
+        flush('ipc-request');
+      } else {
+        schedulePush('ipc-request');
+      }
       return { success: true };
     });
   } catch (e) {

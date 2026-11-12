@@ -2,6 +2,29 @@
 
 All notable changes to Antigravity Token Stats will be documented in this file.
 
+## [1.7.0] - 2026-11-13
+
+### Added
+- **Desktop Update Checker (`update-checker.cjs`)**: Automatic, non-blocking check against GitHub Releases for Antigravity Desktop. Prompts users with native dialogs in Chinese or English to download updates when a newer release is published.
+- **Unified Installer & Native Uninstallation Architecture**:
+  - Removed all legacy root `.cmd` / `.ps1` scripts (`install.cmd`, `install.ps1`, `uninstall.cmd`, `uninstall.ps1`).
+  - Standardized on a single `.exe` installer (`AntiTokenSetup.exe`) for end-users, featuring an integrated **"卸载 / 还原出厂" (Uninstall / Restore Factory)** button.
+  - Standardized on pure npm commands for developers (`npm run setup`, `npm run launch`, `npm run unpatch`).
+- **Isolated Live Quota Pipeline (`hosts/antigravity/src/quota.ts`, `src/components/stats/useQuotaMetrics.ts`)**:
+  - Decoupled high-frequency quota telemetry polling from conversational database reads.
+  - Implemented coalesced RPC fetching with TTL caching, error resilience, and independent state management.
+
+### Improved & Fixed
+- **Daily Trend Readability (`DailyTrendCard.tsx`)**: Enforced a minimum 7-day display window across all time filters for consistent visual density and trend clarity.
+- **Session Cache & Persistence Optimization (`aggregate-stats.cjs`)**:
+  - SQLite WAL-only invalidation avoids expensive full-table re-scans when conversations haven't changed.
+  - Trimmed live broadcast payloads to active sessions while preserving historical metrics.
+- **IDE Extension Security & Reliability**:
+  - Added CSPRNG-generated nonces for webview Content Security Policy.
+  - Added request timeout guards for OAuth token refreshes and quota RPC requests.
+  - Enhanced session file watcher to properly capture `.db-wal` and `.db-shm` file updates.
+- **Cleaned Vendor Binaries**: Removed tracked pre-compiled proxy binaries and templates from git history, keeping proxy distribution strictly through the root `vendor/` directory and `.gitignore`.
+
 ## [1.6.1] - 2026-11-12
 
 ### Fixed

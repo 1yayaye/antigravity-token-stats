@@ -37,7 +37,7 @@ Seamlessly integrated into the UI (**Settings → Usage Stats**) via native app.
 1. Download the latest `antigravity-token-stats-vX.Y.Z-setup.exe` from [Releases](https://github.com/1yayaye/antigravity-token-stats/releases).
 2. Double-click `antigravity-token-stats-vX.Y.Z-setup.exe` (**no Node.js or extraction required**). It automatically detects your Antigravity Desktop path and active local proxy ports (with connectivity testing and manual port/protocol options), and will offer to safely close Antigravity if it is running.
 3. Click **Install / Update Patch**, then launch Antigravity and open **Settings → Usage Stats**.
-> **Note**: To restore factory state at any time, open the same `.exe` installer and click **Restore Factory**.
+> **Note**: To uninstall the patch and restore factory state at any time, open the same `.exe` installer and click **Uninstall / Restore Factory**.
 
 #### Update notifications
 
@@ -52,15 +52,12 @@ For maintainers: increase `package.json.version` and publish the matching `vX.Y.
 ```bash
 git clone https://github.com/1yayaye/antigravity-token-stats.git
 cd antigravity-token-stats
-npm run setup
+npm install
+npm run setup   # Builds bundle and patches app.asar (auto-configures dev-bundle redirect)
+npm run launch  # Launches Antigravity client
 ```
 
-Developer mode (uses symlink redirect so UI rebuilds reload instantly without repacking asar):
-```powershell
-pwsh -File .\install.ps1 -Dev
-```
-
-After installation, launch Antigravity directly or open it with your shortcut. The native dashboard and i18n enhancements will load automatically.
+Developer mode automatically configures a dev-bundle redirect pointer (`%LOCALAPPDATA%\AntiToken\dev-bundle.path`). When making code changes, simply run `npm run build:bundle` to recompile and reload immediately inside Antigravity without repacking asar.
 
 **Open Dashboard**:
 1. In-app: **Settings → Usage Stats**
@@ -69,13 +66,11 @@ After installation, launch Antigravity directly or open it with your shortcut. T
 
 | Command | Description |
 | :--- | :--- |
+| `npm run setup` | Build bundle and patch Antigravity app.asar (recommended for initial dev setup) |
 | `npm run patch` | Patch Antigravity app.asar with native stats & i18n |
-| `npm run unpatch` | Restore pristine factory app.asar (or click **Restore Factory** in the GUI installer) |
+| `npm run unpatch` | Cleanly uninstall patch and restore pristine factory app.asar (or click **Uninstall / Restore Factory** in the GUI installer) |
 | `npm run package:release` | Build the standalone Release `.exe` installer (`dist-release/antigravity-token-stats-vX.Y.Z-setup.exe`, requires Node.js 22.13+ & .NET SDK) |
 | `npm run launch` | Launch Antigravity 2.0 |
-| `npm run dev` | Standalone browser preview (<http://localhost:5173>) |
-| `npm run aggregate` | Print aggregated metrics in terminal |
-| `npm run setup` | Run the Windows installer (build & patch) |
 | `npm test` | Run complete offline regression test suites |
 | `npm run proxy:status` | Check proxy status for Desktop and IDE |
 | `npm run proxy:install` | Deploy transparent proxy (`--target all/desktop/ide --port 7890`) |

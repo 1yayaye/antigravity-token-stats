@@ -1,10 +1,6 @@
 export interface KpiMetrics {
   lifetimeTokens: string;
   lifetimeTokensRaw: number;
-  peakTokens: string;
-  longestTask: string;
-  currentStreak: number;
-  longestStreak: number;
 }
 
 export interface HeatmapCell {
@@ -15,16 +11,6 @@ export interface HeatmapCell {
   tasks: number;
   level: 0 | 1 | 2 | 3 | 4;
   detail?: DailyStatEntry;
-}
-
-export interface ActivityInsights {
-  fastMode: string;
-  mostUsedReasoning: string;
-  skillsExplored: number;
-  totalSkillsUsed: number;
-  totalThreads: number;
-  cacheHitRate?: string;
-  toolPrimitivesUsed?: number;
 }
 
 export interface DailyStatEntry {
@@ -92,24 +78,6 @@ export interface SessionSummary {
   costUsd?: number;
 }
 
-/**
- * Compact per-conversation row covering the whole history. Unlike SessionSummary
- * (live detail, trimmed to active/recent sessions), one row exists per conversation
- * so tables can list and sort everything without bloating each broadcast.
- */
-export interface SessionRow {
-  id: string;
-  totalTokens: number;
-  costUsd: number;
-  turnsCount: number;
-  modelCalls: number;
-  /** Model with the most completed calls in the session (proto name, '' when none). */
-  topModel: string;
-  /** Session DB mtime in epoch ms — the best available "last active" signal. */
-  lastActiveAt: number | null;
-  isRunning: boolean;
-}
-
 export interface ProxyTargetInfo {
   target: 'desktop' | 'ide';
   installed: boolean;
@@ -148,10 +116,8 @@ export interface AggregatedStats {
     costTimeline?: CostTimelineEntry[];
     costTimelineCoverageStartMs?: number | null;
   };
-  insights: ActivityInsights;
   tokenBreakdown?: TokenBreakdown;
   sessions?: Record<string, SessionSummary>;
-  sessionRows?: SessionRow[];
   proxy?: ProxyStatusSummary;
   meta: {
     scannedConversations: number;

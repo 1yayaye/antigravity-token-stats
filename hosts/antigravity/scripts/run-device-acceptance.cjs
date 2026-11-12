@@ -74,8 +74,7 @@ async function runRealDeviceAcceptance() {
               hasStatsObject: !!stats,
               lifetimeTokens: stats?.kpis?.lifetimeTokens,
               lifetimeTokensRaw: stats?.kpis?.lifetimeTokensRaw,
-              cacheHitRate: stats?.insights?.cacheHitRate || stats?.tokenBreakdown?.cacheHitRate,
-              peakTokens: stats?.kpis?.peakTokens,
+              cacheHitRate: stats?.tokenBreakdown?.cacheHitRate,
               sessionCount: Object.keys(stats?.sessions || {}).length,
               scannedConversations: stats?.meta?.scannedConversations,
               hasApi: typeof window.AntigravityStats === 'object',
@@ -88,7 +87,6 @@ async function runRealDeviceAcceptance() {
         console.log('✓ Host Injection State:');
         console.log(`  • Lifetime Tokens: ${hostState.lifetimeTokens} (${hostState.lifetimeTokensRaw?.toLocaleString()} raw)`);
         console.log(`  • Overall Cache Hit Rate: ${hostState.cacheHitRate}`);
-        console.log(`  • Peak Tokens: ${hostState.peakTokens}`);
         console.log(`  • Aggregated Sessions in Memory: ${hostState.sessionCount}`);
         console.log(`  • Scanned Conversations: ${hostState.scannedConversations}`);
         console.log(`  • Current Conversation ID: ${hostState.currentSessionId}`);

@@ -376,7 +376,7 @@ namespace AntiTokenSetup.UI
             _btnUninstall = new Button
             {
                 AutoSize = true,
-                MinimumSize = new Size(124, 36),
+                MinimumSize = new Size(130, 36),
                 FlatStyle = FlatStyle.System,
                 Margin = new Padding(0)
             };
@@ -472,7 +472,7 @@ namespace AntiTokenSetup.UI
 
             _btnInstall.Text = T("安装 / 更新补丁", "Install / Update Patch");
             _btnProxyOnly.Text = T("仅更新代理", "Update Proxy Only");
-            _btnUninstall.Text = T("还原出厂状态", "Restore Factory");
+            _btnUninstall.Text = T("卸载 / 还原出厂", "Uninstall / Restore Factory");
             _chkLaunchAfter.Text = T("完成后启动 Antigravity", "Launch when done");
         }
 
@@ -1056,8 +1056,8 @@ namespace AntiTokenSetup.UI
             if (!EnsurePreconditions(requireAsar: true, requireStopProcess: true)) return;
 
             var confirm = MessageBox.Show(this,
-                T("确定要还原 Antigravity 出厂状态并移除透明代理文件吗？",
-                  "Restore Antigravity to factory state and remove transparent proxy files?"),
+                T("确定要卸载补丁并还原 Antigravity 官方出厂状态吗？（将同时移除透明代理文件）",
+                  "Are you sure you want to uninstall and restore Antigravity to factory state? (Transparent proxy files will also be removed)"),
                 Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (confirm != DialogResult.Yes) return;
 
@@ -1065,16 +1065,16 @@ namespace AntiTokenSetup.UI
             SetBusy(true);
             try
             {
-                AppendLog(T("正在还原出厂状态...", "Restoring factory state..."));
+                AppendLog(T("正在卸载并还原出厂状态...", "Uninstalling and restoring factory state..."));
                 var result = await Task.Run(() => AsarPatcher.Unpatch(resourcesDir, _contract, removeProxy: true, log: AppendLog));
                 if (IsDisposed || Disposing) return;
                 InspectCurrentPathFromUi();
 
                 if (result.Pristine)
                 {
-                    AppendLog(T("✓ 已还原至官方初始状态。", "✓ Factory state restored."));
+                    AppendLog(T("✓ 已卸载补丁并还原至官方初始状态。", "✓ Successfully uninstalled and factory state restored."));
                     MessageBox.Show(this,
-                        T("已成功还原至官方出厂状态。", "Successfully restored to factory state."),
+                        T("已成功卸载并还原至官方出厂状态。", "Successfully uninstalled and restored to factory state."),
                         Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
                 else
@@ -1088,7 +1088,7 @@ namespace AntiTokenSetup.UI
             }
             catch (Exception ex)
             {
-                AppendLog(T($"✕ 还原失败: {ex.Message}", $"✕ Restore failed: {ex.Message}"));
+                AppendLog(T($"✕ 卸载还原失败: {ex.Message}", $"✕ Uninstall and restore failed: {ex.Message}"));
                 MessageBox.Show(this, ex.Message, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally

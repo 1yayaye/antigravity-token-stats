@@ -257,7 +257,7 @@ const cycleResetIso = new Date(testNowMs + (6 * 86400 + 7 * 3600) * 1000).toISOS
 const cycleStartMs = new Date(cycleResetIso).getTime() - 7 * 86400000;
 
 const statsJustReset = {
-  kpis: { lifetimeTokens: '10M', lifetimeTokensRaw: 10000000, peakTokens: '5M', longestTask: '1h', currentStreak: 1, longestStreak: 1 },
+  kpis: { lifetimeTokens: '10M', lifetimeTokensRaw: 10000000 },
   activity: {
     heatmap: [],
     activeDaysCount: 2,
@@ -268,7 +268,6 @@ const statsJustReset = {
       { ts: cycleStartMs + 3 * 3600 * 1000, costUsd: 50, pool: 'claude' },
     ],
   },
-  insights: { fastMode: '0%', mostUsedReasoning: 'Pro', skillsExplored: 0, totalSkillsUsed: 0, totalThreads: 1 },
   meta: { scannedConversations: 1, updatedAt: new Date(testNowMs).toISOString() },
 };
 

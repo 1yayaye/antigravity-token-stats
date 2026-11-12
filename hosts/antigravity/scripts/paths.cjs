@@ -154,6 +154,47 @@ function isProxyInstalled() {
   }
 }
 
+function safeAtomicReplace(sourceFile, targetFile) {
+  const tempTarget = `${targetFile}.tmp.${Date.now()}`;
+  try {
+    fs.copyFileSync(sourceFile, tempTarget);
+    fs.renameSync(tempTarget, targetFile);
+  } finally {
+    if (fs.existsSync(tempTarget)) {
+      try { fs.rmSync(tempTarget, { force: true }); } catch {}
+    }
+  }
+}
+
+function safeReplaceDirectory(sourceDir, targetDir) {
+  const tempTarget = `${targetDir}.tmp.${Date.now()}`;
+  const oldTarget = `${targetDir}.old.${Date.now()}`;
+  let targetMoved = false;
+  let targetInstalled = false;
+  try {
+    fs.cpSync(sourceDir, tempTarget, { recursive: true, force: true });
+    if (fs.existsSync(targetDir)) {
+      fs.renameSync(targetDir, oldTarget);
+      targetMoved = true;
+    }
+    fs.renameSync(tempTarget, targetDir);
+    targetInstalled = true;
+  } catch (err) {
+    try {
+      if (targetInstalled && fs.existsSync(targetDir)) fs.rmSync(targetDir, { recursive: true, force: true });
+      if (targetMoved && fs.existsSync(oldTarget)) fs.renameSync(oldTarget, targetDir);
+    } catch {}
+    throw err;
+  } finally {
+    if (fs.existsSync(tempTarget)) {
+      try { fs.rmSync(tempTarget, { recursive: true, force: true }); } catch {}
+    }
+    if (targetInstalled && fs.existsSync(oldTarget)) {
+      try { fs.rmSync(oldTarget, { recursive: true, force: true }); } catch {}
+    }
+  }
+}
+
 module.exports = {
   getLocalAppData,
   getAntigravityResourcesDir,
@@ -165,4 +206,6 @@ module.exports = {
   getProxyDllPath,
   getProxyConfigPath,
   isProxyInstalled,
+  safeAtomicReplace,
+  safeReplaceDirectory,
 };

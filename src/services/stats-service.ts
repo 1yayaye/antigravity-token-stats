@@ -22,22 +22,11 @@ export const EMPTY_STATS: AggregatedStats = {
   kpis: {
     lifetimeTokens: '0',
     lifetimeTokensRaw: 0,
-    peakTokens: '0',
-    longestTask: '—',
-    currentStreak: 0,
-    longestStreak: 0,
   },
   activity: {
     heatmap: [],
     activeDaysCount: 0,
     totalTasks: 0,
-  },
-  insights: {
-    fastMode: '—',
-    mostUsedReasoning: '—',
-    skillsExplored: 0,
-    totalSkillsUsed: 0,
-    totalThreads: 0,
   },
   tokenBreakdown: EMPTY_BREAKDOWN,
   meta: {
@@ -167,7 +156,10 @@ export async function fetchRawStats(): Promise<AggregatedStats> {
 
   if (!baseStats) {
     try {
-      const response = await fetch('/api/stats');
+      const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+        ? AbortSignal.timeout(5000)
+        : undefined;
+      const response = await fetch('/api/stats', signal ? { signal } : undefined);
       if (response.ok) {
         baseStats = (await response.json()) as AggregatedStats;
       }

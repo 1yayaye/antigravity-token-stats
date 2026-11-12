@@ -10,57 +10,15 @@ const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const asar = require('@electron/asar');
-const { getAntigravityResourcesDir, findAntigravityExe, isAntigravityRunning, getDevBundlePathFile } = require('./paths.cjs');
+const {
+  getAntigravityResourcesDir,
+  findAntigravityExe,
+  isAntigravityRunning,
+  getDevBundlePathFile,
+  safeAtomicReplace,
+  safeReplaceDirectory,
+} = require('./paths.cjs');
 const contract = require('../../../src/injection-contract.cjs');
-
-function safeAtomicReplace(sourceFile, targetFile) {
-  const tempTarget = `${targetFile}.tmp.${Date.now()}`;
-  try {
-    fs.copyFileSync(sourceFile, tempTarget);
-    try {
-      fs.renameSync(tempTarget, targetFile);
-    } catch (renameErr) {
-      if (renameErr.code === 'EBUSY' || renameErr.code === 'EPERM') {
-        fs.copyFileSync(sourceFile, targetFile);
-      } else {
-        throw renameErr;
-      }
-    }
-  } finally {
-    if (fs.existsSync(tempTarget)) {
-      try { fs.rmSync(tempTarget, { force: true }); } catch {}
-    }
-  }
-}
-
-function safeReplaceDirectory(sourceDir, targetDir) {
-  const tempTarget = `${targetDir}.tmp.${Date.now()}`;
-  const oldTarget = `${targetDir}.old.${Date.now()}`;
-  let targetMoved = false;
-  let targetInstalled = false;
-  try {
-    fs.cpSync(sourceDir, tempTarget, { recursive: true, force: true });
-    if (fs.existsSync(targetDir)) {
-      fs.renameSync(targetDir, oldTarget);
-      targetMoved = true;
-    }
-    fs.renameSync(tempTarget, targetDir);
-    targetInstalled = true;
-  } catch (err) {
-    try {
-      if (targetInstalled && fs.existsSync(targetDir)) fs.rmSync(targetDir, { recursive: true, force: true });
-      if (targetMoved && fs.existsSync(oldTarget)) fs.renameSync(oldTarget, targetDir);
-    } catch {}
-    throw err;
-  } finally {
-    if (targetInstalled && fs.existsSync(oldTarget)) {
-      try { fs.rmSync(oldTarget, { recursive: true, force: true }); } catch {}
-    }
-    if (fs.existsSync(tempTarget)) {
-      try { fs.rmSync(tempTarget, { recursive: true, force: true }); } catch {}
-    }
-  }
-}
 
 async function patch(options = {}) {
   const silent = Boolean(options.silent);

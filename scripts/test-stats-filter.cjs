@@ -36,7 +36,6 @@ assert.equal(week.tokenBreakdown.cacheHitRate, '50.0%');
 assert.equal(week.tokenBreakdown.reasoningPct, 50);
 assert.equal(filterStatsByRange(stats, 'today').tokenBreakdown.reasoningPct, 100);
 assert.equal(week.activity.heatmap, stats.activity.heatmap);
-assert.equal(week.insights, stats.insights);
 console.log('PASS: period totals, exact proportions, independent history');
 
 // Failure path: totals survive missing or partial details without lifetime scaling.

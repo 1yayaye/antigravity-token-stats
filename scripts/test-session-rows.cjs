@@ -6,7 +6,7 @@ const { DatabaseSync } = require('node:sqlite');
 const { computeStats } = require('./aggregate-stats.cjs');
 const loader = require('../hosts/antigravity/scripts/loader.cjs');
 
-console.log('--- Testing sessionRows, session cost, and live-window trim ---');
+console.log('--- Testing session live-window trim, cost, and broadcast pinning ---');
 
 function encodeVarint(num) {
   const bytes = [];
@@ -71,29 +71,15 @@ process.env.ANTIGRAVITY_DISABLE_PERSIST_CACHE = '1';
 try {
   const stats = computeStats(true);
 
-  // sessionRows: one compact row per conversation, newest first.
-  assert.ok(Array.isArray(stats.sessionRows), 'sessionRows must be an array');
-  assert.strictEqual(stats.sessionRows.length, 3, 'sessionRows must cover every conversation');
-  assert.strictEqual(stats.sessionRows[0].id, 'row-recent', 'sessionRows must be sorted newest-first');
-  const rowById = new Map(stats.sessionRows.map(row => [row.id, row]));
-  for (const row of stats.sessionRows) {
-    for (const field of ['id', 'totalTokens', 'costUsd', 'turnsCount', 'modelCalls', 'topModel', 'lastActiveAt', 'isRunning']) {
-      assert.ok(field in row, `sessionRow must carry ${field}`);
-    }
-  }
-  assert.strictEqual(rowById.get('row-recent').costUsd, 2, 'Recent session cost must sum its usage costs');
-  assert.strictEqual(rowById.get('row-old').costUsd, 4, 'Old session cost must sum both generations');
-  assert.strictEqual(rowById.get('row-old').turnsCount, 2, 'turnsCount must count generations');
-  assert.ok(rowById.get('row-recent').topModel === 'gemini-2.5-pro', 'topModel must come from usage rows');
-  assert.strictEqual(rowById.get('row-running').isRunning, true, 'Host run state must surface in sessionRows');
-  assert.strictEqual(rowById.get('row-old').isRunning, false, 'Idle sessions must not report running');
-  console.log('PASS: sessionRows cover all conversations with costs, sorted newest-first');
+  assert.ok(!('sessionRows' in stats), 'Unused sessionRows must not be present on stats');
+  assert.ok(!('insights' in stats), 'Unused insights must not be present on stats');
 
   // Live trim: sessions keeps running + recent + the newest, drops stale idle history.
   assert.ok(stats.sessions['row-recent'], 'A session touched today must keep full live detail');
   assert.ok(stats.sessions['row-running'], 'A running session must keep full live detail despite its old mtime');
   assert.ok(!stats.sessions['row-old'], 'A stale idle session must not ship full live detail');
   assert.strictEqual(stats.sessions['row-recent'].costUsd, 2, 'Live summaries must carry the session cost');
+  assert.strictEqual(stats.sessions['row-running'].isRunning, true, 'Host run state must surface in live session summaries');
   console.log('PASS: sessions trimmed to running/recent while costs stay attached');
 
   // Loader broadcast preservation: an on-demand >24h session stays intact across full broadcasts.
@@ -114,8 +100,7 @@ try {
     process.env.ANTIGRAVITY_DATA_DIR = loneDir;
     const loneStats = computeStats(true);
     assert.ok(loneStats.sessions['lone-old'], 'The single newest session must keep live detail even when stale');
-    assert.strictEqual(loneStats.sessionRows.length, 1, 'sessionRows still lists the lone session');
-    assert.strictEqual(loneStats.sessionRows[0].costUsd, 2, 'Lone session cost must be exact');
+    assert.strictEqual(loneStats.sessions['lone-old'].costUsd, 2, 'Lone session cost must be exact');
   } finally {
     process.env.ANTIGRAVITY_DATA_DIR = fixtureDir;
     try { fs.rmSync(loneDir, { recursive: true, force: true }); } catch {}
@@ -124,7 +109,7 @@ try {
 
   // Empty baseline carries the same shape.
   const empty = computeStats(true, path.join(os.tmpdir(), 'antigravity-no-such-dir-xyz'));
-  assert.deepStrictEqual(empty.sessionRows, [], 'Empty stats must expose an empty sessionRows array');
+  assert.deepStrictEqual(empty.sessions, {}, 'Empty stats must expose an empty sessions map');
   console.log('PASS: empty baseline shape');
 } finally {
   if (previousDataDir === undefined) delete process.env.ANTIGRAVITY_DATA_DIR;

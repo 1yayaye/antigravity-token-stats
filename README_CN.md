@@ -37,7 +37,7 @@
 1. 前往 [Releases 页面](https://github.com/1yayaye/antigravity-token-stats/releases) 下载最新的 `antigravity-token-stats-vX.Y.Z-setup.exe`。
 2. 直接双击运行 `antigravity-token-stats-vX.Y.Z-setup.exe`（**无需 Node.js，无需解压**）。安装器会自动探测 Antigravity 桌面端安装路径与本机运行中的代理端口（支持手动指定与连通性测试），若客户端正在运行会提示协助安全关闭并完成注入。
 3. 点击 **安装 / 更新补丁**，完成后启动 Antigravity 客户端，进入 **Settings → Usage Stats** 即可使用！
-> **提示**：需要恢复官方原厂状态时，随时打开同一个 `.exe` 安装器，点击 **还原出厂状态** 即可一键干净还原。
+> **提示**：需要卸载补丁并恢复官方原厂状态时，随时打开同一个 `.exe` 安装器，点击 **卸载 / 还原出厂** 即可一键干净卸载。
 
 #### 更新提醒
 
@@ -47,20 +47,17 @@
 
 发布者需提升 `package.json.version`，推送对应的 `vX.Y.Z` 标签，并在正式 Release 中附带 `antigravity-token-stats-vX.Y.Z-setup.exe`。发布工作流会拒绝与包版本不一致的标签；同版本重新构建不会触发更新提醒。
 
-#### 方式二：从源码安装与开发
+#### 方式二：从源码安装与开发（开发者）
 
 ```bash
 git clone https://github.com/1yayaye/antigravity-token-stats.git
 cd antigravity-token-stats
-npm run setup
+npm install
+npm run setup   # 构建 bundle 并打入补丁（默认自动配置 dev-bundle 热重载指针）
+npm run launch  # 启动 Antigravity 客户端
 ```
 
-开发者模式（利用软链接热重载，代码变更无需每次重解包压包 asar）：
-```powershell
-pwsh -File .\install.ps1 -Dev
-```
-
-安装完成后，直接打开 Antigravity 或使用桌面快捷方式，客户端会自动加载看板与汉化增强。
+开发者模式下默认配置了开发热重载指针（`%LOCALAPPDATA%\AntiToken\dev-bundle.path`），后续修改源码后只需运行 `npm run build:bundle` 重新编译即可在客户端内即时生效，无需反复解包压包 asar。
 
 **呼出方式**：
 1. 客户端左下角 **Settings → Usage Stats**
@@ -69,13 +66,11 @@ pwsh -File .\install.ps1 -Dev
 
 | 命令 | 用途 |
 | :--- | :--- |
+| `npm run setup` | 一键构建 bundle 并为 Antigravity 打入原生补丁（适合首次配置） |
 | `npm run patch` | 为 Antigravity 打入原生 Stats 看板与汉化补丁 |
-| `npm run unpatch` | 一键无损恢复官方出厂 app.asar 状态（或在安装器界面点击「还原出厂状态」） |
+| `npm run unpatch` | 一键无损卸载补丁并恢复官方出厂 app.asar 状态（或在 .exe 界面点击「卸载 / 还原出厂」） |
 | `npm run package:release` | 构建单文件 Release 安装器（`dist-release/antigravity-token-stats-vX.Y.Z-setup.exe`，需 Node.js 22.13+ 与 .NET SDK） |
 | `npm run launch` | 启动 Antigravity 2.0 |
-| `npm run dev` | 网页端预览看板 (<http://localhost:5173>) |
-| `npm run aggregate` | 终端直接打印汇总指标 |
-| `npm run setup` | 运行 Windows 一键安装与打补丁流程 |
 | `npm test` | 运行离线全套自动化回归测试 |
 | `npm run proxy:status` | 查看桌面端与 IDE 端的代理安装与运行状态 |
 | `npm run proxy:install` | 一键安装免 TUN 代理（`--target all/desktop/ide --port 7890`） |

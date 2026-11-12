@@ -17,7 +17,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const net = require('node:net');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, execFile } = require('node:child_process');
 
 // Load path resolver from desktop host if available
 let desktopPaths;
@@ -40,7 +40,26 @@ function getAppData() {
 }
 
 const runningCache = new Map();
-function isProcessRunning(processName, maxAgeMs = 5000) {
+const runningInFlight = new Set();
+
+function refreshProcessStatusAsync(processName) {
+  if (runningInFlight.has(processName)) return;
+  runningInFlight.add(processName);
+  const lower = processName.toLowerCase();
+  execFile('tasklist', ['/FI', `IMAGENAME eq ${processName}`, '/FO', 'CSV', '/NH'], {
+    encoding: 'utf8',
+    windowsHide: true,
+  }, (err, stdout) => {
+    runningInFlight.delete(processName);
+    if (err) return;
+    runningCache.set(processName, {
+      result: String(stdout || '').toLowerCase().includes(lower),
+      ts: Date.now(),
+    });
+  });
+}
+
+function isProcessRunning(processName, maxAgeMs = 5000, options = {}) {
   if (process.platform !== 'win32') return false;
   const lower = processName.toLowerCase();
   // Fast path: if checking Antigravity.exe while running inside Electron host
@@ -55,6 +74,10 @@ function isProcessRunning(processName, maxAgeMs = 5000) {
   const cached = runningCache.get(processName);
   if (cached && now - cached.ts < maxAgeMs) {
     return cached.result;
+  }
+  if (options.nonBlocking) {
+    refreshProcessStatusAsync(processName);
+    return cached ? cached.result : false;
   }
   try {
     const out = execFileSync('tasklist', ['/FI', `IMAGENAME eq ${processName}`, '/FO', 'CSV', '/NH'], {
@@ -227,7 +250,7 @@ function buildConfig(options = {}) {
 /**
  * Read current proxy status for Desktop and IDE targets
  */
-function getTargetStatus(target, customDir) {
+function getTargetStatus(target, customDir, options = {}) {
   if (target !== 'desktop' && target !== 'ide') {
     throw new Error(`Unknown target "${target}". Expected "desktop" or "ide".`);
   }
@@ -253,7 +276,7 @@ function getTargetStatus(target, customDir) {
   const configPath = path.join(dir, 'config.json');
   const dllExists = fs.existsSync(dllPath);
   const configExists = fs.existsSync(configPath);
-  const isRunning = isProcessRunning(exeName);
+  const isRunning = isProcessRunning(exeName, 5000, options);
 
   let config = null;
   if (configExists) {
@@ -278,10 +301,10 @@ function getTargetStatus(target, customDir) {
 /**
  * Get comprehensive status for all supported targets
  */
-function getAllStatus() {
+function getAllStatus(options = {}) {
   return {
-    desktop: getTargetStatus('desktop'),
-    ide: getTargetStatus('ide'),
+    desktop: getTargetStatus('desktop', undefined, options),
+    ide: getTargetStatus('ide', undefined, options),
   };
 }
 

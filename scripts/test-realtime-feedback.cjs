@@ -22,7 +22,6 @@ const before = computeStats();
 console.log('[Step 1] Baseline Stats:');
 console.log(`  - Total Tasks:    ${before.activity.totalTasks}`);
 console.log(`  - Lifetime:       ${before.kpis.lifetimeTokens}`);
-console.log(`  - Current Streak: ${before.kpis.currentStreak} days`);
 console.log(`  - Scanned DBs:    ${before.meta.scannedConversations} databases\n`);
 
 // 2. Simulate User Interaction (creating or touching a real task step in conversations)
@@ -63,7 +62,6 @@ const taskDiff = after.activity.totalTasks - before.activity.totalTasks;
 console.log('[Step 3] Live Update Detection Result:');
 console.log(`  - Detection Latency:  ${elapsed.toFixed(2)} ms`);
 console.log(`  - Total Tasks:        ${before.activity.totalTasks} -> ${after.activity.totalTasks} (+${taskDiff})`);
-console.log(`  - Skills Explored:    ${before.insights.skillsExplored} -> ${after.insights.skillsExplored}`);
 console.log(`  - Newest date recorded: ${after.activity.heatmap[after.activity.heatmap.length - 1].date}`);
 
 if (taskDiff < 1) {

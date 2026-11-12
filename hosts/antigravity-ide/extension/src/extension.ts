@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -152,6 +153,11 @@ function disposeWatchers() {
   watchers = [];
 }
 
+export function extractSessionIdFromConvFile(filename: string | null | undefined): string | null {
+  const match = /^(.+?)\.db(?:-(?:wal|shm))?$/.exec(filename || '');
+  return match ? match[1] : null;
+}
+
 function setupWatchers() {
   disposeWatchers();
 
@@ -162,9 +168,10 @@ function setupWatchers() {
     try {
       const convWatcher = fs.watch(convDir, (eventType, filename) => {
         if (!filename || filename.endsWith('.db') || filename.endsWith('.db-wal') || filename.endsWith('.db-shm')) {
-          if (filename && filename.endsWith('.db')) {
-            // Strip the extension: aggregate-stats keys sessions by basename.
-            lastChangedSessionId = filename.slice(0, -'.db'.length);
+          const changedId = extractSessionIdFromConvFile(filename);
+          if (changedId) {
+            // Strip extension (.db / .db-wal / .db-shm): aggregate-stats keys sessions by basename.
+            lastChangedSessionId = changedId;
           }
           schedulePush(`conv:${filename || eventType}`);
         }
@@ -189,13 +196,8 @@ function setupWatchers() {
   }
 }
 
-function getNonce() {
-  let nonce = '';
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  for (let i = 0; i < 32; i++) {
-    nonce += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return nonce;
+export function getNonce(): string {
+  return crypto.randomBytes(16).toString('hex');
 }
 
 function getHtml(webview: vscode.Webview, extensionUri: vscode.Uri) {

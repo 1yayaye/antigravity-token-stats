@@ -172,45 +172,10 @@ export function mountDshStatusBar(container: HTMLElement) {
   const stats = window.__ANTIGRAVITY_STATS__;
   const session = sessionId && stats?.sessions ? stats.sessions[sessionId] : null;
   const isGenerating = Boolean(session?.isRunning) || (Boolean(sessionId) && checkGenerationState());
-
-  const promptTokens = session ? session.promptTokens : 0;
-  const totalInput = session?.totalInputTokens || 0;
-  const totalCache = session?.totalCacheReadTokens || 0;
-  const totalOutput = session?.totalOutputTokens || 0;
-  const totalTokens = session?.totalTokens || (totalInput + totalCache + totalOutput);
-
-  const billedInput = totalInput + totalCache;
-  let cacheHitRatePct: number | null = null;
-  if (billedInput > 0) {
-    cacheHitRatePct = Math.round((totalCache / billedInput) * 100);
-    if (totalInput > 0 && cacheHitRatePct >= 100) cacheHitRatePct = 99;
-  }
-
-  const SYSTEM_BASELINE = 8200;
-  const TOOLS_BASELINE = 8300;
-  const BASELINE_SUM = SYSTEM_BASELINE + TOOLS_BASELINE;
-  let systemPromptTokens = 0;
-  let toolDefinitionTokens = 0;
-  let chatMessageTokens = 0;
-
-  if (promptTokens <= 0) {
-    systemPromptTokens = 0;
-    toolDefinitionTokens = 0;
-    chatMessageTokens = 0;
-  } else if (promptTokens < BASELINE_SUM) {
-    const scale = promptTokens / BASELINE_SUM;
-    systemPromptTokens = Math.round(SYSTEM_BASELINE * scale);
-    toolDefinitionTokens = Math.max(0, promptTokens - systemPromptTokens);
-    chatMessageTokens = 0;
-  } else {
-    systemPromptTokens = SYSTEM_BASELINE;
-    toolDefinitionTokens = TOOLS_BASELINE;
-    chatMessageTokens = Math.max(0, promptTokens - BASELINE_SUM);
-  }
-
-  const usedPct = promptTokens > 0 ? Math.min(100, Math.round((promptTokens / 1048576) * 100)) : 0;
   const effectiveTps = session?.tps ?? null;
 
+  // Server-side aggregate-stats always attaches `dshTelemetry` to every SessionSummary;
+  // fall back to a zero-baseline only when no session data has arrived yet.
   const telemetry: DshTelemetryData = session?.dshTelemetry ? {
     ...session.dshTelemetry,
     isStreaming: isGenerating,
@@ -222,27 +187,27 @@ export function mountDshStatusBar(container: HTMLElement) {
     sessionId: sessionId || '',
     isStreaming: isGenerating,
     session: {
-      rounds: session?.rounds || 1,
-      steps: session?.steps || session?.turnsCount || session?.turnCalls || 0,
+      rounds: 1,
+      steps: 0,
       tps: effectiveTps,
-      modelDurationSec: session?.modelDurationSec || 0,
-      toolDurationSec: session?.toolDurationSec || 0,
-      ttftSec: session?.ttftSec ?? null,
+      modelDurationSec: 0,
+      toolDurationSec: 0,
+      ttftSec: null,
     },
     token: {
-      totalTokens,
-      cacheHitRatePct,
-      uncachedInputTokens: totalInput,
-      cacheReadTokens: totalCache,
-      outputTokens: totalOutput,
+      totalTokens: 0,
+      cacheHitRatePct: null,
+      uncachedInputTokens: 0,
+      cacheReadTokens: 0,
+      outputTokens: 0,
     },
     context: {
-      usedTokens: promptTokens,
+      usedTokens: 0,
       limitTokens: 1048576,
-      usedPct,
-      systemPromptTokens,
-      toolDefinitionTokens,
-      chatMessageTokens,
+      usedPct: 0,
+      systemPromptTokens: 0,
+      toolDefinitionTokens: 0,
+      chatMessageTokens: 0,
     },
   };
 

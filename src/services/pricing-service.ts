@@ -1,30 +1,6 @@
 import { CapturedQuotaBucket, LiveQuotaSummary, SubscriptionTierConfig, SubscriptionTierId } from '../domain/pricing.types';
 import { AggregatedStats } from '../domain/stats.types';
 
-// Official developer API pricing per 1M tokens (USD)
-export const OFFICIAL_PRICING = {
-  flash: {
-    inputPerM: 0.75,
-    cacheReadPerM: 0.075,
-    outputPerM: 3.75,
-  },
-  pro: {
-    inputPerM: 2.00,
-    cacheReadPerM: 0.20,
-    outputPerM: 12.00,
-  },
-  opus: {
-    inputPerM: 4.00,
-    cacheReadPerM: 0.40,
-    outputPerM: 20.00,
-  },
-  sonnet: {
-    inputPerM: 2.00,
-    cacheReadPerM: 0.20,
-    outputPerM: 10.00,
-  },
-};
-
 export const SUBSCRIPTION_PRESETS: Record<SubscriptionTierId, SubscriptionTierConfig> = {
   free: { id: 'free', name: 'Free', monthlyFeeUsd: 0, labelKey: 'tierFree' },
   pro: { id: 'pro', name: 'Google AI Pro', monthlyFeeUsd: 19.99, labelKey: 'tierPro' },

@@ -11,17 +11,11 @@
  */
 import * as vscode from 'vscode';
 import type { AggregatedStats, SessionSummary } from '../../../../src/domain/stats.types';
+import { formatTokens } from '../../../../src/services/stats-service';
 import { IDE_OPEN_STATS_COMMAND } from '../../src/ide-contract';
 
 const DEFAULT_COMPACTION_LIMIT = 256000;
 const PRIORITY = 100;
-
-/** Desktop pill token formatting: raw <1k, one-decimal k <1M, M above. */
-function formatTokens(tokens: number): string {
-  if (tokens < 1000) return `${tokens}`;
-  if (tokens < 1000000) return `${(tokens / 1000).toFixed(1)}k`;
-  return `${(tokens / 1000000).toFixed(2)}M`;
-}
 
 interface CurrentSession {
   id: string;

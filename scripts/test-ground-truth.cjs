@@ -113,13 +113,8 @@ liveTest('computeStats computes ground truth Lifetime Tokens and Cache Hit Rate'
   const stats = computeStats();
   assert(stats.kpis.lifetimeTokensRaw > 1000000000, `Lifetime tokens should be > 1B, got ${stats.kpis.lifetimeTokensRaw}`);
   assert(stats.kpis.lifetimeTokens.endsWith('B'), `Lifetime tokens should be formatted in B, got ${stats.kpis.lifetimeTokens}`);
-  const hitRate = parseFloat(stats.insights.cacheHitRate);
-  assert(Math.round(hitRate) === 94, `Cache hit rate should be ~94%, got ${stats.insights.cacheHitRate}`);
-  assert(stats.insights.skillsExplored > 15, `Skills explored should be > 15 real skills, got ${stats.insights.skillsExplored}`);
-  assert(stats.insights.totalSkillsUsed > 50, `Skills used should be > 50, got ${stats.insights.totalSkillsUsed}`);
-  assert(stats.insights.toolPrimitivesUsed > 5000, `Tool primitives should be > 5000, got ${stats.insights.toolPrimitivesUsed}`);
-  assert(stats.insights.fastMode.endsWith('%'), `Fast mode should be percentage, got ${stats.insights.fastMode}`);
-  assert(stats.insights.mostUsedReasoning.includes('Flash'), `Most used model should be Flash, got ${stats.insights.mostUsedReasoning}`);
+  const hitRate = parseFloat(stats.tokenBreakdown.cacheHitRate);
+  assert(Math.round(hitRate) === 94, `Cache hit rate should be ~94%, got ${stats.tokenBreakdown.cacheHitRate}`);
 });
 
 liveTest('Incremental scan speed is fast (<20ms in Node)', () => {

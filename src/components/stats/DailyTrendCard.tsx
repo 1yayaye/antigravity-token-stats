@@ -1,9 +1,46 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { HeatmapCell, TimeRange } from '../../domain/stats.types';
-import { formatTokens } from '../../services/stats-service';
+import { formatTokens, toLocalDateKey } from '../../services/stats-service';
 import { useLanguage } from '../../i18n/LanguageContext';
 
-const RANGE_DAYS: Record<Exclude<TimeRange, 'all'>, number> = { today: 1, '1d': 2, '7d': 7, '30d': 30 };
+const MIN_TREND_DAYS = 7;
+const RANGE_DAYS: Record<Exclude<TimeRange, 'all'>, number> = { today: 7, '1d': 7, '7d': 7, '30d': 30 };
+
+export function selectTrendSeries(cells: HeatmapCell[], timeRange: TimeRange): Array<{ date: string; tokens: number }> {
+  const sorted = [...cells].sort((a, b) => a.date.localeCompare(b.date));
+  const targetCount = timeRange === 'all'
+    ? Math.max(MIN_TREND_DAYS, sorted.length)
+    : Math.max(MIN_TREND_DAYS, RANGE_DAYS[timeRange] || MIN_TREND_DAYS);
+
+  if (sorted.length >= targetCount) {
+    return sorted.slice(-targetCount).map(cell => ({ date: cell.date, tokens: cell.tokens }));
+  }
+
+  // When cells has fewer than targetCount (e.g. < 7 days), pad to targetCount (min 7)
+  // using consecutive calendar days ending on the latest available date or today.
+  const cellMap = new Map<string, number>();
+  for (const cell of sorted) {
+    cellMap.set(cell.date, (cellMap.get(cell.date) ?? 0) + cell.tokens);
+  }
+
+  const todayKey = toLocalDateKey();
+  const latestDate = sorted.length > 0 ? sorted[sorted.length - 1].date : todayKey;
+  const parts = latestDate.split('-').map(Number);
+  const [y, m, d] = parts.length === 3 && parts.every(Number.isFinite)
+    ? parts
+    : todayKey.split('-').map(Number);
+
+  const series: Array<{ date: string; tokens: number }> = [];
+  for (let i = targetCount - 1; i >= 0; i--) {
+    const dt = new Date(y, m - 1, d - i);
+    const dateKey = toLocalDateKey(dt);
+    series.push({
+      date: dateKey,
+      tokens: cellMap.get(dateKey) ?? 0,
+    });
+  }
+  return series;
+}
 
 const MIN_CHART_HEIGHT = 150;
 const PAD = { top: 10, right: 10, bottom: 22, left: 44 };
@@ -40,11 +77,7 @@ const DailyTrendCardImpl: React.FC<{ cells: HeatmapCell[]; timeRange: TimeRange 
   const [containerRef, { width, height }] = useMeasuredSize();
   const chartHeight = Math.max(height, MIN_CHART_HEIGHT);
 
-  const series = useMemo(() => {
-    const sorted = [...cells].sort((a, b) => a.date.localeCompare(b.date));
-    const count = timeRange === 'all' ? sorted.length : RANGE_DAYS[timeRange];
-    return sorted.slice(-count).map(cell => ({ date: cell.date, tokens: cell.tokens }));
-  }, [cells, timeRange]);
+  const series = useMemo(() => selectTrendSeries(cells, timeRange), [cells, timeRange]);
 
   const max = useMemo(() => series.reduce((m, d) => Math.max(m, d.tokens), 0), [series]);
   const hasData = series.length > 1 && max > 0;

@@ -131,7 +131,7 @@ function asBytes(v: ProtoField['value']): Uint8Array | null {
  * (ya29.…) / f3=refreshToken (1//…). Intermediate layers may be raw protobuf or
  * base64-encoded protobuf, so every length-delimited field is tried both ways.
  */
-function findTokenMessage(buf: Uint8Array, depth = 0): StoredToken | null {
+export function findTokenMessage(buf: Uint8Array, depth = 0): StoredToken | null {
   if (depth > 8) return null;
   let fields: ProtoField[];
   try {
@@ -226,6 +226,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<string |
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: body.toString(),
+        signal: AbortSignal.timeout(10_000),
       });
       if (!res.ok) {
         console.warn(`[TokenStats IDE] OAuth token refresh failed (HTTP ${res.status})`);
@@ -257,6 +258,7 @@ export async function requestQuotaSummary(accessToken: string): Promise<{ status
     headers: { ...BASE_REQUEST_HEADERS, Authorization: `Bearer ${accessToken}` },
     // Must be exactly `{}`: extra fields (forceRefresh, metadata) are rejected 400.
     body: '{}',
+    signal: AbortSignal.timeout(10_000),
   });
   let body: unknown = null;
   try {

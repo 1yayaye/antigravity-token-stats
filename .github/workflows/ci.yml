@@ -17,4 +17,8 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run build:bundle
+      - run: npm run build:bundle:ide
+      - run: npm run build:extension:ide
+      - run: npm run build:installer
       - run: npm test
+      - run: npm run test:integration

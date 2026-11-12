@@ -376,11 +376,11 @@ function decodeGenMetadata(buf) {
     }
 
     const usage = parseProtoFields(msg1_4[0]);
-    const inputTokens = usage.get(2) || 0;
-    const outputTokens = usage.get(3) || 0;
-    const cacheReadTokens = usage.get(5) || 0;
-    const thinkingTokens = usage.get(9) || 0;
-    const responseTokens = usage.get(10) || (outputTokens - thinkingTokens);
+    const inputTokens = usage.get(2) ?? 0;
+    const outputTokens = usage.get(3) ?? 0;
+    const cacheReadTokens = usage.get(5) ?? 0;
+    const thinkingTokens = usage.get(9) ?? 0;
+    const responseTokens = Math.max(0, usage.get(10) ?? (outputTokens - thinkingTokens));
 
     return {
       modelName,
@@ -473,13 +473,8 @@ function createEmptyStats() {
     kpis: {
       lifetimeTokens: '0',
       lifetimeTokensRaw: 0,
-      peakTokens: '0',
-      longestTask: '—',
-      currentStreak: 0,
-      longestStreak: 0,
     },
     activity: { heatmap: [], activeDaysCount: 0, totalTasks: 0 },
-    insights: { fastMode: '—', mostUsedReasoning: '—', skillsExplored: 0, totalSkillsUsed: 0, totalThreads: 0 },
     tokenBreakdown: {
       inputTokens: 0,
       inputTokensFormatted: '0',
@@ -497,7 +492,6 @@ function createEmptyStats() {
       reasoningPct: 0,
     },
     sessions: {},
-    sessionRows: [],
     meta: { scannedConversations: 0, updatedAt: new Date().toISOString(), hasStaleSessions: false },
   };
 }
@@ -732,20 +726,15 @@ function computeStats(force = false, dataDir) {
   const sessionMetrics = new Map();
 
   let totalModelCalls = 0;
-  let totalToolCalls = 0;
-  let totalFastModeCalls = 0;
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let totalCacheReadTokens = 0;
   let totalThinkingTokens = 0;
   let totalResponseTokens = 0;
-  let longestDurationMs = 0;
 
   const realDailyMap = new Map();
   const realCostTimelineMap = new Map();
   const realActiveDates = new Set();
-  const uniqueSkills = new Set();
-  let totalSkillsInvoked = 0;
   const modelFrequency = new Map();
   let hasStaleSessions = false;
 
@@ -786,15 +775,11 @@ function computeStats(force = false, dataDir) {
       if (!metrics) continue;
       sessionMetrics.set(sessionId, stale ? { ...metrics, mtimeMs } : metrics);
       totalModelCalls += metrics.modelCalls;
-      totalToolCalls += metrics.toolCalls;
-      totalFastModeCalls += metrics.fastModeCalls;
       totalInputTokens += metrics.inputTokens;
       totalOutputTokens += metrics.outputTokens;
       totalCacheReadTokens += metrics.cacheReadTokens;
       totalThinkingTokens += metrics.thinkingTokens;
       totalResponseTokens += metrics.responseTokens;
-      totalSkillsInvoked += metrics.skillsInvoked;
-      metrics.skillNames.forEach(skill => uniqueSkills.add(skill));
       for (const [name, count] of metrics.modelCounts) {
         modelFrequency.set(name, (modelFrequency.get(name) || 0) + count);
       }
@@ -814,17 +799,13 @@ function computeStats(force = false, dataDir) {
         const cached = transcriptCache.get(transcriptPath);
 
           let fileDailyMap = new Map();
-          let fileSkills = new Set();
           let generationDates = [];
           let generationTimestampsMs = [];
-          let duration = 0;
 
           if (cached && fingerprintsEqual(cached.fingerprint, fingerprint)) {
             fileDailyMap = cached.dailyMap;
-            fileSkills = cached.skills;
             generationDates = cached.generationDates || [];
             generationTimestampsMs = cached.generationTimestampsMs || [];
-            duration = cached.duration;
 
             for (const [k, v] of fileDailyMap) {
               if (!realDailyMap.has(k)) realDailyMap.set(k, { tokens: 0, tasks: 0, inputTokens: 0, cacheReadTokens: 0, outputTokens: 0, thinkingTokens: 0, responseTokens: 0, costUsd: 0 });
@@ -832,13 +813,9 @@ function computeStats(force = false, dataDir) {
               e.tasks += v.tasks;
               realActiveDates.add(k);
             }
-            fileSkills.forEach(s => uniqueSkills.add(s));
-            if (duration > longestDurationMs) longestDurationMs = duration;
           } else {
             const content = fs.readFileSync(transcriptPath, 'utf8');
             const lines = content.split('\n');
-            let firstTime = null;
-            let lastTime = null;
 
             for (const line of lines) {
               if (!line.trim()) continue;
@@ -863,41 +840,19 @@ function computeStats(force = false, dataDir) {
                       generationDates.push(dateKey);
                       generationTimestampsMs.push(t);
                     }
-
-                    if (!firstTime || t < firstTime) firstTime = t;
-                    if (!lastTime || t > lastTime) lastTime = t;
-                  }
-                }
-
-                // Check tool_calls for Agent Skills vs built-in primitives
-                if (item.tool_calls && Array.isArray(item.tool_calls)) {
-                  for (const tc of item.tool_calls) {
-                    if (tc.name === 'view_file' && tc.args && tc.args.AbsolutePath) {
-                      const match = tc.args.AbsolutePath.match(/[\\/]skills[\\/]([^\\/]+)[\\/]SKILL\.md/i);
-                      if (match) {
-                        const sName = match[1];
-                        fileSkills.add(sName);
-                        uniqueSkills.add(sName);
-                      }
-                    }
                   }
                 }
               } catch (e) {}
-            }
-
-            duration = firstTime && lastTime ? lastTime - firstTime : 0;
-            if (duration > longestDurationMs) {
-              longestDurationMs = duration;
             }
 
             const parsedTranscriptEntry = {
               mtimeMs: fingerprint.mtimeMs,
               fingerprint,
               dailyMap: fileDailyMap,
-              skills: fileSkills,
+              skills: new Set(),
               generationDates,
               generationTimestampsMs,
-              duration,
+              duration: 0,
             };
             const afterFingerprint = getFileFingerprint(transcriptPath);
             if (fingerprintsEqual(fingerprint, afterFingerprint)) {
@@ -965,47 +920,27 @@ function computeStats(force = false, dataDir) {
     const pairs = pairGenerationDates(sessionData.generationUsages, finalDates, fallbackDateKey, finalTimestamps, fallbackTs);
     for (const { date } of pairs) realActiveDates.add(date);
     accumulateGenerations(pairs);
-
-    if (sessionData.duration && sessionData.duration > longestDurationMs) {
-      longestDurationMs = sessionData.duration;
-    }
   }
 
   // Phase 3: Aggregate final lifetime metrics from SQLite usage rows.
   let realTotalTokens = 0;
-  let realPeakTokens = 0;
   const sessionsSummary = {};
-  const sessionRows = [];
   const runningSessions = readRunningSessions(agDir);
   // Full live detail is only needed where a pill or IDE status bar can still point at it:
   // running sessions, anything touched in the last day, and the single newest session (so
-  // "the last conversation" survives even after days idle). Older history ships as compact
-  // sessionRows, keeping the broadcast payload flat instead of growing with history.
+  // "the last conversation" survives even after days idle).
   const SESSION_LIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
   let newestSessionId = null;
   let newestSessionAt = -1;
   let newestSessionSummary = null;
 
   for (const [sId, metrics] of sessionMetrics) {
-    const usages = metrics.generationUsages || [];
     const finalTokens = metrics.tokensFromDb || 0;
     realTotalTokens += finalTokens;
-    if (finalTokens > realPeakTokens) realPeakTokens = finalTokens;
 
     const sessionCostRounded = metrics.costUsd;
     const isRunning = runningSessions.has(sId);
     const lastActiveAt = metrics.mtimeMs || null;
-
-    sessionRows.push({
-      id: sId,
-      totalTokens: finalTokens,
-      costUsd: sessionCostRounded,
-      turnsCount: usages.length,
-      modelCalls: metrics.modelCalls || 0,
-      topModel: metrics.topModel,
-      lastActiveAt,
-      isRunning,
-    });
 
     const summary = { ...buildSessionSummary(sId, metrics, isRunning), costUsd: sessionCostRounded };
     if (isRunning || (lastActiveAt !== null && nowMs - lastActiveAt < SESSION_LIVE_WINDOW_MS)) {
@@ -1020,7 +955,6 @@ function computeStats(force = false, dataDir) {
   if (newestSessionSummary && newestSessionId && !sessionsSummary[newestSessionId]) {
     sessionsSummary[newestSessionId] = newestSessionSummary;
   }
-  sessionRows.sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0));
 
   // 1. Format tokens helper (B, M, K)
   function formatTokens(t) {
@@ -1030,40 +964,7 @@ function computeStats(force = false, dataDir) {
     return String(Math.round(t));
   }
 
-  // 2. Real Streaks Calculation from active dates
-  const activeDates = Array.from(realActiveDates).sort();
-  let currentStreak = 0;
-  let longestStreak = 0;
-  let tempStreak = 0;
-  let prevDate = null;
-  const todayKey = toLocalDateKey(new Date());
-
-  for (const d of activeDates) {
-    if (prevDate) {
-      const diffDays = Math.round((new Date(d) - new Date(prevDate)) / 86400000);
-      if (diffDays === 1) {
-        tempStreak++;
-      } else if (diffDays > 1) {
-        tempStreak = 1;
-      }
-    } else {
-      tempStreak = 1;
-    }
-    if (tempStreak > longestStreak) longestStreak = tempStreak;
-    prevDate = d;
-  }
-
-  if (activeDates.length > 0) {
-    const lastActive = activeDates[activeDates.length - 1];
-    const diffFromToday = Math.round((new Date(todayKey) - new Date(lastActive)) / 86400000);
-    if (diffFromToday <= 1) {
-      currentStreak = tempStreak;
-    } else {
-      currentStreak = 0;
-    }
-  }
-
-  // 3. Construct 39-Week Real Heatmap (273 days leading up to today)
+  // 2. Construct 39-Week Real Heatmap (273 days leading up to today)
   const today = new Date();
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const calendarCells = [];
@@ -1120,42 +1021,18 @@ function computeStats(force = false, dataDir) {
     }
   }
 
-  // 4. Real Task Duration
-  const durationHours = Math.floor(longestDurationMs / (1000 * 60 * 60));
-  const durationMinutes = Math.floor((longestDurationMs % (1000 * 60 * 60)) / (1000 * 60));
-  const longestTaskFormatted = durationHours > 0 || durationMinutes > 0
-    ? `${durationHours}h ${durationMinutes}m`
-    : longestDurationMs > 0 ? '<1m' : '—';
-
-  // 5. Prompt Cache Hit Rate (~94%)
+  // 3. Prompt Cache Hit Rate (~94%)
   const totalPromptTokens = totalInputTokens + totalCacheReadTokens;
   const promptCacheHitRatePct = totalPromptTokens > 0
     ? ((totalCacheReadTokens / totalPromptTokens) * 100).toFixed(1) + '%'
     : '0%';
-  // 6. Thinking vs Response Token breakdown
+  // 4. Thinking vs Response Token breakdown
   const reasoningPct = totalOutputTokens > 0
     ? Number(((totalThinkingTokens / totalOutputTokens) * 100).toFixed(1))
     : 0;
 
-  // 7. Real Model Invocations and Primary Reasoning
+  // 5. Model Call Breakdown
   const sortedModels = Array.from(modelFrequency.entries()).sort((a, b) => b[1] - a[1]);
-  let primaryModelName = '—';
-  let primaryModelPct = 0;
-  if (sortedModels.length > 0 && totalModelCalls > 0) {
-    const [topModel, topCount] = sortedModels[0];
-    primaryModelPct = Math.round((topCount / totalModelCalls) * 100);
-    if (topModel.includes('3.8-flash')) primaryModelName = 'Gemini 3.8 Flash';
-    else if (topModel.includes('3.7-flash')) primaryModelName = 'Gemini 3.7 Flash';
-    else if (topModel.includes('claude')) primaryModelName = 'Claude Opus';
-    else primaryModelName = topModel;
-  }
-  const mostUsedReasoningFormatted = sortedModels.length > 0 && totalModelCalls > 0
-    ? `${primaryModelName} · ${primaryModelPct}%` : '—';
-
-  const fastModeRate = totalModelCalls > 0
-    ? ((totalFastModeCalls / totalModelCalls) * 100).toFixed(1) + '%'
-    : '—';
-
   const modelBreakdown = {};
   for (const [mName, cnt] of sortedModels) {
     modelBreakdown[mName] = {
@@ -1196,10 +1073,6 @@ function computeStats(force = false, dataDir) {
     kpis: {
       lifetimeTokens: formatTokens(realTotalTokens),
       lifetimeTokensRaw: realTotalTokens,
-      peakTokens: formatTokens(realPeakTokens),
-      longestTask: longestTaskFormatted,
-      currentStreak: currentStreak,
-      longestStreak: longestStreak,
     },
     activity: {
       heatmap: calendarCells,
@@ -1208,18 +1081,6 @@ function computeStats(force = false, dataDir) {
       dailyStats: dailyStatsObj,
       costTimeline,
       costTimelineCoverageStartMs,
-    },
-    insights: {
-      fastMode: fastModeRate,
-      mostUsedReasoning: mostUsedReasoningFormatted,
-      skillsExplored: uniqueSkills.size,
-      totalSkillsUsed: totalSkillsInvoked,
-      totalThreads: new Set([
-        ...dbFiles.map(file => path.basename(file, '.db')),
-        ...brainFolders,
-      ]).size,
-      cacheHitRate: promptCacheHitRatePct,
-      toolPrimitivesUsed: totalToolCalls,
     },
     tokenBreakdown: {
       inputTokens: totalInputTokens,
@@ -1238,11 +1099,10 @@ function computeStats(force = false, dataDir) {
       reasoningPct,
     },
     sessions: sessionsSummary,
-    sessionRows,
     proxy: (function() {
       try {
         const pm = require('./proxy-manager.cjs');
-        return pm.getAllStatus();
+        return pm.getAllStatus({ nonBlocking: true });
       } catch {
         return undefined;
       }
@@ -1324,7 +1184,7 @@ function extractSessionPerformanceMetrics(dbOrSteps) {
         if (!planner.get(1)?.[0]?.length || planner.has(7)) continue;
         const usage = parseProtoFields(usageBuf);
         const thinkingTokens = Number(usage.get(9) ?? 0);
-        const stepResponseTokens = Number(usage.get(10) ?? (Number(usage.get(3) ?? 0) - thinkingTokens));
+        const stepResponseTokens = Math.max(0, Number(usage.get(10) ?? (Number(usage.get(3) ?? 0) - thinkingTokens)));
         const thinkingBuf = planner.get(11)?.[0];
         const hasThinking = thinkingTokens > 0 || planner.has(3) || planner.has(16) || planner.has(5);
         if (hasThinking && !thinkingBuf) continue;
@@ -1530,3 +1390,7 @@ module.exports = {
   FAST_SCAN_TTL,
   getCacheFilePath,
 };
+
+if (require.main === module) {
+  console.log(JSON.stringify(computeStats(true), null, 2));
+}

@@ -145,9 +145,10 @@ test('Aggregate script runs without errors', () => {
 
   assert(stats.kpis, 'Should have kpis');
   assert(stats.activity, 'Should have activity');
-  assert(stats.insights, 'Should have insights');
   assert(stats.tokenBreakdown, 'Should have tokenBreakdown');
   assert(stats.meta, 'Should have meta');
+  assert(!('insights' in stats), 'Unused insights field must not be serialized');
+  assert(!('sessionRows' in stats), 'Unused sessionRows field must not be serialized');
   assert(typeof stats.kpis.lifetimeTokens === 'string', 'lifetimeTokens should be formatted string');
   assert(typeof stats.kpis.lifetimeTokensRaw === 'number', 'lifetimeTokensRaw should be number');
 });
@@ -189,6 +190,26 @@ test('Zero-dependency Protobuf decoder for SQLite gen_metadata ModelUsageStats',
   assert(decoded.thinkingTokens === 150, 'thinkingTokens should be 150');
   assert(decoded.responseTokens === 50, 'responseTokens should be 50');
   assert(decoded.modelName === 'gemini-3.8-flash', 'modelName should match');
+
+  // Explicit response_output_tokens = 0 must not fall back to output - thinking,
+  // and missing tag 10 when thinking > output must clamp to >= 0.
+  const zeroResponseUsage = Buffer.concat([
+    Buffer.from([0x10, 0x64]),             // input_tokens = 100
+    Buffer.from([0x18, 0x32]),             // output_tokens = 50
+    Buffer.from([0x48, 0x1e]),             // thinking_tokens = 30
+    Buffer.from([0x50, 0x00]),             // explicit response_tokens = 0
+  ]);
+  const zeroMsg1 = Buffer.concat([Buffer.from([0x22, zeroResponseUsage.length]), zeroResponseUsage]);
+  const zeroDecoded = decodeGenMetadata(Buffer.concat([Buffer.from([0x0a, zeroMsg1.length]), zeroMsg1]));
+  assert(zeroDecoded && zeroDecoded.responseTokens === 0, `Explicit response_tokens=0 must stay 0, got ${zeroDecoded?.responseTokens}`);
+
+  const negativeDiffUsage = Buffer.concat([
+    Buffer.from([0x18, 0x0a]),             // output_tokens = 10
+    Buffer.from([0x48, 0x1e]),             // thinking_tokens = 30 (no tag 10)
+  ]);
+  const negMsg1 = Buffer.concat([Buffer.from([0x22, negativeDiffUsage.length]), negativeDiffUsage]);
+  const negDecoded = decodeGenMetadata(Buffer.concat([Buffer.from([0x0a, negMsg1.length]), negMsg1]));
+  assert(negDecoded && negDecoded.responseTokens === 0, `Negative fallback responseTokens must clamp to 0, got ${negDecoded?.responseTokens}`);
 });
 
 test('No estimation heuristics (chars / 3.5, bytes / 3.8) in codebase', () => {
@@ -220,10 +241,8 @@ test('Ground truth Lifetime Tokens (>1B) and Prompt Cache Hit Rate (~94%)', () =
     return;
   }
   assert(stats.kpis.lifetimeTokensRaw > 1000000000, 'Lifetime tokens should be > 1B');
-  const hitRate = parseFloat(stats.insights.cacheHitRate);
-  assert(Math.round(hitRate) >= 92 && Math.round(hitRate) <= 95, `Cache hit rate should be ~94%, got ${stats.insights.cacheHitRate}`);
-  assert(stats.insights.skillsExplored > 15, 'Should distinguish and count real Agent Skills');
-  assert(stats.insights.toolPrimitivesUsed > 5000, 'Should track built-in tool primitives separately');
+  const hitRate = parseFloat(stats.tokenBreakdown.cacheHitRate);
+  assert(Math.round(hitRate) >= 92 && Math.round(hitRate) <= 95, `Cache hit rate should be ~94%, got ${stats.tokenBreakdown.cacheHitRate}`);
 });
 
 test('Live Sync and manual refresh IPC hooks exist', () => {
@@ -340,7 +359,7 @@ test('Phase 2.5 recovers daily stats, costUsd, and duration when transcript.json
     assert(res.status === 0, `Phase 2.5 subprocess failed: ${res.stderr}`);
     const out = JSON.parse(res.stdout.trim().split(/\r?\n/).at(-1));
     assert(out.activity.totalTasks === 1, `Expected 1 task from steps.metadata, got ${out.activity.totalTasks}`);
-    assert(out.kpis.longestTask === '0h 30m', `Expected 0h 30m duration, got ${out.kpis.longestTask}`);
+    assert(out.sessions['no-transcript-session']?.totalTokens === 1000000, 'Session summary must preserve DB tokens when transcript is absent');
     const dayEntries = Object.values(out.activity.dailyStats || {});
     assert(dayEntries.length === 1 && dayEntries[0].costUsd === 2, `Expected $2.00 Pro model cost, got ${JSON.stringify(dayEntries)}`);
   } finally {
@@ -441,7 +460,6 @@ test('Transcript aggregation rejects invalid dates and counts transcript-only se
     });
     assert(result.status === 0, `Transcript edge-case subprocess failed: ${result.stderr}`);
     const stats = JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
-    assert(stats.insights.totalThreads === 1, 'Transcript-only session should count as one thread');
     assert(stats.activity.totalTasks === 1, 'Only the valid timestamp should contribute a task');
     assert(!Object.keys(stats.activity.dailyStats).some(key => key.includes('NaN')), 'Invalid timestamps must not create NaN dates');
   } finally {
