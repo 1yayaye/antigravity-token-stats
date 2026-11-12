@@ -39,7 +39,14 @@ export const ProxyStatusCard: React.FC<ProxyStatusCardProps> = ({ proxy }) => {
     <section className="bento-tile bento-proxy" aria-label={t('proxyTitle')}>
       <span className="text-xs font-semibold text-foreground flex items-center gap-2 whitespace-nowrap">
         {t('proxyTitle')}
-        <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+        <span
+          className="text-[11px] font-medium px-2 py-0.5 rounded-full border"
+          style={{
+            color: 'var(--primary, #2F71E3)',
+            backgroundColor: 'color-mix(in srgb, var(--primary, #2F71E3) 10%, transparent)',
+            borderColor: 'color-mix(in srgb, var(--primary, #2F71E3) 20%, transparent)',
+          }}
+        >
           MinHook v2.4
         </span>
       </span>

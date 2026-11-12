@@ -2,6 +2,19 @@
 
 All notable changes to Antigravity Token Stats will be documented in this file.
 
+## [1.6.1] - 2026-11-12
+
+### Fixed
+- **Desktop CSS Isolation & Host Token Inheritance (`vite.bundle.config.ts`, `src/index.css`, `src/preview-theme.css`)**:
+  - Moved `#root` / `#root.light` baseline CSS variables out of shared `src/index.css` into `src/preview-theme.css` (imported only in web preview and IDE webview), eliminating `#root` style hijacking on Antigravity Desktop.
+  - Added PostCSS `isolateDesktopCss` in `vite.bundle.config.ts` for the desktop target: drops duplicate `@keyframes pulse` / `spin`, scopes all utility selectors to `:where(.antigravity-stats-container, .antigravity-dsh-container)` inside `@layer components`, and moves `.stats-view` resets into `@layer base` so host `@layer utilities` always takes precedence.
+  - Inherited host CSS tokens (`--primary`, `--secondary`, `--card-border`, `--border`, `--muted`, `--foreground`, `--font-mono`, and `font-sans: inherit`) across Bento cards, DSH popovers, Settings nav item, and `ProxyStatusCard` (`MinHook v2.4` badge).
+  - Updated `StatsView` and desktop `MutationObserver` to watch `data-vscode-theme-kind` alongside `class`, `style`, and `data-theme`, and removed duplicate outer container theme wrappers in `standalone.tsx`.
+- **Hot Re-Injection Listener & Timer Cleanup (`hosts/antigravity/src/standalone.tsx`)**:
+  - Replaced single-shot `window.__ANTIGRAVITY_STATS_LISTENER__` boolean guard with replaceable handler references and shared `window.__ANTIGRAVITY_PILL_HEARTBEAT__` / `window.__ANTIGRAVITY_SCAN_TIMER__` cleanup on re-injection, preventing stale-closure `Minified React error #321` crashes in the DSH status bar.
+- **Verification (`scripts/test-theme.cjs`, `scripts/test-all.cjs`)**:
+  - Added PostCSS guardrails verifying desktop bundle CSS has zero `#root` or unscoped selectors and keeps scoped utilities inside `@layer components`, plus hot re-injection cleanup assertions.
+
 ## [1.6.0] - 2026-11-12
 
 ### Added

@@ -22,13 +22,13 @@ export function mountStats(container: HTMLElement) {
   isMounting = true;
 
   try {
-    const theme = syncThemeToElement(container);
+    syncThemeToElement(container);
     const existingRoot = window.__ANTIGRAVITY_STATS_ROOT__;
     if (existingRoot && activeContainer === container) {
       existingRoot.render(
         <React.StrictMode>
           <LanguageProvider>
-            <div className={`w-full h-full min-h-[500px] antigravity-stats-container ${theme}`}>
+            <div className="w-full h-full" style={{ minHeight: '500px' }}>
               <StatsView />
             </div>
           </LanguageProvider>
@@ -48,7 +48,7 @@ export function mountStats(container: HTMLElement) {
     root.render(
       <React.StrictMode>
         <LanguageProvider>
-          <div className={`w-full h-full min-h-[500px] antigravity-stats-container ${theme}`}>
+          <div className="w-full h-full" style={{ minHeight: '500px' }}>
             <StatsView />
           </div>
         </LanguageProvider>
@@ -133,7 +133,13 @@ export function checkGenerationState(): boolean {
 // A new conversation has no stats entry, and the host pushes nothing until its first model call
 // lands. This heartbeat re-reads the active session once per second, independent of any event.
 const PILL_HEARTBEAT_MS = 1000;
-let pillHeartbeat: ReturnType<typeof setInterval> | null = null;
+
+function stopContextPillHeartbeat() {
+  if (typeof window !== 'undefined' && window.__ANTIGRAVITY_PILL_HEARTBEAT__) {
+    clearInterval(window.__ANTIGRAVITY_PILL_HEARTBEAT__);
+    window.__ANTIGRAVITY_PILL_HEARTBEAT__ = null;
+  }
+}
 
 // Probe the host's own control styling so the injected pills inherit the same text
 // color, size and weight as native Antigravity controls (e.g. the Turbo dropdown).
@@ -289,6 +295,7 @@ export function mountDshStatusBar(container: HTMLElement) {
 }
 
 export function unmountDshStatusBar() {
+  stopContextPillHeartbeat();
   if (window.__ANTIGRAVITY_STATUSBAR_ROOT__) {
     try {
       window.__ANTIGRAVITY_STATUSBAR_ROOT__.unmount();
@@ -310,8 +317,7 @@ export function refreshStatusBar() {
 function refreshContextPill() {
   const container = document.getElementById(CONTAINER_STATUSBAR_ID) || document.getElementById('antigravity-context-usage-pill');
   if (!container) {
-    if (pillHeartbeat) clearInterval(pillHeartbeat);
-    pillHeartbeat = null;
+    stopContextPillHeartbeat();
     return;
   }
   const sessionId = getCurrentConversationId();
@@ -320,8 +326,8 @@ function refreshContextPill() {
 }
 
 export function startContextPillHeartbeat() {
-  if (pillHeartbeat) return;
-  pillHeartbeat = setInterval(refreshContextPill, PILL_HEARTBEAT_MS);
+  if (window.__ANTIGRAVITY_PILL_HEARTBEAT__) return;
+  window.__ANTIGRAVITY_PILL_HEARTBEAT__ = setInterval(refreshContextPill, PILL_HEARTBEAT_MS);
 }
 
 let lastKnownConversationId: string | null = null;
@@ -345,6 +351,10 @@ export function initAntigravitySettingsInjector() {
   if (window.__ANTIGRAVITY_OBSERVER__) {
     window.__ANTIGRAVITY_OBSERVER__.disconnect();
     window.__ANTIGRAVITY_OBSERVER__ = null;
+  }
+  if (window.__ANTIGRAVITY_SCAN_TIMER__) {
+    clearTimeout(window.__ANTIGRAVITY_SCAN_TIMER__);
+    window.__ANTIGRAVITY_SCAN_TIMER__ = null;
   }
   unmountStats();
   unmountDshStatusBar();
@@ -383,7 +393,7 @@ export function initAntigravitySettingsInjector() {
             <line x1="12" y1="20" x2="12" y2="4"></line>
             <line x1="6" y1="20" x2="6" y2="14"></line>
           </svg>
-          <span class="text-sm font-medium transition-colors select-none truncate flex-1 text-secondary-foreground group-hover:text-foreground">Usage Stats</span>
+          <span class="transition-colors select-none truncate flex-1 text-secondary-foreground group-hover:text-foreground">Usage Stats</span>
         `;
 
         // Final verification before insertion (prevent async React re-renders)
@@ -518,30 +528,37 @@ export function initAntigravitySettingsInjector() {
     document.head.appendChild(style);
   }
 
-  if (!window.__ANTIGRAVITY_STATS_LISTENER__) {
-    window.__ANTIGRAVITY_STATS_LISTENER__ = true;
-    window.addEventListener(EVENT_STATS_UPDATED, () => {
-      refreshStatusBar();
-    });
-
-    // Host UI translation follows the stats UI language. The guard stops the echo
-    // loop: antigravityI18n.setLanguage re-dispatches this same event.
-    window.addEventListener(EVENT_LANGUAGE_CHANGED, (e) => {
-      const detail = (e as CustomEvent<{ lang?: string }>).detail;
-      if (detail?.lang && antigravityI18n.getLanguage() !== detail.lang) {
-        antigravityI18n.setLanguage(detail.lang as 'en' | 'zh');
-      }
-    });
-
-    window.addEventListener('focus', () => {
-      requestDataSync(getCurrentConversationId());
-    });
+  const prevListeners = window.__ANTIGRAVITY_STATS_LISTENER__;
+  if (prevListeners && typeof prevListeners === 'object') {
+    window.removeEventListener(EVENT_STATS_UPDATED, prevListeners.onStatsUpdated);
+    window.removeEventListener(EVENT_LANGUAGE_CHANGED, prevListeners.onLanguageChanged);
+    window.removeEventListener('focus', prevListeners.onFocus);
   }
 
-  let scanDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const onStatsUpdated: EventListener = () => {
+    refreshStatusBar();
+  };
+  // Host UI translation follows the stats UI language. The guard stops the echo
+  // loop: antigravityI18n.setLanguage re-dispatches this same event.
+  const onLanguageChanged: EventListener = (e) => {
+    const detail = (e as CustomEvent<{ lang?: string }>).detail;
+    if (detail?.lang && antigravityI18n.getLanguage() !== detail.lang) {
+      antigravityI18n.setLanguage(detail.lang as 'en' | 'zh');
+    }
+  };
+  const onFocus: EventListener = () => {
+    requestDataSync(getCurrentConversationId());
+  };
+
+  window.addEventListener(EVENT_STATS_UPDATED, onStatsUpdated);
+  window.addEventListener(EVENT_LANGUAGE_CHANGED, onLanguageChanged);
+  window.addEventListener('focus', onFocus);
+  window.__ANTIGRAVITY_STATS_LISTENER__ = { onStatsUpdated, onLanguageChanged, onFocus };
+
   const debouncedScanAndInject = () => {
-    if (scanDebounceTimer) clearTimeout(scanDebounceTimer);
-    scanDebounceTimer = setTimeout(() => {
+    if (window.__ANTIGRAVITY_SCAN_TIMER__) clearTimeout(window.__ANTIGRAVITY_SCAN_TIMER__);
+    window.__ANTIGRAVITY_SCAN_TIMER__ = setTimeout(() => {
+      window.__ANTIGRAVITY_SCAN_TIMER__ = null;
       checkConversationRoute();
       scanAndInject();
     }, 60);
@@ -549,7 +566,8 @@ export function initAntigravitySettingsInjector() {
 
   const observer = new MutationObserver(debouncedScanAndInject);
   window.__ANTIGRAVITY_OBSERVER__ = observer;
-  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'data-theme', 'data-vscode-theme-kind'] });
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme', 'data-vscode-theme-kind'] });
 
   // Start UI translation if Chinese is selected
   if (antigravityI18n.getLanguage() === 'zh') {

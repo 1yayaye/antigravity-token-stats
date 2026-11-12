@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import '../../../../src/preview-theme.css';
 import '../../../../src/index.css';
 import { StatsView } from '../../../../src/components/stats/StatsView';
 import { LanguageProvider } from '../../../../src/i18n/LanguageContext';
@@ -62,12 +63,12 @@ window.addEventListener('message', (event: MessageEvent) => {
 };
 
 applyTheme('dark');
-const theme = syncThemeToElement(container);
+syncThemeToElement(container);
 const root = ReactDOM.createRoot(container);
 root.render(
   <React.StrictMode>
     <LanguageProvider>
-      <div className={`antigravity-stats-container ${theme} w-full h-full`} style={{ height: '100%', minHeight: '500px' }}>
+      <div className="w-full h-full" style={{ height: '100%', minHeight: '500px' }}>
         <StatsView />
       </div>
     </LanguageProvider>

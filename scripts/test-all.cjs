@@ -133,12 +133,15 @@ test('Subscription quota countdown refreshes while mounted', () => {
   assert(hookCode.includes('clearInterval(timer)'), 'Quota hook should clear its clock on unmount');
 });
 
-test('Standalone has DOM race condition guards', () => {
+test('Standalone has DOM race condition and hot re-injection guards', () => {
   const standaloneCode = fs.readFileSync(path.join(__dirname, '..', 'hosts', 'antigravity', 'src', 'standalone.tsx'), 'utf8');
 
   assert(standaloneCode.includes('DOM structure changed during injection scan'), 'Should warn about structure changes');
   assert(standaloneCode.includes('!parent.contains(modelsBtn)'), 'Should check parent containment');
   assert(standaloneCode.includes('DOM changed before button insertion'), 'Should warn about insertion race');
+  assert(standaloneCode.includes('removeEventListener(EVENT_STATS_UPDATED'), 'Hot re-injection must unbind previous stats listener to avoid React #321');
+  assert(standaloneCode.includes('__ANTIGRAVITY_PILL_HEARTBEAT__'), 'Hot re-injection must clear previous bundle heartbeat timer');
+  assert(standaloneCode.includes('__ANTIGRAVITY_SCAN_TIMER__'), 'Hot re-injection must clear pending scan debounce timer');
 });
 
 test('Aggregate script runs without errors', () => {

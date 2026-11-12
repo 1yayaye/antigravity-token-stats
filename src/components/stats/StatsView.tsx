@@ -32,10 +32,10 @@ export const StatsView: React.FC = () => {
     const observer = new MutationObserver(handleThemeChange);
     if (typeof document !== 'undefined') {
       if (document.body) {
-        observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+        observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style', 'data-theme', 'data-vscode-theme-kind'] });
       }
       if (document.documentElement) {
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme'] });
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style', 'data-theme', 'data-vscode-theme-kind'] });
       }
     }
 

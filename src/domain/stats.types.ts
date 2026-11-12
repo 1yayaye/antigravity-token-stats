@@ -193,7 +193,13 @@ declare global {
       requestSync: (payload?: { sessionId?: string | null } | string) => Promise<any>;
     };
     __ANTIGRAVITY_CDP_SYNC__?: (rawPayload: string) => void;
-    __ANTIGRAVITY_STATS_LISTENER__?: boolean;
+    __ANTIGRAVITY_STATS_LISTENER__?: {
+      onStatsUpdated: EventListener;
+      onLanguageChanged: EventListener;
+      onFocus: EventListener;
+    } | boolean;
+    __ANTIGRAVITY_PILL_HEARTBEAT__?: ReturnType<typeof setInterval> | null;
+    __ANTIGRAVITY_SCAN_TIMER__?: ReturnType<typeof setTimeout> | null;
     AntigravityStats?: AntigravityStatsApi;
     require?: (module: string) => any;
   }

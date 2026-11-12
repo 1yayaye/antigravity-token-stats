@@ -1,8 +1,153 @@
 import { defineConfig, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import postcss, { AtRule, Root, Rule } from 'postcss';
 import { STYLE_ELEMENT_ID, WINDOW_API } from './src/injection-contract.cjs';
 
-function inlineCssPlugin(): Plugin {
+const CONTAINER_SCOPES = [
+  '.antigravity-stats-container',
+  '.stats-view',
+  '#antigravity-stats-modal-overlay',
+  '.antigravity-dsh-container',
+  '.antigravity-dsh-statusbar',
+  '.antigravity-dsh-popover',
+];
+
+const SCOPE_SELECTOR = ':where(.antigravity-stats-container, .antigravity-dsh-container)';
+
+function isScopedSelector(sel: string): boolean {
+  const s = sel.trim();
+  if (s.startsWith(':where(.stats-view')) return true;
+  return CONTAINER_SCOPES.some(
+    (scope) =>
+      s === scope ||
+      s.startsWith(scope + ' ') ||
+      s.startsWith(scope + '.') ||
+      s.startsWith(scope + ':') ||
+      s.startsWith(scope + '>') ||
+      s.startsWith(scope + '[')
+  );
+}
+
+function scopeRuleSelectors(rule: Rule): void {
+  const next: string[] = [];
+  for (const raw of rule.selectors) {
+    const sel = raw.trim();
+    if (!sel) continue;
+    if (isScopedSelector(sel)) {
+      next.push(sel);
+      continue;
+    }
+    if (sel.startsWith('.') && !/[\s>+~]/.test(sel)) {
+      next.push(`${SCOPE_SELECTOR}${sel}`);
+    }
+    next.push(`${SCOPE_SELECTOR} ${sel}`);
+  }
+  rule.selectors = next;
+}
+
+/**
+ * Isolates injected desktop CSS from Antigravity's global stylesheet:
+ * - Drops duplicate @keyframes pulse/spin already provided by Antigravity.
+ * - Scopes all utility rules to our injected containers so 0 rules match host DOM.
+ * - Places scoped utilities inside @layer components so Antigravity's @layer utilities
+ *   always take precedence inside our containers while host-missing utilities still work.
+ */
+function isolateDesktopCss(cssCode: string): string {
+  const root: Root = postcss.parse(cssCode);
+  const baseLayer = postcss.atRule({ name: 'layer', params: 'base' });
+  const utilityLayer = postcss.atRule({ name: 'layer', params: 'components' });
+
+  const isBaseResetRule = (rule: Rule): boolean =>
+    rule.selectors.some(
+      (s) =>
+        s.startsWith('.stats-view *') ||
+        s.startsWith(':where(.stats-view') ||
+        s === '.stats-view dd' ||
+        s === '.stats-view dl' ||
+        s === '.stats-view h1' ||
+        s === '.stats-view h2' ||
+        s === '.stats-view h3' ||
+        s === '.stats-view button' ||
+        s === '.stats-view select' ||
+        s === '.stats-view :focus-visible'
+    );
+
+  const processNode = (node: postcss.ChildNode, targetContainer: Root | AtRule) => {
+    if (node.type === 'atrule') {
+      if (node.name === 'keyframes' && (node.params === 'pulse' || node.params === 'spin')) {
+        node.remove();
+        return;
+      }
+      if (node.name === 'layer') {
+        node.walkRules((r) => scopeRuleSelectors(r));
+        return;
+      }
+      if (node.name === 'media' || node.name === 'supports') {
+        const cloned = node.clone();
+        cloned.removeAll();
+        let hasUtilityRules = false;
+        node.each((child) => {
+          if (child.type === 'rule') {
+            if (child.selectors.every((s) => s.trim() === '.container')) {
+              child.remove();
+              return;
+            }
+            if (!child.selectors.every(isScopedSelector)) {
+              const scoped = child.clone();
+              scopeRuleSelectors(scoped);
+              cloned.append(scoped);
+              child.remove();
+              hasUtilityRules = true;
+            }
+          }
+        });
+        if (hasUtilityRules) {
+          utilityLayer.append(cloned);
+        }
+        if (!node.nodes || node.nodes.length === 0) {
+          node.remove();
+        }
+        return;
+      }
+      return;
+    }
+
+    if (node.type === 'rule') {
+      if (node.selectors.every((s) => s.trim() === '.container')) {
+        node.remove();
+        return;
+      }
+      if (isBaseResetRule(node)) {
+        baseLayer.append(node.clone());
+        node.remove();
+        return;
+      }
+      if (node.selectors.every(isScopedSelector)) {
+        return;
+      }
+      scopeRuleSelectors(node);
+      if (targetContainer === root) {
+        utilityLayer.append(node.clone());
+        node.remove();
+      }
+    }
+  };
+
+  for (const child of [...root.nodes]) {
+    processNode(child, root);
+  }
+
+  if (utilityLayer.nodes && utilityLayer.nodes.length > 0) {
+    root.prepend(utilityLayer);
+  }
+  if (baseLayer.nodes && baseLayer.nodes.length > 0) {
+    root.prepend(baseLayer);
+  }
+
+  return root.toString();
+}
+
+function inlineCssPlugin(isolateForHost: boolean): Plugin {
   return {
     name: 'inline-css-plugin',
     apply: 'build',
@@ -16,6 +161,9 @@ function inlineCssPlugin(): Plugin {
         }
       }
       if (cssCode) {
+        if (isolateForHost) {
+          cssCode = isolateDesktopCss(cssCode);
+        }
         for (const [fileName, chunk] of Object.entries(bundle)) {
           if (fileName.endsWith('.js') && chunk.type === 'chunk') {
             const injection = `
@@ -73,7 +221,7 @@ if (!target) {
 }
 
 export default defineConfig({
-  plugins: [react(), inlineCssPlugin()],
+  plugins: [react(), inlineCssPlugin(hostTarget === 'antigravity')],
   define: {
     'process.env.NODE_ENV': JSON.stringify('production'),
   },
