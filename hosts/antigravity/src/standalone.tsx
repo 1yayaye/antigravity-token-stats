@@ -334,6 +334,12 @@ export function checkConversationRoute() {
   }
 }
 
+// One restore listener per host settings-nav button, keyed for rebinding: the scan block
+// re-runs whenever the host re-renders the modal nav and drops our injected button, and
+// re-adding blindly would stack closures over detached nodes. Disconnected buttons are
+// pruned on each scan so closed modals do not accumulate.
+const navRestoreListeners = new Map<Element, () => void>();
+
 // Auto-injection DOM observer for Antigravity 2.0 Settings Modal & Sidebar Shortcut
 export function initAntigravitySettingsInjector() {
   if (window.__ANTIGRAVITY_OBSERVER__) {
@@ -348,6 +354,10 @@ export function initAntigravitySettingsInjector() {
   document.querySelectorAll('#antigravity-stats-nav-btn, #antigravity-stats-sidebar-btn, #antigravity-stats-content, #antigravity-stats-settings-content, #antigravity-stats-modal-overlay, #antigravity-stats-toast, #antigravity-context-usage-pill, #antigravity-dsh-statusbar-container, #antigravity-dsh-popover-container').forEach(el => el.remove());
 
   const scanAndInject = () => {
+    for (const btn of navRestoreListeners.keys()) {
+      if (!btn.isConnected) navRestoreListeners.delete(btn);
+    }
+
     // 1. Hook into Settings Modal tabs
     const modal = document.querySelector('.settings-modal-container') as HTMLElement | null;
     if (modal) {
@@ -366,14 +376,14 @@ export function initAntigravitySettingsInjector() {
 
         const statsBtn = document.createElement('button');
         statsBtn.id = 'antigravity-stats-nav-btn';
-        statsBtn.className = 'flex items-center gap-1.5 group mx-2 px-2 py-1 rounded-lg cursor-pointer border-none text-left transition-all outline-none hover:bg-sidebar-muted';
+        statsBtn.className = 'flex items-center gap-1.5 group w-full px-2 py-1 rounded-lg cursor-pointer border-none text-left transition-all outline-none hover:bg-sidebar-muted';
         statsBtn.innerHTML = `
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-secondary-foreground group-hover:text-foreground shrink-0">
             <line x1="18" y1="20" x2="18" y2="10"></line>
             <line x1="12" y1="20" x2="12" y2="4"></line>
             <line x1="6" y1="20" x2="6" y2="14"></line>
           </svg>
-          <span class="text-sm transition-colors select-none truncate flex-1 text-secondary-foreground group-hover:text-foreground">Usage Stats</span>
+          <span class="text-sm font-medium transition-colors select-none truncate flex-1 text-secondary-foreground group-hover:text-foreground">Usage Stats</span>
         `;
 
         // Final verification before insertion (prevent async React re-renders)
@@ -442,29 +452,32 @@ export function initAntigravitySettingsInjector() {
           }
         });
 
-        // Restore rightContentPanel when other tabs clicked
-        const allNavButtons = modal.querySelectorAll('button');
-        allNavButtons.forEach((btn) => {
-          if (btn.id !== 'antigravity-stats-nav-btn') {
-            btn.addEventListener('click', () => {
-              statsBtn.classList.remove('bg-sidebar-secondary');
-              statsBtn.classList.add('hover:bg-sidebar-muted');
-              const statsSpan = statsBtn.querySelector('span');
-              if (statsSpan) {
-                statsSpan.classList.remove('text-foreground');
-                statsSpan.classList.add('text-secondary-foreground');
-              }
+        // Restore rightContentPanel when other tabs clicked — rebound (not stacked) on
+        // every re-injection so each host button keeps exactly one live-closure handler.
+        modal.querySelectorAll('button').forEach((btn) => {
+          if (btn.id === 'antigravity-stats-nav-btn') return;
+          const previous = navRestoreListeners.get(btn);
+          if (previous) btn.removeEventListener('click', previous);
+          const restore = () => {
+            statsBtn.classList.remove('bg-sidebar-secondary');
+            statsBtn.classList.add('hover:bg-sidebar-muted');
+            const statsSpan = statsBtn.querySelector('span');
+            if (statsSpan) {
+              statsSpan.classList.remove('text-foreground');
+              statsSpan.classList.add('text-secondary-foreground');
+            }
 
-              const statsContainer = document.getElementById('antigravity-stats-settings-content');
-              if (statsContainer) {
-                statsContainer.style.display = 'none';
-                unmountStats();
-              }
-              if (rightContentPanel) {
-                rightContentPanel.style.display = '';
-              }
-            });
-          }
+            const statsContainer = document.getElementById('antigravity-stats-settings-content');
+            if (statsContainer) {
+              statsContainer.style.display = 'none';
+              unmountStats();
+            }
+            if (rightContentPanel) {
+              rightContentPanel.style.display = '';
+            }
+          };
+          btn.addEventListener('click', restore);
+          navRestoreListeners.set(btn, restore);
         });
       }
     }

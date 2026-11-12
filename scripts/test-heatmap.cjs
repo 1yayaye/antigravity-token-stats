@@ -110,7 +110,40 @@ console.log('PASS: Empty state renders cleanly');
 // 3. Component Rendering: Active Daily View & "All Tokens" Constraint
 // ============================================================================
 console.log('--- Testing TokenActivityHeatmap Daily view & metric constraint ---');
-const dailyHtmlZh = renderHeatmap({ cells: mockCells, dailyStats: mockDailyStats }, 'zh');
+// Render fixtures anchor to "today": the grid runs from the first active day to now, so
+// fixed mock dates would make the expected month headers drift with the wall clock.
+const renderToday = new Date();
+const renderFirst = new Date(renderToday);
+renderFirst.setDate(renderFirst.getDate() - 60);
+const localKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const firstKey = localKey(renderFirst);
+const todayKeyStr = localKey(renderToday);
+const renderCells = [
+  { date: firstKey, month: firstKey.slice(0, 7), dayOfWeek: renderFirst.getDay(), tokens: 100000, tasks: 5, level: 2 },
+  { date: todayKeyStr, month: todayKeyStr.slice(0, 7), dayOfWeek: renderToday.getDay(), tokens: 250000, tasks: 12, level: 4 },
+];
+const renderDailyStats = {
+  [firstKey]: {
+    tokens: 100000, tasks: 5,
+    inputTokens: 20000, cacheReadTokens: 60000, outputTokens: 20000,
+    thinkingTokens: 15000, responseTokens: 5000,
+  },
+  [todayKeyStr]: {
+    tokens: 250000, tasks: 12,
+    inputTokens: 50000, cacheReadTokens: 150000, outputTokens: 50000,
+    thinkingTokens: 35000, responseTokens: 15000,
+  },
+};
+// The component headers a month whenever a month-start day falls inside the grid window,
+// so the earliest window month must appear — the generalized "March is not omitted" check.
+const expectedMonthKeys = [];
+for (let d = new Date(renderFirst.getFullYear(), renderFirst.getMonth(), 1); localKey(d) <= todayKeyStr; d.setMonth(d.getMonth() + 1)) {
+  if (localKey(d) >= firstKey) expectedMonthKeys.push(localKey(d).slice(0, 7));
+}
+const monthLabel = (monthKey, lang) => new Date(`${monthKey}-01T00:00:00Z`)
+  .toLocaleDateString(lang === 'zh' ? 'zh-CN' : 'en-US', { timeZone: 'UTC', month: 'short' });
+
+const dailyHtmlZh = renderHeatmap({ cells: renderCells, dailyStats: renderDailyStats }, 'zh');
 
 // Must NOT display "统计范畴" row
 assert(
@@ -141,26 +174,34 @@ assert(
   'Cells must have explicit 20px height and min-height to prevent 0-height collapse'
 );
 
-// Check that March is NOT omitted from the month headers
+// Check that the earliest window month is NOT omitted from the month headers
 assert(
-  dailyHtmlZh.includes('3月'),
-  'Month headers must include March (3月) when spanning 6 months ending in September'
+  expectedMonthKeys.length >= 2,
+  'Fixture window must span at least two months for the header check to be meaningful'
 );
+for (const monthKey of expectedMonthKeys) {
+  assert(
+    dailyHtmlZh.includes(monthLabel(monthKey, 'zh')),
+    `Month headers must include ${monthLabel(monthKey, 'zh')} (${monthKey})`
+  );
+}
 
 assert(dailyHtmlZh.includes('heat-cell-'), 'Should render daily calendar cells');
 assert(!dailyHtmlZh.includes('Weekly usage'), 'Should not render weekly view');
 assert(!dailyHtmlZh.includes('cumulAreaGrad'), 'Should not render cumulative view');
 
 // Check English locale
-const dailyHtmlEn = renderHeatmap({ cells: mockCells, dailyStats: mockDailyStats }, 'en');
+const dailyHtmlEn = renderHeatmap({ cells: renderCells, dailyStats: renderDailyStats }, 'en');
 assert(
   !dailyHtmlEn.includes('Scope:'),
   'Must not display Scope strip in English'
 );
-assert(
-  dailyHtmlEn.includes('Mar'),
-  'English month headers must include Mar'
-);
+for (const monthKey of expectedMonthKeys) {
+  assert(
+    dailyHtmlEn.includes(monthLabel(monthKey, 'en')),
+    `English month headers must include ${monthLabel(monthKey, 'en')} (${monthKey})`
+  );
+}
 console.log('PASS: i18n English and month headers render correctly');
 
 // ============================================================================

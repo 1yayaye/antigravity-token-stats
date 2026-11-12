@@ -78,7 +78,7 @@ export const QuotaHeroCard: React.FC<{ stats: AggregatedStats }> = ({ stats }) =
             id="quota-tier-select"
             value={selectedTier}
             onChange={e => setTier(e.target.value as SubscriptionTierId)}
-            className="text-xs bg-card/70 text-foreground border border-card-border rounded-lg px-2.5 py-1 outline-none cursor-pointer hover:border-foreground/30 transition-colors"
+            className="h-8 max-w-full px-2.5 text-xs font-medium bg-card text-foreground border border-card-border rounded-lg outline-none cursor-pointer hover:border-foreground/20 transition-colors focus:ring-1 focus:ring-primary"
           >
             <option value="pro">{t('tierPro')}</option>
             <option value="ultra_5x">{t('tierUltra5x')}</option>

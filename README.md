@@ -19,25 +19,25 @@ Seamlessly integrated into the UI (**Settings → Usage Stats**) via native app.
 
 ### Requirements
 
-- Windows
-- Node.js **22.13+** (requires built-in `node:sqlite`)
+- Windows (Windows 10/11; **no Node.js required** to run the Release `.exe` installer)
 - [Google Antigravity 2.0](https://antigravity.google/)
+- **From Source only**: Node.js **22.13+** (requires built-in `node:sqlite`) and .NET SDK (only when building the `.exe` installer)
 
 ### Project Structure
 
 - `src/` — shared core: dashboard components (`components/stats/`), domain types, stats/pricing services, self i18n, and the injector↔UI contract (`injection-contract.cjs`)
 - `hosts/antigravity/` — desktop adapter layer: injection entry (`standalone.tsx`), host UI translation, and desktop scripts (ASAR patcher, loader, path probing, device acceptance)
-- `hosts/antigravity-ide/` — reserved for the future Antigravity IDE adaptation (see its README for the reuse/new-implementation split)
+- `hosts/antigravity-ide/` — Antigravity IDE extension host: sidebar webview reusing the shared UI, its own aggregation/quota channel, and IDE scripts (see its README for the reuse/new-implementation split)
 - `scripts/` — shared tooling: data aggregation engine (`aggregate-stats.cjs`), test suites, mock data generation
 
 ### Quick Start
 
-#### Option 1: Pre-compiled Release Package (Recommended, no build step)
+#### Option 1: Standalone `.exe` Installer (Recommended, zero dependencies)
 
-1. Download the latest `antigravity-token-stats-vX.Y.Z.zip` from [Releases](https://github.com/1yayaye/antigravity-token-stats/releases).
-2. Extract the archive and double-click **`install.cmd`** (if Antigravity is open, the installer will help close it safely and apply the patch).
-3. Launch Antigravity client and enjoy!
-> **Note**: To restore factory state at any time, simply double-click **`uninstall.cmd`**.
+1. Download the latest `antigravity-token-stats-vX.Y.Z-setup.exe` from [Releases](https://github.com/1yayaye/antigravity-token-stats/releases).
+2. Double-click `antigravity-token-stats-vX.Y.Z-setup.exe` (**no Node.js or extraction required**). It automatically detects your Antigravity Desktop path and active local proxy ports (with connectivity testing and manual port/protocol options), and will offer to safely close Antigravity if it is running.
+3. Click **Install / Update Patch**, then launch Antigravity and open **Settings → Usage Stats**.
+> **Note**: To restore factory state at any time, open the same `.exe` installer and click **Restore Factory**.
 
 #### Option 2: From Source / Developer Mode
 
@@ -62,8 +62,8 @@ After installation, launch Antigravity directly or open it with your shortcut. T
 | Command | Description |
 | :--- | :--- |
 | `npm run patch` | Patch Antigravity app.asar with native stats & i18n |
-| `npm run unpatch` | Restore pristine factory app.asar (or run `uninstall.cmd`) |
-| `npm run package:release` | Build a Release ZIP package (requires Node.js 22.13+) |
+| `npm run unpatch` | Restore pristine factory app.asar (or click **Restore Factory** in the GUI installer) |
+| `npm run package:release` | Build the standalone Release `.exe` installer (`dist-release/antigravity-token-stats-vX.Y.Z-setup.exe`, requires Node.js 22.13+ & .NET SDK) |
 | `npm run launch` | Launch Antigravity 2.0 |
 | `npm run dev` | Standalone browser preview (<http://localhost:5173>) |
 | `npm run aggregate` | Print aggregated metrics in terminal |

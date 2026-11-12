@@ -92,13 +92,14 @@ function unpatch(options = {}) {
     } catch (e) {}
   }
 
+  const asarExists = fs.existsSync(asarPath);
   const backupExists = fs.existsSync(backupPath);
 
-  if (!isModified) {
-    if (!backupExists || (fs.existsSync(asarPath) && fs.readFileSync(asarPath).equals(fs.readFileSync(backupPath)))) {
-      log('[Clean] app.asar is already in pristine factory state. No patch detected.');
-      return { restored: false, pristine: true };
-    }
+  // Never downgrade an already-unpatched official app.asar (e.g. after an official update)
+  // with an older app.asar.backup.
+  if (asarExists && !isModified) {
+    log('[Clean] app.asar is already in pristine factory state. No patch detected.');
+    return { restored: false, pristine: true };
   }
 
   if (!backupExists) {
@@ -128,27 +129,29 @@ function unpatch(options = {}) {
   }
 
   // Restore factory state by also removing proxy DLL and config if present
-  try {
-    const projectRoot = typeof __RELEASE_ROOT !== 'undefined'
-      ? __RELEASE_ROOT
-      : path.resolve(__dirname, '..', '..', '..');
-    const candidates = [
-      path.join(projectRoot, 'scripts', 'proxy-manager.cjs'),
-      path.join(projectRoot, 'dist', 'proxy-manager.cjs'),
-    ];
-    let pm = null;
-    for (const c of candidates) {
-      if (fs.existsSync(c)) {
-        pm = require(c);
-        break;
+  if (options.withProxy !== false) {
+    try {
+      const projectRoot = typeof __RELEASE_ROOT !== 'undefined'
+        ? __RELEASE_ROOT
+        : path.resolve(__dirname, '..', '..', '..');
+      const candidates = [
+        path.join(projectRoot, 'scripts', 'proxy-manager.cjs'),
+        path.join(projectRoot, 'dist', 'proxy-manager.cjs'),
+      ];
+      let pm = null;
+      for (const c of candidates) {
+        if (fs.existsSync(c)) {
+          pm = require(c);
+          break;
+        }
       }
-    }
-    if (!pm) {
-      pm = require('../../../scripts/proxy-manager.cjs');
-    }
-    pm.uninstallProxy('desktop');
-    log('   ✓ Removed transparent proxy files from desktop');
-  } catch {}
+      if (!pm) {
+        pm = require('../../../scripts/proxy-manager.cjs');
+      }
+      pm.uninstallProxy('desktop');
+      log('   ✓ Removed transparent proxy files from desktop');
+    } catch {}
+  }
 
   log('\n======================================================');
   log('✓ SUCCESS: Antigravity 2.0 app.asar has been restored to factory state.');

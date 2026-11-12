@@ -19,10 +19,34 @@ function resolveAntigravityDir(explicitDir) {
 
 // Run state is owned by the host's summaries DB; the UI uses the same field. Unknown => idle,
 // so a schema change can only lose the "generating" hint, never fabricate token numbers.
+//
+// The 1s pill heartbeat re-reads the active session, and every read used to re-open and scan
+// this DB. A fingerprint-guarded snapshot (db + wal, so any host write invalidates) reduces
+// the repeat cost to one statSync; the short TTL is a safety net for coarse-mtime filesystems.
+// A failed read is not cached: a transient lock must not pin a stale run state.
+const RUNNING_SNAPSHOT_TTL_MS = 1500;
+let runningSnapshot = null; // { path, fingerprint, set, at }
+
 function readRunningSessions(dataDir) {
   const running = new Set();
   const summaryPath = path.join(dataDir, 'conversation_summaries.db');
-  if (!fs.existsSync(summaryPath)) return running;
+  if (!fs.existsSync(summaryPath)) {
+    runningSnapshot = null;
+    return running;
+  }
+
+  let fingerprint = null;
+  try {
+    fingerprint = getFileFingerprint(summaryPath, true);
+  } catch (err) {
+    return running;
+  }
+  const cached = runningSnapshot;
+  if (cached && cached.path === summaryPath && fingerprintsEqual(cached.fingerprint, fingerprint)
+    && Date.now() - cached.at < RUNNING_SNAPSHOT_TTL_MS) {
+    return cached.set;
+  }
+
   let db = null;
   try {
     db = new DatabaseSync(summaryPath, { readOnly: true });
@@ -31,8 +55,10 @@ function readRunningSessions(dataDir) {
         running.add(row.conversation_id);
       }
     }
+    runningSnapshot = { path: summaryPath, fingerprint, set: running, at: Date.now() };
   } catch (err) {
-    // Summaries DB busy/locked while the host writes: treat everything as idle.
+    // Summaries DB busy/locked while the host writes: treat everything as idle. Keep the
+    // previous snapshot so a lock does not turn every heartbeat tick into a fresh open.
   } finally {
     if (db) {
       try { db.close(); } catch {}
@@ -489,6 +515,7 @@ function createEmptyStats() {
       reasoningPct: 0,
     },
     sessions: {},
+    sessionRows: [],
     meta: { scannedConversations: 0, updatedAt: new Date().toISOString(), hasStaleSessions: false },
   };
 }
@@ -612,7 +639,10 @@ function computeStats(force = false, dataDir) {
         sessionSkills = new Set(cached.sessionSkills);
         sessionSkillsCount = cached.sessionSkillsCount;
         sessionModels = new Map(cached.sessionModels);
-        sessionGenerationUsages = (cached.generationUsages || []).map(usage => ({ ...usage }));
+        // Usage rows are immutable after parse (pairing builds new objects, summaries only
+        // read), so the cached array is shared by reference — cloning it made every warm
+        // scan O(all generations) in object churn.
+        sessionGenerationUsages = cached.generationUsages || [];
         sessionGenerationDates = cached.generationDates || [];
         sessionGenerationTimestampsMs = cached.generationTimestampsMs || [];
         sessionDailyTasks = cached.dailyTasks instanceof Map ? cached.dailyTasks : new Map(cached.dailyTasks || []);
@@ -755,7 +785,10 @@ function computeStats(force = false, dataDir) {
             sessionSkills = new Set(cached.sessionSkills);
             sessionSkillsCount = cached.sessionSkillsCount;
             sessionModels = new Map(cached.sessionModels);
-            sessionGenerationUsages = (cached.generationUsages || []).map(usage => ({ ...usage }));
+            // Usage rows are immutable after parse (pairing builds new objects, summaries only
+        // read), so the cached array is shared by reference — cloning it made every warm
+        // scan O(all generations) in object churn.
+        sessionGenerationUsages = cached.generationUsages || [];
             sessionGenerationDates = cached.generationDates || [];
             sessionGenerationTimestampsMs = cached.generationTimestampsMs || [];
             sessionDailyTasks = cached.dailyTasks instanceof Map ? cached.dailyTasks : new Map(cached.dailyTasks || []);
@@ -1055,14 +1088,54 @@ function computeStats(force = false, dataDir) {
   let realTotalTokens = 0;
   let realPeakTokens = 0;
   const sessionsSummary = {};
+  const sessionRows = [];
   const runningSessions = readRunningSessions(agDir);
+  // Full live detail is only needed where a pill or IDE status bar can still point at it:
+  // running sessions, anything touched in the last day, and the single newest session (so
+  // "the last conversation" survives even after days idle). Older history ships as compact
+  // sessionRows, keeping the broadcast payload flat instead of growing with history.
+  const SESSION_LIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
+  let newestSessionId = null;
+  let newestSessionAt = -1;
+  let newestSessionSummary = null;
 
   for (const [sId, metrics] of sessionMetrics) {
+    const usages = metrics.generationUsages || [];
     const finalTokens = metrics.tokensFromDb || 0;
     realTotalTokens += finalTokens;
     if (finalTokens > realPeakTokens) realPeakTokens = finalTokens;
 
-    const usages = metrics.generationUsages || [];
+    let sessionCostUsd = 0;
+    const perModelCalls = new Map();
+    for (const usage of usages) {
+      sessionCostUsd += typeof usage.costUsd === 'number'
+        ? usage.costUsd
+        : computeGenerationCostUsd(usage.modelName, usage.inputTokens, usage.cacheReadTokens, usage.outputTokens);
+      if (usage.modelName) perModelCalls.set(usage.modelName, (perModelCalls.get(usage.modelName) || 0) + 1);
+    }
+    let topModel = '';
+    let topModelCalls = 0;
+    for (const [mName, cnt] of perModelCalls) {
+      if (cnt > topModelCalls) {
+        topModel = mName;
+        topModelCalls = cnt;
+      }
+    }
+    const sessionCostRounded = Math.round(sessionCostUsd * 10000) / 10000;
+    const isRunning = runningSessions.has(sId);
+    const lastActiveAt = metrics.mtimeMs || null;
+
+    sessionRows.push({
+      id: sId,
+      totalTokens: finalTokens,
+      costUsd: sessionCostRounded,
+      turnsCount: usages.length,
+      modelCalls: metrics.modelCalls || 0,
+      topModel,
+      lastActiveAt,
+      isRunning,
+    });
+
     const lastUsage = usages.length > 0 ? usages[usages.length - 1] : null;
     const promptTokens = lastUsage ? (lastUsage.inputTokens + lastUsage.cacheReadTokens) : 0;
     const turnCalls = metrics.turnCalls || 0;
@@ -1072,15 +1145,15 @@ function computeStats(force = false, dataDir) {
     const perf = metrics.perf || { rounds: 1, steps: 0, tps: null, modelDurationSec: 0, toolDurationSec: 0, ttftSec: null };
     const dshTelemetry = buildDshTelemetry({
       sessionId: sId,
-      isStreaming: runningSessions.has(sId),
+      isStreaming: isRunning,
       perf,
       promptTokens,
       totalInput: metrics.inputTokens || 0,
       totalCache: metrics.cacheReadTokens || 0,
       totalOutput: metrics.outputTokens || 0,
     });
-    sessionsSummary[sId] = {
-      isRunning: runningSessions.has(sId),
+    const summary = {
+      isRunning,
       turnCalls,
       turnTokens,
       turnStartedAt: metrics.turnStartedAt || null,
@@ -1097,6 +1170,7 @@ function computeStats(force = false, dataDir) {
       totalOutputTokens: metrics.outputTokens || 0,
       compactionLimit: 256000,
       turnsCount: usages.length,
+      costUsd: sessionCostRounded,
       rounds: perf.rounds,
       steps: perf.steps,
       tps: perf.tps,
@@ -1105,7 +1179,19 @@ function computeStats(force = false, dataDir) {
       ttftSec: perf.ttftSec,
       dshTelemetry,
     };
+    if (isRunning || (lastActiveAt !== null && nowMs - lastActiveAt < SESSION_LIVE_WINDOW_MS)) {
+      sessionsSummary[sId] = summary;
+    }
+    if (lastActiveAt !== null && lastActiveAt > newestSessionAt) {
+      newestSessionAt = lastActiveAt;
+      newestSessionId = sId;
+      newestSessionSummary = summary;
+    }
   }
+  if (newestSessionSummary && newestSessionId && !sessionsSummary[newestSessionId]) {
+    sessionsSummary[newestSessionId] = newestSessionSummary;
+  }
+  sessionRows.sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0));
 
   // 1. Format tokens helper (B, M, K)
   function formatTokens(t) {
@@ -1323,6 +1409,7 @@ function computeStats(force = false, dataDir) {
       reasoningPct,
     },
     sessions: sessionsSummary,
+    sessionRows,
     proxy: (function() {
       try {
         const pm = require('./proxy-manager.cjs');

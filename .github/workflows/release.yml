@@ -29,12 +29,12 @@ jobs:
       - name: Run verification tests
         run: npm test
 
-      - name: Build release package
+      - name: Build single-file .exe installer
         run: npm run package:release
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: dist-release/*.zip
+          files: dist-release/*.exe
           generate_release_notes: true

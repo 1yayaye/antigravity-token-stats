@@ -2,6 +2,24 @@
 
 All notable changes to Antigravity Token Stats will be documented in this file.
 
+## [1.6.0] - 2026-11-12
+
+### Added
+- **Standalone Zero-Dependency Windows Installer (`AntiTokenSetup.exe`)**: Native C# WinForms (`.NET Framework 4.8`) single-file installer (`hosts/antigravity/installer/`) with embedded bundle, loader, contract, and proxy assets — no Node.js or ZIP extraction required.
+  - Auto-detects Antigravity Desktop installations (running process, Windows Uninstall registry, standard paths) and UAC elevation needs.
+  - Auto-detects local IPv4/IPv6 SOCKS5 & HTTP proxy ports with owning process identification and live `CONNECT` tunnel testing.
+  - Supports full GUI wizard as well as headless CLI flags (`--patch-dir`, `--unpatch-dir`, `--verify-asar`, `--detect-proxies`, `--test-proxy`).
+- **Compact `sessionRows` & Per-Session Spend (`aggregate-stats.cjs`)**: Tracks per-conversation token totals, USD cost, turns, calls, top model, and last-active timestamp while keeping `sessions` trimmed to running/24h/newest conversations for flat broadcast payloads.
+
+### Fixed & Improved
+- **Antigravity 2.31.2+ `WebContentsView` Support (`loader.cjs`)**: Injects cleanly into `WebContentsView` inside `BaseWindow` in addition to `BrowserWindow`, caches the bundle in memory keyed by file identity, and preserves pinned on-demand historical sessions (>24h) across full-scan broadcasts so the status bar never flickers to zero.
+- **ASAR Backup & Rollback Hardening (`patch-antigravity.cjs`, `unpatch-antigravity.cjs`, `AsarPatcher.cs`)**:
+  - Refreshes `app.asar.backup` only after source extraction, hook injection, repacking, and marker verification succeed — preventing a corrupted `app.asar` from overwriting a valid backup.
+  - Prevents unpatch/restore from downgrading an already-unpatched newer official `app.asar` with an older backup.
+  - Handles Windows `MAX_PATH` (>260 char) paths cleanly during `.unpacked` directory backups and restores.
+- **Stream-Safe Proxy Tunnel Probe (`EnvironmentDetector.cs`)**: Properly handles fragmented SOCKS5 `CONNECT` replies and HTTP `CONNECT` status lines.
+- **UI & Theme Polish**: Refined Bento tiles, glassmorphism popovers, DSH pill tokens, memoized `LanguageContext` / tile components, and `test-heatmap.cjs` date anchoring.
+
 ## [1.5.0] - 2026-10-31
 
 ### Added

@@ -51,7 +51,7 @@ const computeStats = aggregate?.computeStats ?? null;
 const readSingleSession = aggregate?.readSingleSession ?? null;
 const contract = loadModuleRelative(['./injection-contract.cjs', '../../../src/injection-contract.cjs']);
 
-const { app, BrowserWindow, ipcMain } = electron || {};
+const { app, BrowserWindow, webContents, ipcMain } = electron || {};
 
 let lastStats = null;
 let debounceTimer = null;
@@ -65,40 +65,127 @@ const FULL_SCAN_MIN_GAP_MS = 2000;
 const pendingSessionIds = new Set();
 let sessionTimer = null;
 const hookedWindows = new WeakSet();
+// Keep on-demand historical sessions across full-scan broadcasts so viewing a >24h
+// idle conversation does not flicker to zero whenever computeStats trims sessions.
+const pinnedSessionIds = new Set();
+const MAX_PINNED_SESSIONS = 8;
 
-function getBundleCode() {
+function pinSessionId(sessionId) {
+  if (!sessionId || typeof sessionId !== 'string') return;
+  if (pinnedSessionIds.has(sessionId)) {
+    pinnedSessionIds.delete(sessionId);
+  }
+  pinnedSessionIds.add(sessionId);
+  while (pinnedSessionIds.size > MAX_PINNED_SESSIONS) {
+    const oldest = pinnedSessionIds.values().next().value;
+    pinnedSessionIds.delete(oldest);
+  }
+}
+
+function attachPinnedSessions(stats) {
+  if (!stats || typeof stats !== 'object' || pinnedSessionIds.size === 0) return;
+  if (!stats.sessions) stats.sessions = {};
+  for (const sId of Array.from(pinnedSessionIds)) {
+    if (stats.sessions[sId]) continue;
+    let summary = null;
+    if (readSingleSession) {
+      try {
+        summary = readSingleSession(sId);
+      } catch (e) {}
+    }
+    if (!summary && lastStats && lastStats.sessions && lastStats.sessions[sId]) {
+      summary = lastStats.sessions[sId];
+    }
+    if (summary) {
+      stats.sessions[sId] = summary;
+    } else {
+      pinnedSessionIds.delete(sId);
+    }
+  }
+}
+
+// Bundle injection re-runs on every window load and navigation; the ~300KB source is
+// cached keyed by file identity so repeats serve from memory while a rebuilt bundle
+// (dev-bundle.path redirect) still invalidates through its mtime/size change.
+let bundleCodeCache = null; // { path, mtimeMs, size, code }
+
+function resolveBundleCandidatePaths() {
+  const candidates = [];
   try {
     const redirectFile = getDevBundlePathFile();
     if (fs.existsSync(redirectFile)) {
       const devPath = fs.readFileSync(redirectFile, 'utf8').trim();
-      if (devPath && fs.existsSync(devPath)) {
-        const code = fs.readFileSync(devPath, 'utf8');
-        if (code && code.length > 50) return code;
-      }
+      if (devPath && fs.existsSync(devPath)) candidates.push(devPath);
     }
   } catch (e) {}
+  candidates.push(path.join(__dirname, 'antigravity-stats-bundle.js'));
+  return candidates;
+}
 
-  const fallbackPath = path.join(__dirname, 'antigravity-stats-bundle.js');
-  if (fs.existsSync(fallbackPath)) {
+function getBundleCode() {
+  for (const bundlePath of resolveBundleCandidatePaths()) {
     try {
-      const code = fs.readFileSync(fallbackPath, 'utf8');
-      if (code && code.length > 50) return code;
+      const stat = fs.statSync(bundlePath);
+      const cached = bundleCodeCache;
+      if (cached && cached.path === bundlePath && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+        return cached.code;
+      }
+      const code = fs.readFileSync(bundlePath, 'utf8');
+      if (!code || code.length <= 50) continue;
+      bundleCodeCache = { path: bundlePath, mtimeMs: stat.mtimeMs, size: stat.size, code };
+      return code;
     } catch (e) {}
   }
   return null;
 }
 
-function isAntigravityMainWindow(win) {
-  if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) return false;
-  const wc = win.webContents;
-  if (!wc || typeof wc.getURL !== 'function') return false;
+function resolveWebContents(target) {
+  if (!target || typeof target !== 'object') return null;
+  if (typeof target.isDestroyed === 'function' && target.isDestroyed()) return null;
+  // Antigravity 2.31.2+ hosts the Hub UI in a WebContentsView inside BaseWindow,
+  // while older builds used BrowserWindow. Accept either WebContents or BrowserWindow.
+  const wc = typeof target.getURL === 'function' ? target : target.webContents;
+  if (!wc || (typeof wc.isDestroyed === 'function' && wc.isDestroyed())) return null;
+  if (typeof wc.getURL !== 'function') return null;
+  return wc;
+}
+
+function isAntigravityMainWindow(target) {
+  const wc = resolveWebContents(target);
+  if (!wc) return false;
+  if (typeof wc.getType === 'function' && wc.getType() === 'webview') return false;
   const url = wc.getURL() || '';
   return url.startsWith('https://127.0.0.1:') || url.startsWith('http://127.0.0.1:') ||
          url.startsWith('https://localhost:') || url.startsWith('http://localhost:');
 }
 
-async function injectStatsIntoWindow(win) {
-  if (!isAntigravityMainWindow(win)) return;
+function getAllCandidateWebContents() {
+  const seen = new Set();
+  const list = [];
+  if (webContents && typeof webContents.getAllWebContents === 'function') {
+    for (const wc of webContents.getAllWebContents()) {
+      const resolved = resolveWebContents(wc);
+      if (resolved && !seen.has(resolved)) {
+        seen.add(resolved);
+        list.push(resolved);
+      }
+    }
+  }
+  if (BrowserWindow && typeof BrowserWindow.getAllWindows === 'function') {
+    for (const win of BrowserWindow.getAllWindows()) {
+      const resolved = resolveWebContents(win);
+      if (resolved && !seen.has(resolved)) {
+        seen.add(resolved);
+        list.push(resolved);
+      }
+    }
+  }
+  return list;
+}
+
+async function injectStatsIntoWindow(target) {
+  const wc = resolveWebContents(target);
+  if (!wc || !isAntigravityMainWindow(wc)) return;
   try {
     const bundleCode = getBundleCode();
     if (!bundleCode) return;
@@ -127,8 +214,8 @@ async function injectStatsIntoWindow(win) {
         return true;
       })()
     `;
-    await win.webContents.executeJavaScript(setupScript);
-    await win.webContents.executeJavaScript(bundleCode);
+    await wc.executeJavaScript(setupScript);
+    await wc.executeJavaScript(bundleCode);
 
     const postScript = `
       (() => {
@@ -138,43 +225,54 @@ async function injectStatsIntoWindow(win) {
         return true;
       })()
     `;
-    await win.webContents.executeJavaScript(postScript);
+    await wc.executeJavaScript(postScript);
   } catch (err) {
     // Window may have navigated, reloaded, or closed
   }
 }
 
-function hookWindow(win) {
-  if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed()) || hookedWindows.has(win)) return;
-  hookedWindows.add(win);
+function hookWindow(target) {
+  const wc = resolveWebContents(target);
+  if (!wc || hookedWindows.has(wc)) return;
+  if (typeof wc.getType === 'function' && wc.getType() === 'webview') return;
+  hookedWindows.add(wc);
 
-  if (win.webContents && typeof win.webContents.on === 'function') {
-    win.webContents.on('did-finish-load', () => {
-      injectStatsIntoWindow(win);
+  if (typeof wc.on === 'function') {
+    wc.on('did-finish-load', () => {
+      injectStatsIntoWindow(wc);
     });
 
-    if (isAntigravityMainWindow(win) && typeof win.webContents.isLoading === 'function' && !win.webContents.isLoading()) {
-      injectStatsIntoWindow(win);
+    if (isAntigravityMainWindow(wc) && typeof wc.isLoading === 'function' && !wc.isLoading()) {
+      injectStatsIntoWindow(wc);
     }
   }
 }
 
 function broadcastStats(stats) {
   if (!stats || !stats.kpis) return;
+  attachPinnedSessions(stats);
   lastStats = stats;
-  if (!BrowserWindow || typeof BrowserWindow.getAllWindows !== 'function') return;
-  const wins = BrowserWindow.getAllWindows();
-  for (const win of wins) {
-    if (isAntigravityMainWindow(win)) {
+  const script = `
+    (() => {
+      const nextStats = ${JSON.stringify(stats)};
+      const prevSessions = window.${contract.WINDOW_STATS} && window.${contract.WINDOW_STATS}.sessions;
+      const match = typeof window !== 'undefined' && window.location && window.location.pathname
+        ? window.location.pathname.match(/\\/c\\/([a-zA-Z0-9_-]+)/)
+        : null;
+      const activeId = match ? match[1] : null;
+      if (activeId && prevSessions && prevSessions[activeId] && (!nextStats.sessions || !nextStats.sessions[activeId])) {
+        if (!nextStats.sessions) nextStats.sessions = {};
+        nextStats.sessions[activeId] = prevSessions[activeId];
+      }
+      window.${contract.WINDOW_STATS} = nextStats;
+      window.dispatchEvent(new CustomEvent('${contract.EVENT_STATS_UPDATED}', { detail: window.${contract.WINDOW_STATS} }));
+      return true;
+    })()
+  `;
+  for (const wc of getAllCandidateWebContents()) {
+    if (isAntigravityMainWindow(wc)) {
       try {
-        const script = `
-          (() => {
-            window.${contract.WINDOW_STATS} = ${JSON.stringify(stats)};
-            window.dispatchEvent(new CustomEvent('${contract.EVENT_STATS_UPDATED}', { detail: window.${contract.WINDOW_STATS} }));
-            return true;
-          })()
-        `;
-        win.webContents.executeJavaScript(script).catch(() => {});
+        wc.executeJavaScript(script).catch(() => {});
       } catch (e) {}
     }
   }
@@ -182,21 +280,19 @@ function broadcastStats(stats) {
 
 function broadcastSessionUpdate(sessionId, sessionData) {
   if (!sessionId || !sessionData) return;
-  if (!BrowserWindow || typeof BrowserWindow.getAllWindows !== 'function') return;
-  const wins = BrowserWindow.getAllWindows();
-  for (const win of wins) {
-    if (isAntigravityMainWindow(win)) {
+  const script = `
+    (() => {
+      if (!window.${contract.WINDOW_STATS}) window.${contract.WINDOW_STATS} = { sessions: {} };
+      if (!window.${contract.WINDOW_STATS}.sessions) window.${contract.WINDOW_STATS}.sessions = {};
+      window.${contract.WINDOW_STATS}.sessions[${JSON.stringify(sessionId)}] = ${JSON.stringify(sessionData)};
+      window.dispatchEvent(new CustomEvent('${contract.EVENT_STATS_UPDATED}', { detail: window.${contract.WINDOW_STATS} }));
+      return true;
+    })()
+  `;
+  for (const wc of getAllCandidateWebContents()) {
+    if (isAntigravityMainWindow(wc)) {
       try {
-        const script = `
-          (() => {
-            if (!window.${contract.WINDOW_STATS}) window.${contract.WINDOW_STATS} = { sessions: {} };
-            if (!window.${contract.WINDOW_STATS}.sessions) window.${contract.WINDOW_STATS}.sessions = {};
-            window.${contract.WINDOW_STATS}.sessions[${JSON.stringify(sessionId)}] = ${JSON.stringify(sessionData)};
-            window.dispatchEvent(new CustomEvent('${contract.EVENT_STATS_UPDATED}', { detail: window.${contract.WINDOW_STATS} }));
-            return true;
-          })()
-        `;
-        win.webContents.executeJavaScript(script).catch(() => {});
+        wc.executeJavaScript(script).catch(() => {});
       } catch (e) {}
     }
   }
@@ -209,6 +305,7 @@ function pushSessionUpdate(sessionId) {
   try {
     const single = readSingleSession(sessionId);
     if (!single) return;
+    pinSessionId(sessionId);
     if (!lastStats) lastStats = { kpis: {}, sessions: {} };
     if (!lastStats.sessions) lastStats.sessions = {};
     lastStats.sessions[sessionId] = single;
@@ -332,6 +429,7 @@ function init() {
       // Session-scoped requests keep their promise: one DB read, no full rescan. Only the
       // dashboard (no sessionId) needs the whole aggregate refreshed.
       if (sessionId) {
+        pinSessionId(sessionId);
         pushSessionUpdate(sessionId);
         return { success: true };
       }
@@ -342,15 +440,19 @@ function init() {
     console.warn('[TokenStats Loader] ipcMain.handle error:', e);
   }
 
+  app.on('web-contents-created', (_event, contents) => {
+    hookWindow(contents);
+  });
+
   app.on('browser-window-created', (_event, win) => {
     hookWindow(win);
   });
 
   if (typeof app.isReady === 'function' && app.isReady()) {
-    BrowserWindow.getAllWindows().forEach(hookWindow);
+    getAllCandidateWebContents().forEach(hookWindow);
   } else if (typeof app.whenReady === 'function') {
     app.whenReady().then(() => {
-      BrowserWindow.getAllWindows().forEach(hookWindow);
+      getAllCandidateWebContents().forEach(hookWindow);
     });
   }
 
@@ -368,6 +470,7 @@ module.exports = {
   schedulePush,
   broadcastStats,
   broadcastSessionUpdate,
+  pushSessionUpdate,
   getBundleCode,
   setupWatchers,
   flush,

@@ -34,7 +34,8 @@ function useMeasuredSize(): [React.RefObject<HTMLDivElement | null>, { width: nu
   return [ref, size];
 }
 
-export const DailyTrendCard: React.FC<{ cells: HeatmapCell[]; timeRange: TimeRange }> = ({ cells, timeRange }) => {
+// Memoized: only new heatmap cells or a range change should redraw the SVG.
+const DailyTrendCardImpl: React.FC<{ cells: HeatmapCell[]; timeRange: TimeRange }> = ({ cells, timeRange }) => {
   const { t } = useLanguage();
   const [containerRef, { width, height }] = useMeasuredSize();
   const chartHeight = Math.max(height, MIN_CHART_HEIGHT);
@@ -131,3 +132,5 @@ export const DailyTrendCard: React.FC<{ cells: HeatmapCell[]; timeRange: TimeRan
     </section>
   );
 };
+
+export const DailyTrendCard = React.memo(DailyTrendCardImpl);

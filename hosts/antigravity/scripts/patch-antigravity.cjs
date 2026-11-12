@@ -127,6 +127,10 @@ async function patch(options = {}) {
       try {
         execFileSync('taskkill', ['/F', '/IM', 'Antigravity.exe', '/T'], { stdio: 'ignore' });
       } catch {}
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline && isAntigravityRunning()) {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+      }
     } else if (!options.skipProcessCheck) {
       throw new Error('Antigravity is currently running. Please close Antigravity before applying the patch to avoid file lock (EBUSY) errors.');
     }
@@ -152,25 +156,16 @@ async function patch(options = {}) {
     throw new Error(`Proxy manager script not found at: ${proxyManagerSource}`);
   }
 
-  // Backup protection
   const initialContent = fs.readFileSync(asarPath);
   const alreadyModified = initialContent.includes(Buffer.from(contract.MARKER_MAIN_HOOK));
 
   let backupCreated = false;
-  if (!fs.existsSync(backupPath)) {
-    if (alreadyModified) {
-      log('⚠️  Notice: app.asar is already modified and no factory backup was found.');
-    } else {
-      log('[1/5] Creating factory backup: app.asar.backup...');
-      fs.copyFileSync(asarPath, backupPath);
-      const initialUnpacked = asarPath + '.unpacked';
-      const backupUnpacked = backupPath + '.unpacked';
-      if (fs.existsSync(initialUnpacked) && !fs.existsSync(backupUnpacked)) {
-        fs.cpSync(initialUnpacked, backupUnpacked, { recursive: true, force: true });
-      }
-      backupCreated = true;
-      log('   ✓ Factory backup saved.');
-    }
+  if (!alreadyModified) {
+    log(fs.existsSync(backupPath)
+      ? '[1/5] Existing backup found; will refresh after validating updated app.asar...'
+      : '[1/5] Preparing factory backup (after validating app.asar)...');
+  } else if (!fs.existsSync(backupPath)) {
+    log('⚠️  Notice: app.asar is already modified and no factory backup was found.');
   } else {
     log('[1/5] Verified existing factory backup: app.asar.backup');
   }
@@ -280,6 +275,23 @@ try {
     }
     log(`   ✓ Repacked archive validated (${(stat.size / 1024 / 1024).toFixed(2)} MB)`);
 
+    // Commit factory backup only after source extraction and repacked validation succeed,
+    // so a corrupted app.asar never overwrites an existing valid backup.
+    if (!alreadyModified) {
+      const isUpdate = fs.existsSync(backupPath);
+      log(isUpdate ? '   Refreshing factory backup from validated app.asar...' : '   Saving factory backup: app.asar.backup...');
+      safeAtomicReplace(asarPath, backupPath);
+      const initialUnpacked = asarPath + '.unpacked';
+      const backupUnpacked = backupPath + '.unpacked';
+      if (fs.existsSync(initialUnpacked)) {
+        safeReplaceDirectory(initialUnpacked, backupUnpacked);
+      } else if (fs.existsSync(backupUnpacked)) {
+        fs.rmSync(backupUnpacked, { recursive: true, force: true });
+      }
+      backupCreated = !isUpdate;
+      log('   ✓ Factory backup saved.');
+    }
+
     // Safe atomic replacement
     log('[5/5] Applying patched app.asar...');
     try {
@@ -293,6 +305,9 @@ try {
     } catch (err) {
       if (err.code === 'EBUSY') {
         throw new Error('Failed to replace app.asar because Antigravity is currently running. Please close Antigravity and retry.');
+      }
+      if (err.code === 'EPERM' || err.code === 'EACCES') {
+        throw new Error(`Permission denied writing to ${asarPath}. If Antigravity is installed under Program Files, run the installer as Administrator.`);
       }
       throw err;
     }
@@ -332,6 +347,7 @@ if (require.main === module) {
   const cliOptions = {
     killRunning: process.argv.includes('--kill') || process.argv.includes('--force'),
     skipProcessCheck: process.argv.includes('--skip-process-check'),
+    skipDevRedirect: process.argv.includes('--skip-dev-redirect'),
     withProxy: !process.argv.includes('--no-proxy'),
     proxyPort: (process.argv.find(a => a.startsWith('--proxy-port=')) || '').split('=')[1] || undefined,
     proxyType: (process.argv.find(a => a.startsWith('--proxy-type=')) || '').split('=')[1] || undefined,

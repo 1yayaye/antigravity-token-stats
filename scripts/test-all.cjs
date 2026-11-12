@@ -12,6 +12,7 @@ require('./test-heatmap.cjs');
 require('./test-theme.cjs');
 require('./test-i18n-engine.cjs');
 require('./test-data-dir.cjs');
+require('./test-session-rows.cjs');
 
 const TESTS = [];
 let passCount = 0;
@@ -106,6 +107,9 @@ test('Loader script exists and handles 127.0.0.1 origin filter', () => {
   const { isAntigravityMainWindow } = require('../hosts/antigravity/scripts/loader.cjs');
   assert(isAntigravityMainWindow({ webContents: { getURL: () => 'https://127.0.0.1:3901/main' }, isDestroyed: () => false }) === true, 'Must allow 127.0.0.1 https origin');
   assert(isAntigravityMainWindow({ webContents: { getURL: () => 'http://127.0.0.1:8080/' }, isDestroyed: () => false }) === true, 'Must allow 127.0.0.1 http origin');
+  assert(isAntigravityMainWindow({ getURL: () => 'https://127.0.0.1:10157/c/abc', getType: () => 'window', isDestroyed: () => false }) === true, 'Must allow direct WebContents (WebContentsView / BaseWindow in 2.31.2+)');
+  assert(isAntigravityMainWindow({ getURL: () => 'https://127.0.0.1:10157/', getType: () => 'webview', isDestroyed: () => false }) === false, 'Must reject guest webview WebContents');
+  assert(isAntigravityMainWindow({ getURL: () => 'data:text/html,curtain', getType: () => 'window', isDestroyed: () => false }) === false, 'Must reject data: curtain WebContentsView');
   assert(isAntigravityMainWindow({ webContents: { getURL: () => 'https://accounts.google.com/o/oauth2/v2/auth' }, isDestroyed: () => false }) === false, 'Must reject OAuth popups');
   assert(isAntigravityMainWindow({ webContents: { getURL: () => 'https://gemini.google.com/' }, isDestroyed: () => false }) === false, 'Must reject external web views');
   assert(isAntigravityMainWindow({ webContents: { getURL: () => 'https://127.0.0.1:3901/main' }, isDestroyed: () => true }) === false, 'Must reject destroyed windows');

@@ -28,7 +28,7 @@ export const StatsHeader: React.FC<StatsHeaderProps> = ({ timeRange, onTimeRange
           aria-label={t('timeRangeLabel')}
           value={timeRange}
           onChange={event => onTimeRangeChange(event.target.value as TimeRange)}
-          className="h-9 max-w-full px-2 text-sm bg-card text-foreground border border-card-border rounded-md"
+          className="h-8 max-w-full px-2.5 text-xs font-medium bg-card text-foreground border border-card-border rounded-lg outline-none cursor-pointer hover:border-foreground/20 transition-colors focus:ring-1 focus:ring-primary"
         >
           {(['today', '1d', '7d', '30d', 'all'] as TimeRange[]).map(range => (
             <option key={range} value={range}>{t(`timeRange_${range}`)}</option>

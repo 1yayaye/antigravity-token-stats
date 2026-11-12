@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { Language, TranslationKey, translations } from './translations';
 import { EVENT_LANGUAGE_CHANGED } from '../injection-contract.cjs';
 
@@ -33,9 +33,17 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode; initialLang
     window.dispatchEvent(new CustomEvent(EVENT_LANGUAGE_CHANGED, { detail: { lang: newLang } }));
   };
 
-  const toggleLang = () => {
-    setLang(lang === 'en' ? 'zh' : 'en');
-  };
+  // One value per language: a fresh object on every provider render would push every
+  // consumer to re-render even when only an unrelated parent re-rendered.
+  const contextValue = useMemo(() => ({
+    lang,
+    setLang,
+    toggleLang: () => setLang(lang === 'en' ? 'zh' : 'en'),
+    t: (key: TranslationKey): string => {
+      const dict = translations[lang] || translations.en;
+      return dict[key] || translations.en[key] || key;
+    },
+  }), [lang]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -49,13 +57,8 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode; initialLang
     return () => window.removeEventListener(EVENT_LANGUAGE_CHANGED, onExternalChange);
   }, [lang]);
 
-  const t = (key: TranslationKey): string => {
-    const dict = translations[lang] || translations.en;
-    return dict[key] || translations.en[key] || key;
-  };
-
   return (
-    <LanguageContext.Provider value={{ lang, setLang, toggleLang, t }}>
+    <LanguageContext.Provider value={contextValue}>
       {children}
     </LanguageContext.Provider>
   );

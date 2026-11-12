@@ -1,4 +1,4 @@
-param(
+﻿param(
   [switch]$Dev,
   [switch]$Force,
   [switch]$NoProxy,
@@ -18,20 +18,27 @@ function Fail([string]$Message) {
 Write-Host "`nAntigravity Token Stats installer (app.asar Native Patch)" -ForegroundColor Cyan
 Write-Host "Project: $PSScriptRoot`n"
 
+function Stop-AntigravityAndWait {
+  Stop-Process -Name Antigravity -Force -ErrorAction SilentlyContinue
+  $deadline = (Get-Date).AddSeconds(5)
+  while ((Get-Date) -lt $deadline) {
+    if (-not (Get-Process -Name Antigravity -ErrorAction SilentlyContinue)) { break }
+    Start-Sleep -Milliseconds 200
+  }
+}
+
 # 1. Process Check
 $running = Get-Process -Name Antigravity -ErrorAction SilentlyContinue
 if ($running) {
   if ($Force) {
     Write-Host "Antigravity is running. Force closing..." -ForegroundColor Gray
-    Stop-Process -Name Antigravity -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
+    Stop-AntigravityAndWait
   } else {
     Write-Host "Antigravity is currently running." -ForegroundColor Yellow
     $reply = Read-Host "Close Antigravity automatically to continue installation? (Y/n)"
     if ($reply -eq '' -or $reply -match '^[Yy]') {
       Write-Host "Closing Antigravity..." -ForegroundColor Gray
-      Stop-Process -Name Antigravity -Force -ErrorAction SilentlyContinue
-      Start-Sleep -Seconds 1
+      Stop-AntigravityAndWait
     } else {
       Fail "Installation aborted. Please close Antigravity and run the installer again."
     }
@@ -68,7 +75,10 @@ Write-Host "[2/3] Building the injection bundle..." -ForegroundColor Yellow
 if ($LASTEXITCODE -ne 0) { Fail 'The bundle build failed.' }
 
 Write-Host "[3/3] Patching Antigravity app.asar..." -ForegroundColor Yellow
-$patchArgs = @()
+$patchArgs = @("--kill")
+if (-not $Dev) {
+  $patchArgs += "--skip-dev-redirect"
+}
 if ($NoProxy) {
   $patchArgs += "--no-proxy"
 } else {
@@ -87,6 +97,11 @@ if ($Dev) {
   $bundlePath = Join-Path $PSScriptRoot 'dist-bundle\antigravity-stats-bundle.js'
   Set-Content -Path (Join-Path $antiTokenDir 'dev-bundle.path') -Value $bundlePath -Force
   Write-Host "   ✓ Dev mode active: rebuilds will reload automatically in Antigravity." -ForegroundColor Green
+} else {
+  $staleDevFile = Join-Path $env:LOCALAPPDATA 'AntiToken\dev-bundle.path'
+  if (Test-Path $staleDevFile) {
+    Remove-Item -Force $staleDevFile -ErrorAction SilentlyContinue
+  }
 }
 
 # Clean up any legacy redundant shortcuts
@@ -105,5 +120,5 @@ Write-Host "✓ Installation and patching complete!" -ForegroundColor Green
 Write-Host "Launch Antigravity normally from your existing shortcut or taskbar."
 Write-Host "Press Alt+T or open Settings -> Usage Stats to view dashboard."
 Write-Host "To restore original factory state at any time, run:"
-Write-Host "  npm run unpatch  (or double-click uninstall.cmd)"
+Write-Host "  npm run unpatch"
 Write-Host "======================================================`n"

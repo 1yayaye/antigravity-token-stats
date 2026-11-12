@@ -179,7 +179,7 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
   } as React.CSSProperties;
   const rootStyle: React.CSSProperties = {
     ...probeVars,
-    color: 'var(--dsh-text-secondary, #d1d5db)',
+    color: 'var(--dsh-text-secondary, #a1a1aa)',
     ...(hostStyle?.fontSize ? { fontSize: hostStyle.fontSize } : {}),
   };
   const pillTextStyle: React.CSSProperties = hostStyle?.fontWeight
@@ -190,7 +190,7 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
     <div
       ref={rootRef}
       id="antigravity-dsh-statusbar-inner"
-      className="antigravity-dsh-statusbar inline-flex items-center gap-3.5 h-[28px] text-[13px] font-sans select-none bg-transparent transition-colors"
+      className="antigravity-dsh-statusbar inline-flex items-center gap-2 h-7 text-xs font-sans select-none bg-transparent transition-colors"
       style={rootStyle}
     >
       {/* 1. Performance Pill */}
@@ -201,25 +201,25 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
         onMouseEnter={() => handlePillEnter('session', perfBtnRef.current)}
         onMouseLeave={scheduleHide}
         onClick={() => handlePillClick('session')}
-        className="dsh-pill flex items-center gap-2 px-2 py-1 rounded-[6px] transition-colors outline-none border-none bg-transparent"
-        style={{ color: isStreaming ? 'var(--dsh-accent, #38bdf8)' : 'var(--dsh-text-secondary, #d1d5db)' }}
+        className="dsh-pill flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
+        style={{ color: isStreaming ? 'var(--primary, var(--dsh-accent, #2F71E3))' : undefined }}
         aria-label={`性能统计: ${perfText}`}
       >
         <svg
-          width="14"
-          height="14"
+          width="13"
+          height="13"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className={isStreaming ? 'animate-pulse' : undefined}
+          className={isStreaming ? 'animate-pulse' : 'shrink-0 opacity-80'}
         >
           <path d="m12 14 4-4" />
           <path d="M3.34 19a10 10 0 1 1 17.32 0" />
         </svg>
-        <span className="font-medium whitespace-nowrap" style={pillTextStyle}>{perfText}</span>
+        <span className="font-medium whitespace-nowrap text-xs" style={pillTextStyle}>{perfText}</span>
       </button>
 
       {/* 2. Usage Pill */}
@@ -230,25 +230,25 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
         onMouseEnter={() => handlePillEnter('token', usageBtnRef.current)}
         onMouseLeave={scheduleHide}
         onClick={() => handlePillClick('token')}
-        className="dsh-pill flex items-center gap-2 px-2 py-1 rounded-[6px] transition-colors outline-none border-none bg-transparent"
-        style={{ color: 'var(--dsh-text-secondary, #d1d5db)' }}
+        className="dsh-pill flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
         aria-label={`用量统计: ${usageText}`}
       >
         <svg
-          width="14"
-          height="14"
+          width="13"
+          height="13"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
+          className="shrink-0 opacity-80"
         >
           <ellipse cx="12" cy="5" rx="9" ry="3" />
           <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
           <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
         </svg>
-        <span className="font-medium whitespace-nowrap" style={pillTextStyle}>{usageText}</span>
+        <span className="font-medium whitespace-nowrap text-xs" style={pillTextStyle}>{usageText}</span>
       </button>
 
       {/* 3. Context Donut Pill (with backward-compatible id antigravity-context-usage-pill) */}
@@ -260,17 +260,16 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
           onMouseEnter={() => handlePillEnter('context', contextBtnRef.current)}
           onMouseLeave={scheduleHide}
           onClick={() => handlePillClick('context')}
-          className="dsh-pill flex items-center gap-1.5 px-2 py-1 rounded-[6px] transition-colors outline-none border-none bg-transparent"
-          style={{ color: 'var(--dsh-text-secondary, #d1d5db)' }}
+          className="dsh-pill flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
           aria-label={`上下文已用: ${context.usedPct}%`}
         >
-          <div className="relative w-[14px] h-[14px] flex items-center justify-center shrink-0">
-            <svg width="14" height="14" viewBox="0 0 16 16" style={{ transform: 'rotate(-90deg)', transformOrigin: 'center' }}>
+          <div className="relative w-[13px] h-[13px] flex items-center justify-center shrink-0">
+            <svg width="13" height="13" viewBox="0 0 16 16" style={{ transform: 'rotate(-90deg)', transformOrigin: 'center' }}>
               <circle
                 cx="8"
                 cy="8"
                 r="6"
-                stroke="var(--dsh-donut-track, #3f3f46)"
+                stroke="var(--dsh-donut-track, rgba(255, 255, 255, 0.12))"
                 strokeWidth="2"
                 fill="none"
               />
@@ -278,7 +277,7 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
                 cx="8"
                 cy="8"
                 r="6"
-                stroke={isStreaming ? 'var(--dsh-accent, #38bdf8)' : 'var(--dsh-donut-fill, #e4e4e7)'}
+                stroke={isStreaming ? 'var(--primary, var(--dsh-accent, #2F71E3))' : 'var(--dsh-donut-fill, #e4e4e7)'}
                 strokeWidth="2"
                 strokeLinecap="round"
                 fill="none"
@@ -289,8 +288,8 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
             </svg>
           </div>
           <span
-            className="font-mono text-[12px] font-semibold whitespace-nowrap"
-            style={{ ...pillTextStyle, color: 'var(--dsh-text-secondary, #d1d5db)' }}
+            className="font-mono text-xs font-semibold whitespace-nowrap"
+            style={pillTextStyle}
           >
             {`${context.usedPct}%`}
           </span>

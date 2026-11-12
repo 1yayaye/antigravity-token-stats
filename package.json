@@ -1,7 +1,7 @@
 {
   "name": "antigravity-token-stats",
   "private": true,
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Unofficial token-usage dashboard for Google Antigravity 2.0",
   "license": "MIT",
   "engines": {
@@ -21,7 +21,8 @@
     "patch": "node hosts/antigravity/scripts/patch-antigravity.cjs",
     "unpatch": "node hosts/antigravity/scripts/unpatch-antigravity.cjs",
     "launch": "node -e \"const { findAntigravityExe } = require('./hosts/antigravity/scripts/patch-antigravity.cjs'); require('child_process').spawn(findAntigravityExe(), [], { detached: true, stdio: 'ignore' }).unref();\"",
-    "setup": "pwsh -NoProfile -ExecutionPolicy Bypass -File ./install.ps1",
+    "setup": "cmd /c \"where pwsh >nul 2>nul && pwsh -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 || powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1\"",
+    "build:installer": "node hosts/antigravity/installer-gen/prepare-assets.cjs && dotnet build hosts/antigravity/installer/AntiTokenSetup.csproj -c Release",
     "package:release": "node hosts/antigravity/scripts/package-release.cjs",
     "proxy:status": "node scripts/proxy-manager.cjs status",
     "proxy:install": "node scripts/proxy-manager.cjs install",

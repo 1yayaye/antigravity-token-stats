@@ -10,7 +10,9 @@ const CHANNEL_COLORS = {
   response: '#e8b867',
 };
 
-export const TokenSummaryTile: React.FC<{ stats: AggregatedStats }> = ({ stats }) => {
+// Memoized: range/theme changes re-render siblings, but this tile only depends on the
+// filtered stats object identity.
+const TokenSummaryTileImpl: React.FC<{ stats: AggregatedStats }> = ({ stats }) => {
   const { lang, t } = useLanguage();
   const breakdown = stats.tokenBreakdown;
 
@@ -84,3 +86,5 @@ export const TokenSummaryTile: React.FC<{ stats: AggregatedStats }> = ({ stats }
     </section>
   );
 };
+
+export const TokenSummaryTile = React.memo(TokenSummaryTileImpl);

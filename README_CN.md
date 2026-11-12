@@ -19,25 +19,25 @@
 
 ### 运行环境
 
-- Windows
-- Node.js **22.13+**（依赖内置 `node:sqlite`）
+- Windows（使用 Release 独立 `.exe` 安装器**无需安装 Node.js**）
 - [Google Antigravity 2.0](https://antigravity.google/)
+- **仅从源码运行 / 构建时**：Node.js **22.13+**（依赖内置 `node:sqlite`）；构建 `.exe` 安装器还需 .NET SDK
 
 ### 项目结构
 
 - `src/` — 共享核心：看板组件（`components/stats/`）、领域类型、统计/定价服务、自身双语文案，以及注入器↔UI 契约（`injection-contract.cjs`）
 - `hosts/antigravity/` — 桌面端适配层：注入入口（`standalone.tsx`）、宿主界面汉化、桌面端脚本（ASAR 补丁器、loader、路径探测、真机验收）
-- `hosts/antigravity-ide/` — 预留给 Antigravity IDE 版适配（复用/新建拆分见其 README）
+- `hosts/antigravity-ide/` — Antigravity IDE 扩展宿主：侧边栏 webview 复用共享 UI，自带聚合/配额通道与 IDE 脚本（复用/新建拆分见其 README）
 - `scripts/` — 共享工具：数据聚合引擎（`aggregate-stats.cjs`）、测试套件、mock 数据生成
 
 ### 快速开始
 
-#### 方式一：下载 Release 预编译包（推荐，无需本地构建）
+#### 方式一：下载独立 `.exe` 安装器（推荐，零依赖）
 
-1. 前往 [Releases 页面](https://github.com/1yayaye/antigravity-token-stats/releases) 下载最新的 `antigravity-token-stats-vX.Y.Z.zip`。
-2. 解压到任意目录，双击运行 **`install.cmd`**（若客户端正在运行会提示协助关闭并自动完成注入）。
-3. 安装完成后直接启动 Antigravity 客户端即可！
-> **提示**：需要恢复官方原厂状态时，随时双击 **`uninstall.cmd`** 即可一键干净还原。
+1. 前往 [Releases 页面](https://github.com/1yayaye/antigravity-token-stats/releases) 下载最新的 `antigravity-token-stats-vX.Y.Z-setup.exe`。
+2. 直接双击运行 `antigravity-token-stats-vX.Y.Z-setup.exe`（**无需 Node.js，无需解压**）。安装器会自动探测 Antigravity 桌面端安装路径与本机运行中的代理端口（支持手动指定与连通性测试），若客户端正在运行会提示协助安全关闭并完成注入。
+3. 点击 **安装 / 更新补丁**，完成后启动 Antigravity 客户端，进入 **Settings → Usage Stats** 即可使用！
+> **提示**：需要恢复官方原厂状态时，随时打开同一个 `.exe` 安装器，点击 **还原出厂状态** 即可一键干净还原。
 
 #### 方式二：从源码安装与开发
 
@@ -62,8 +62,8 @@ pwsh -File .\install.ps1 -Dev
 | 命令 | 用途 |
 | :--- | :--- |
 | `npm run patch` | 为 Antigravity 打入原生 Stats 看板与汉化补丁 |
-| `npm run unpatch` | 一键无损恢复官方出厂 app.asar 状态（或运行 `uninstall.cmd`） |
-| `npm run package:release` | 构建 Release 发布压缩包 (ZIP，需 Node.js 22.13+) |
+| `npm run unpatch` | 一键无损恢复官方出厂 app.asar 状态（或在安装器界面点击「还原出厂状态」） |
+| `npm run package:release` | 构建单文件 Release 安装器（`dist-release/antigravity-token-stats-vX.Y.Z-setup.exe`，需 Node.js 22.13+ 与 .NET SDK） |
 | `npm run launch` | 启动 Antigravity 2.0 |
 | `npm run dev` | 网页端预览看板 (<http://localhost:5173>) |
 | `npm run aggregate` | 终端直接打印汇总指标 |

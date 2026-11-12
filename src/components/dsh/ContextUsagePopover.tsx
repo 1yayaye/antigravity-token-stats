@@ -23,23 +23,23 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
       id="antigravity-context-popover"
       role="tooltip"
       aria-label={isZh ? '上下文已用' : 'Context Usage'}
-      className="antigravity-dsh-popover w-[320px] rounded-[14px] p-4 text-[13px] font-sans select-none border backdrop-blur-md shadow-2xl transition-all"
+      className="antigravity-dsh-popover w-[320px] rounded-xl p-4 text-[13px] font-sans select-none border backdrop-blur-md shadow-2xl transition-all"
       style={{
-        backgroundColor: 'var(--dsh-card-bg, #25262b)',
-        borderColor: 'var(--dsh-card-border, rgba(255, 255, 255, 0.08))',
-        boxShadow: 'var(--dsh-card-shadow, 0 20px 25px -5px rgba(0, 0, 0, 0.5))',
-        color: 'var(--dsh-text-primary, #ffffff)',
+        backgroundColor: 'var(--card, var(--dsh-card-bg, #131317))',
+        borderColor: 'var(--border, var(--dsh-card-border, rgba(255, 255, 255, 0.08)))',
+        boxShadow: 'var(--dsh-card-shadow, 0 16px 36px -4px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.06))',
+        color: 'var(--foreground, var(--dsh-text-primary, #f4f4f5))',
       }}
     >
       {/* Header */}
       <div className="flex items-center justify-between text-[14px]">
         <div>
-          <span style={{ color: 'var(--dsh-text-secondary, #d1d5db)' }}>
+          <span style={{ color: 'var(--muted-foreground, var(--dsh-text-secondary, #a1a1aa))' }}>
             {isZh ? '上下文已用 ' : 'Context Used '}
           </span>
-          <span className="font-bold" style={{ color: 'var(--dsh-text-primary, #ffffff)' }}>{`${metrics.usedPct}%`}</span>
+          <span className="font-bold tabular-nums" style={{ color: 'var(--foreground, var(--dsh-text-primary, #f4f4f5))' }}>{`${metrics.usedPct}%`}</span>
         </div>
-        <span className="font-semibold" style={{ color: 'var(--dsh-text-primary, #ffffff)' }}>
+        <span className="font-semibold tabular-nums" style={{ color: 'var(--foreground, var(--dsh-text-primary, #f4f4f5))' }}>
           {`~${formatCompactTokens(metrics.usedTokens)} / ${formatCompactTokens(metrics.limitTokens)}`}
         </span>
       </div>
@@ -47,7 +47,7 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
       {/* Segmented Progress Bar Container */}
       <div className="relative w-full my-3 flex items-center">
         {/* Track */}
-        <div className="w-full h-[6px] rounded-full overflow-hidden flex" style={{ backgroundColor: 'var(--dsh-seg-track, #38393e)' }}>
+        <div className="w-full h-[6px] rounded-full overflow-hidden flex" style={{ backgroundColor: 'var(--dsh-seg-track, rgba(255, 255, 255, 0.1))' }}>
           {/* Filled Portion */}
           <div
             className="h-full flex transition-all duration-300"
@@ -58,7 +58,7 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
                 className="h-full transition-all"
                 style={{
                   width: `${sysPct}%`,
-                  backgroundColor: 'var(--dsh-seg-system-prompt, #9ca3af)',
+                  backgroundColor: 'var(--dsh-seg-system-prompt, #71717a)',
                 }}
                 title={`${isZh ? '系统提示词' : 'System Prompt'}: ~${formatCompactTokens(metrics.systemPromptTokens)}`}
               />
@@ -68,7 +68,7 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
                 className="h-full transition-all"
                 style={{
                   width: `${toolPct}%`,
-                  backgroundColor: 'var(--dsh-seg-tool-definitions, #a855f7)',
+                  backgroundColor: 'var(--dsh-seg-tool-definitions, #8b5cf6)',
                 }}
                 title={`${isZh ? '工具定义' : 'Tool Definitions'}: ~${formatCompactTokens(metrics.toolDefinitionTokens)}`}
               />
@@ -78,7 +78,7 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
                 className="h-full transition-all"
                 style={{
                   width: `${chatPct}%`,
-                  backgroundColor: 'var(--dsh-seg-chat-messages, #3b82f6)',
+                  backgroundColor: 'var(--primary, var(--dsh-seg-chat-messages, #2F71E3))',
                 }}
                 title={`${isZh ? '对话消息' : 'Chat Messages'}: ~${formatCompactTokens(metrics.chatMessageTokens)}`}
               />
@@ -100,13 +100,13 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
           <div className="flex items-center gap-2">
             <span
               className="w-2.5 h-2.5 rounded-[2px] shrink-0"
-              style={{ backgroundColor: 'var(--dsh-seg-system-prompt, #9ca3af)' }}
+              style={{ backgroundColor: 'var(--dsh-seg-system-prompt, #71717a)' }}
             />
-            <span style={{ color: 'var(--dsh-text-secondary, #d1d5db)' }}>
+            <span style={{ color: 'var(--secondary-foreground, var(--dsh-text-secondary, #a1a1aa))' }}>
               {isZh ? '系统提示词' : 'System Prompt'}
             </span>
           </div>
-          <span className="font-medium" style={{ color: 'var(--dsh-text-primary, #ffffff)' }}>
+          <span className="font-medium tabular-nums" style={{ color: 'var(--foreground, var(--dsh-text-primary, #f4f4f5))' }}>
             {`~${formatCompactTokens(metrics.systemPromptTokens)}`}
           </span>
         </div>
@@ -115,13 +115,13 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
           <div className="flex items-center gap-2">
             <span
               className="w-2.5 h-2.5 rounded-[2px] shrink-0"
-              style={{ backgroundColor: 'var(--dsh-seg-tool-definitions, #a855f7)' }}
+              style={{ backgroundColor: 'var(--dsh-seg-tool-definitions, #8b5cf6)' }}
             />
-            <span style={{ color: 'var(--dsh-text-secondary, #d1d5db)' }}>
+            <span style={{ color: 'var(--secondary-foreground, var(--dsh-text-secondary, #a1a1aa))' }}>
               {isZh ? '工具定义' : 'Tool Definitions'}
             </span>
           </div>
-          <span className="font-medium" style={{ color: 'var(--dsh-text-primary, #ffffff)' }}>
+          <span className="font-medium tabular-nums" style={{ color: 'var(--foreground, var(--dsh-text-primary, #f4f4f5))' }}>
             {`~${formatCompactTokens(metrics.toolDefinitionTokens)}`}
           </span>
         </div>
@@ -130,13 +130,13 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
           <div className="flex items-center gap-2">
             <span
               className="w-2.5 h-2.5 rounded-[2px] shrink-0"
-              style={{ backgroundColor: 'var(--dsh-seg-chat-messages, #3b82f6)' }}
+              style={{ backgroundColor: 'var(--primary, var(--dsh-seg-chat-messages, #2F71E3))' }}
             />
-            <span style={{ color: 'var(--dsh-text-secondary, #d1d5db)' }}>
+            <span style={{ color: 'var(--secondary-foreground, var(--dsh-text-secondary, #a1a1aa))' }}>
               {isZh ? '对话消息' : 'Chat Messages'}
             </span>
           </div>
-          <span className="font-medium" style={{ color: 'var(--dsh-text-primary, #ffffff)' }}>
+          <span className="font-medium tabular-nums" style={{ color: 'var(--foreground, var(--dsh-text-primary, #f4f4f5))' }}>
             {`~${formatCompactTokens(metrics.chatMessageTokens)}`}
           </span>
         </div>
@@ -146,12 +146,21 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
       <div
         className="mt-3 pt-2 text-[11px] flex items-center justify-between border-t"
         style={{
-          borderColor: 'var(--dsh-divider, rgba(255, 255, 255, 0.08))',
-          color: 'var(--dsh-text-muted, #9ca3af)',
+          borderColor: 'var(--border, var(--dsh-divider, rgba(255, 255, 255, 0.08)))',
+          color: 'var(--muted-foreground, var(--dsh-text-muted, #71717a))',
         }}
       >
         <span>{isZh ? '256K 自动压缩阈值 · 缓存命中支持' : '256K Compaction Threshold · Prompt Cache'}</span>
-        <span className="font-mono" style={{ color: 'var(--dsh-text-muted, #9ca3af)' }}>/compact</span>
+        <span
+          className="font-mono text-[10px] px-1.5 py-0.5 rounded border"
+          style={{
+            backgroundColor: 'var(--secondary, rgba(255, 255, 255, 0.06))',
+            borderColor: 'var(--border, rgba(255, 255, 255, 0.08))',
+            color: 'var(--muted-foreground, var(--dsh-text-muted, #71717a))',
+          }}
+        >
+          /compact
+        </span>
       </div>
     </div>
   );

@@ -16,6 +16,38 @@ function getLocalAppData() {
   return process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
 }
 
+function findAntigravityFromRegistry() {
+  if (process.platform !== 'win32') return [];
+  const roots = [
+    'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+    'HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+    'HKLM\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall',
+  ];
+  const dirs = [];
+  for (const root of roots) {
+    try {
+      const out = execFileSync('reg', ['query', root, '/s', '/f', 'Antigravity', '/d'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const blocks = out.split(/\r?\n\r?\n/);
+      for (const block of blocks) {
+        if (!/DisplayName\s+REG_\w+\s+Antigravity\b/i.test(block)) continue;
+        if (/Antigravity IDE/i.test(block)) continue;
+        for (const key of ['InstallLocation', 'UninstallString', 'DisplayIcon']) {
+          const m = block.match(new RegExp(`${key}\\s+REG_\\w+\\s+(.+)`));
+          if (!m) continue;
+          const raw = m[1].trim().replace(/^"([^"]+)".*$/, '$1').split(',')[0].trim();
+          if (!raw) continue;
+          const dir = fs.existsSync(raw) && fs.statSync(raw).isDirectory() ? raw : path.dirname(raw);
+          if (dir) dirs.push(path.join(dir, 'resources'));
+        }
+      }
+    } catch {}
+  }
+  return dirs;
+}
+
 function getAntigravityResourcesDir() {
   if (process.env.ANTIGRAVITY_RESOURCES && fs.existsSync(process.env.ANTIGRAVITY_RESOURCES)) {
     return process.env.ANTIGRAVITY_RESOURCES;
@@ -24,12 +56,19 @@ function getAntigravityResourcesDir() {
   const candidates = [
     process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'antigravity', 'resources') : null,
     path.join(os.homedir(), 'AppData', 'Local', 'Programs', 'antigravity', 'resources'),
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'Google', 'Antigravity', 'resources') : null,
     process.env.PROGRAMFILES ? path.join(process.env.PROGRAMFILES, 'Antigravity', 'resources') : null,
     process.env['PROGRAMFILES(X86)'] ? path.join(process.env['PROGRAMFILES(X86)'], 'Antigravity', 'resources') : null,
     'C:\\Program Files\\Antigravity\\resources',
     'C:\\Program Files (x86)\\Antigravity\\resources'
   ].filter(Boolean);
 
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, 'app.asar'))) return dir;
+  }
+  for (const dir of findAntigravityFromRegistry()) {
+    if (fs.existsSync(path.join(dir, 'app.asar'))) return dir;
+  }
   for (const dir of candidates) {
     if (fs.existsSync(dir)) return dir;
   }

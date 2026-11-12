@@ -88,6 +88,26 @@ export interface SessionSummary {
   toolDurationSec?: number;
   ttftSec?: number | null;
   dshTelemetry?: import('../types/dsh-telemetry').DshTelemetryData;
+  /** Estimated session spend in USD (Σ per-generation cost), rounded to 4 decimals. */
+  costUsd?: number;
+}
+
+/**
+ * Compact per-conversation row covering the whole history. Unlike SessionSummary
+ * (live detail, trimmed to active/recent sessions), one row exists per conversation
+ * so tables can list and sort everything without bloating each broadcast.
+ */
+export interface SessionRow {
+  id: string;
+  totalTokens: number;
+  costUsd: number;
+  turnsCount: number;
+  modelCalls: number;
+  /** Model with the most completed calls in the session (proto name, '' when none). */
+  topModel: string;
+  /** Session DB mtime in epoch ms — the best available "last active" signal. */
+  lastActiveAt: number | null;
+  isRunning: boolean;
 }
 
 export interface ProxyTargetInfo {
@@ -131,6 +151,7 @@ export interface AggregatedStats {
   insights: ActivityInsights;
   tokenBreakdown?: TokenBreakdown;
   sessions?: Record<string, SessionSummary>;
+  sessionRows?: SessionRow[];
   proxy?: ProxyStatusSummary;
   meta: {
     scannedConversations: number;
