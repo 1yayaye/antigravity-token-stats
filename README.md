@@ -36,7 +36,7 @@ Seamlessly integrated into the UI (**Settings → Usage Stats**) via native app.
 
 1. Download the latest `antigravity-token-stats-vX.Y.Z-setup.exe` from [Releases](https://github.com/1yayaye/antigravity-token-stats/releases).
 2. Double-click `antigravity-token-stats-vX.Y.Z-setup.exe` (**no Node.js or extraction required**). It automatically detects your Antigravity Desktop path and active local proxy ports (with connectivity testing and manual port/protocol options), and will offer to safely close Antigravity if it is running.
-3. Click **Install / Update Patch**, then launch Antigravity and open **Settings → Usage Stats**.
+3. Transparent proxy is **unchecked by default**; enable it only if needed. Click **Install / Update Patch**, then launch Antigravity and open **Settings → Usage Stats**. Leaving proxy unchecked skips installation but does not remove a previously installed proxy.
 > **Note**: To uninstall the patch and restore factory state at any time, open the same `.exe` installer and click **Uninstall / Restore Factory**.
 
 #### Update notifications

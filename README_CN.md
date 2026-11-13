@@ -36,7 +36,7 @@
 
 1. 前往 [Releases 页面](https://github.com/1yayaye/antigravity-token-stats/releases) 下载最新的 `antigravity-token-stats-vX.Y.Z-setup.exe`。
 2. 直接双击运行 `antigravity-token-stats-vX.Y.Z-setup.exe`（**无需 Node.js，无需解压**）。安装器会自动探测 Antigravity 桌面端安装路径与本机运行中的代理端口（支持手动指定与连通性测试），若客户端正在运行会提示协助安全关闭并完成注入。
-3. 点击 **安装 / 更新补丁**，完成后启动 Antigravity 客户端，进入 **Settings → Usage Stats** 即可使用！
+3. 透明代理**默认不勾选**，需要时手动启用。点击 **安装 / 更新补丁**，完成后启动 Antigravity 客户端，进入 **Settings → Usage Stats** 即可使用。未勾选只跳过代理安装，不会移除已安装的代理。
 > **提示**：需要卸载补丁并恢复官方原厂状态时，随时打开同一个 `.exe` 安装器，点击 **卸载 / 还原出厂** 即可一键干净卸载。
 
 #### 更新提醒

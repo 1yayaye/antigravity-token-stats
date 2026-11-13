@@ -4,6 +4,11 @@ All notable changes to Antigravity Token Stats will be documented in this file.
 
 ## [1.7.0] - 2026-11-13
 
+### Reissued - 2026-11-13
+- **Installer GUI Proxy Opt-In**: Transparent proxy configuration is unchecked by default. Detecting a local or previously installed proxy does not enable it or override the user's selection. Leaving it unchecked skips proxy installation; it does not remove an existing proxy. CLI proxy defaults are unchanged; use `--no-proxy` to skip proxy installation there.
+- **PR #1 Follow-Up**: The supported installation routes no longer depend on the retired PowerShell scripts, and the desktop loader supports `WebContentsView` / `BaseWindow` since v1.6.0. Thanks to [@Uziel660](https://github.com/Uziel660) for reporting these issues and proposing fixes in [PR #1](https://github.com/1yayaye/antigravity-token-stats/pull/1).
+- **Same-Version Reissue**: The v1.7.0 installer asset is replaced without increasing the version. Existing v1.7.0 installations will not receive another update notification; download the revised installer manually if needed.
+
 ### Added
 - **Desktop Update Checker (`update-checker.cjs`)**: Automatic, non-blocking check against GitHub Releases for Antigravity Desktop. Prompts users with native dialogs in Chinese or English to download updates when a newer release is published.
 - **Unified Installer & Native Uninstallation Architecture**:

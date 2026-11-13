@@ -249,7 +249,7 @@ namespace AntiTokenSetup.UI
             _chkEnableProxy = new CheckBox
             {
                 AutoSize = true,
-                Checked = true,
+                Checked = false,
                 Margin = new Padding(0, 2, 0, 8)
             };
             _chkEnableProxy.CheckedChanged += (_, __) => UpdateProxyInputsEnabled();
@@ -569,7 +569,6 @@ namespace AntiTokenSetup.UI
                     _suppressProxySelectionEvent = true;
                     try
                     {
-                        _chkEnableProxy.Checked = true;
                         _numPort.Value = Math.Min(65535, Math.Max(1, _currentInstall.ExistingProxyPort));
                         _selectedProxyHost = string.IsNullOrWhiteSpace(_currentInstall.ExistingProxyHost)
                             ? "127.0.0.1"
