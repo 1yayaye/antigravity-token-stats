@@ -180,7 +180,7 @@ async function runRealDeviceAcceptance() {
               currentTier: selectEl.value,
               tiersAvailable: Array.from(selectEl.options).map(o => o.text),
               hasLiveBadge: text.includes('实时同步') || text.includes('Synced') || text.includes('Live'),
-              hasWeeklyQuota: text.includes('周额度') || text.includes('Weekly Quota'),
+              hasWeeklyQuota: text.includes('本周配额已用') || text.includes('周额度') || text.includes('Weekly Quota'),
               hasMonthlySaving: text.includes('月额度') || text.includes('Monthly') || text.includes('saved'),
               textSnippet: text.split('\\n').filter(Boolean).slice(0, 8)
             };

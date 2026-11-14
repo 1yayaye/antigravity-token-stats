@@ -192,6 +192,8 @@ function encodeFieldVarint(fieldNum, value) {
 // 4. IDE extension CSPRNG getNonce & .db-wal/.db-shm session tracking
 {
   const vscodeStub = {
+    // status-bar.ts reads the IDE display language at module load
+    env: { language: 'zh-cn' },
     window: {
       createStatusBarItem: () => ({ show() {}, dispose() {} }),
       activeColorTheme: { kind: 2 },
@@ -216,6 +218,85 @@ function encodeFieldVarint(fieldNum, value) {
   assert.equal(extractSessionIdFromConvFile('abc-123.db-shm'), 'abc-123');
   assert.equal(extractSessionIdFromConvFile('notes.txt'), null);
   console.log('PASS: IDE extension getNonce uses CSPRNG and .db-wal/.db-shm maps to sessionId');
+}
+
+// 4b. IDE status bar: bilingual tooltip follows vscode.env.language, severity thresholds unchanged
+{
+  function makeVscodeStub(language) {
+    const item = { text: '', tooltip: null, backgroundColor: null, show() {}, dispose() {} };
+    const vscodeStub = {
+      env: { language },
+      window: { createStatusBarItem: () => item },
+      StatusBarAlignment: { Right: 2 },
+      MarkdownString: class {
+        constructor() { this.value = ''; }
+        appendMarkdown(s) { this.value += s; }
+      },
+      ThemeColor: class {
+        constructor(id) { this.id = id; }
+      },
+    };
+    return { vscodeStub, item };
+  }
+
+  const makeStats = (promptTokens) => ({
+    sessions: {
+      'sess-1': {
+        promptTokens,
+        compactionLimit: 256000,
+        latestCacheRead: 90000,
+        latestInput: 5000,
+        latestOutput: 3000,
+        latestThinking: 1200,
+        latestResponse: 1800,
+        isRunning: false,
+        turnStartedAt: Date.now() - 30000,
+        turnCalls: 3,
+        turnTokens: 12000,
+      },
+    },
+  });
+
+  // zh display language keeps the original Chinese copy
+  const zh = makeVscodeStub('zh-cn');
+  const { StatsStatusBar: ZhBar } = loadTsModule(
+    path.join(repoRoot, 'hosts', 'antigravity-ide', 'extension', 'src', 'status-bar.ts'),
+    { vscode: zh.vscodeStub }
+  );
+  const zhBar = new ZhBar();
+  assert.ok(zh.item.tooltip.value.includes('尚无会话数据'), 'zh zero state must stay Chinese');
+  zhBar.update(makeStats(150000), null);
+  const zhTip = zh.item.tooltip.value;
+  assert.ok(zhTip.includes('当前会话上下文详情'), 'zh tooltip title must stay Chinese');
+  assert.ok(zhTip.includes('上下文占用 (上次请求)'), 'zh context line must stay Chinese');
+  assert.ok(zhTip.includes('3 次调用'), 'zh turn line must keep the zh call unit');
+  assert.ok(zh.item.text.includes('(59%)'), 'Status text must show the settled percentage');
+  assert.equal(zh.item.backgroundColor?.id, 'statusBarItem.warningBackground', '59% must stay warning (>55)');
+
+  // en display language switches the whole tooltip
+  const en = makeVscodeStub('en');
+  const { StatsStatusBar: EnBar } = loadTsModule(
+    path.join(repoRoot, 'hosts', 'antigravity-ide', 'extension', 'src', 'status-bar.ts'),
+    { vscode: en.vscodeStub }
+  );
+  const enBar = new EnBar();
+  assert.ok(en.item.tooltip.value.includes('No session data yet'), 'en zero state must be English');
+  enBar.update(makeStats(150000), null);
+  const enTip = en.item.tooltip.value;
+  assert.ok(enTip.includes('Current Session Context'), 'en tooltip title must be English');
+  assert.ok(enTip.includes('Context usage (last request)'), 'en context line must be English');
+  assert.ok(enTip.includes('3 calls'), 'en turn line must use the en call unit');
+  assert.ok(!enTip.includes('上下文占用') && !enTip.includes('次调用'), 'en tooltip must not leak zh copy');
+  assert.equal(en.item.backgroundColor?.id, 'statusBarItem.warningBackground', '59% must stay warning for en too');
+
+  // severity thresholds unchanged: >85 error, exactly 85 stays warning
+  enBar.update(makeStats(220200), null);
+  assert.equal(en.item.backgroundColor?.id, 'statusBarItem.errorBackground', '86% must be error (>85)');
+  enBar.update(makeStats(217600), null);
+  assert.equal(en.item.backgroundColor?.id, 'statusBarItem.warningBackground', '85% exactly must stay warning');
+  enBar.update(null, null);
+  assert.ok(!en.item.backgroundColor, 'Zero state must stay neutral');
+  console.log('PASS: IDE status bar tooltip follows vscode.env.language and keeps severity thresholds');
 }
 
 // 5. proxy-manager nonBlocking mode avoids synchronous tasklist.exe calls

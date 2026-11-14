@@ -2,6 +2,15 @@
 
 All notable changes to Antigravity Token Stats will be documented in this file.
 
+## [1.8.1] - 2026-11-15
+
+### Improved & Fixed
+- **IDE Host Adaptation of v1.8.0 Quota UI (`hosts/antigravity-ide/`)**:
+  - Verified the IDE webview bundle, `extension/out/aggregate-stats.cjs` (`PERSIST_CACHE_VERSION = 11`), `EXT_TO_WEBVIEW.QUOTA` channel, and `quota-service.ts` tier detection are in sync with the v1.8.0 shared sources; rebuilt both checked-in artifacts.
+  - **Bilingual Status Bar (`hosts/antigravity-ide/extension/src/status-bar.ts`)**: tooltip copy now follows the IDE display language (`vscode.env.language`, zh/en) like the desktop pill's `lang` prop, instead of hardcoded Chinese; severity thresholds (>55% warning, >85% error) unchanged.
+  - **Dictionary-Driven Quota Titles (`QuotaHeroCard.tsx`, `translations.ts`)**: replaced the four `lang === 'zh' ? … : t(…)` hardcoded fallbacks (weekly title, region aria-label, monthly ring label/title) with pure dictionary lookups (`weeklyQuota` zh copy updated to 本周配额已用, new `monthlyCapacityTitle` / `quotaRingsRegionLabel` keys); added an en-US rendering regression in `scripts/test-quota-hero-morph1.cjs` and updated the desktop acceptance probe's weekly-title match.
+  - **Status Bar Regression Coverage (`scripts/test-audit-fixes.cjs`)**: new section asserts the IDE status bar tooltip follows `vscode.env.language` and keeps its severity thresholds.
+
 ## [1.8.0] - 2026-11-14
 
 ### Added

@@ -105,7 +105,7 @@ const WEEKLY_POOL_CONFIGS: WeeklyPoolRenderConfig[] = [
 ];
 
 export const QuotaHeroCard: React.FC<{ stats: AggregatedStats }> = ({ stats }) => {
-  const { lang, t } = useLanguage();
+  const { t } = useLanguage();
   const { liveQuota, selectedTier, detectedTier, isAutoSelected, setTier, resetToAuto, metrics, plan } = useQuotaMetrics(stats);
 
   const visibleWeeklyPools = WEEKLY_POOL_CONFIGS.filter(cfg => Boolean(metrics.pools[cfg.pool].bucket));
@@ -141,7 +141,7 @@ export const QuotaHeroCard: React.FC<{ stats: AggregatedStats }> = ({ stats }) =
     <section className="bento-tile quota-card-row" aria-label={t('subscriptionQuotaTitle')}>
       <div className="quota-top-meta">
         <div className="ring-info-title-row">
-          <span className="ring-col-title">{lang === 'zh' ? '本周配额已用' : t('weeklyQuota')}</span>
+          <span className="ring-col-title">{t('weeklyQuota')}</span>
           <span
             className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse"
             title={t('liveQuotaDetected')}
@@ -184,7 +184,7 @@ export const QuotaHeroCard: React.FC<{ stats: AggregatedStats }> = ({ stats }) =
         </div>
       </div>
 
-      <div className="view-dual-rings" role="region" aria-label={lang === 'zh' ? '多模型周配额与月容量视图' : t('subscriptionQuotaTitle')}>
+      <div className="view-dual-rings" role="region" aria-label={t('quotaRingsRegionLabel')}>
         {visibleWeeklyPools.map(cfg => {
           const poolMetrics = metrics.pools[cfg.pool];
           const fraction = Math.min(1, Math.max(0, poolMetrics.usedFraction));
@@ -225,7 +225,7 @@ export const QuotaHeroCard: React.FC<{ stats: AggregatedStats }> = ({ stats }) =
         <div className="ring-col ring-col-summary">
           <RadialRing
             fraction={monthlyFraction}
-            label={lang === 'zh' ? '4周容量' : t('monthlyQuotaShort')}
+            label={t('monthlyQuotaShort')}
             gradientId="ringMonthGrad"
             startColor="#3b82f6"
             endColor="#8b5cf6"
@@ -233,7 +233,7 @@ export const QuotaHeroCard: React.FC<{ stats: AggregatedStats }> = ({ stats }) =
           />
           <div className="ring-col-info">
             <div className="ring-info-title-row">
-              <span className="ring-col-title truncate">{lang === 'zh' ? '4周折算总容量' : `${t('monthlyQuotaShort')} · 4w`}</span>
+              <span className="ring-col-title truncate">{t('monthlyCapacityTitle')}</span>
               <span className="track-pill-badge badge-primary tabular-nums shrink-0" id="ringRoiBadge">
                 {roiMultiplier !== null ? `${roiMultiplier} ROI` : '—'}
               </span>

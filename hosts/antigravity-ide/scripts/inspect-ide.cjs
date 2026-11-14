@@ -97,10 +97,11 @@ const OVERVIEW_PROBE = `(() => {
 
 const WEBVIEW_PROBE = `(() => {
   // The webview CDP target's document is only the outer webview shell; the extension
-  // content renders inside the nested active-frame iframe. The shell and the frame are
-  // same-origin, so reach the inner document through frame.contentDocument and probe
-  // there (fall back to the shell document when running directly inside the frame).
-  const innerDoc = document.querySelector('iframe.active-frame')?.contentDocument || document;
+  // content renders inside the nested active-frame iframe (class on older shells,
+  // id on VSCode 1.10x+). The shell and the frame are same-origin, so reach the
+  // inner document through frame.contentDocument and probe there (fall back to the
+  // shell document when running directly inside the frame).
+  const innerDoc = document.querySelector('iframe.active-frame, iframe#active-frame')?.contentDocument || document;
   const root = innerDoc.querySelector('#root');
   const style = innerDoc.getElementById('antigravity-stats-styles');
   return {

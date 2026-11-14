@@ -7,7 +7,9 @@
  * (newest turn first), otherwise the session with the newest turn, otherwise the
  * conversation file the watcher saw change last; anything else renders the zero
  * state. Severity backgrounds follow the pill's thresholds (>55% warning,
- * >85% error); running and zero states stay neutral.
+ * >85% error); running and zero states stay neutral. Copy follows the IDE
+ * display language (zh when vscode.env.language starts with "zh"), like the
+ * desktop pill's lang prop.
  */
 import * as vscode from 'vscode';
 import type { AggregatedStats, SessionSummary } from '../../../../src/domain/stats.types';
@@ -16,6 +18,32 @@ import { IDE_OPEN_STATS_COMMAND } from '../../src/ide-contract';
 
 const DEFAULT_COMPACTION_LIMIT = 256000;
 const PRIORITY = 100;
+
+// The extension host has no shared LanguageProvider; the IDE display language
+// is the only signal the pill has, and it is stable for the session.
+const STRINGS = vscode.env.language.toLowerCase().startsWith('zh')
+  ? {
+      noData: '**Token Stats** — 尚无会话数据，等待首次模型调用。',
+      tooltipTitle: '当前会话上下文详情',
+      contextLine: (tokens: string, pct: number) => `- 上下文占用 (上次请求): **${tokens}** tokens (${pct}%)\n`,
+      compactionLine: (limitK: number, remainingK: string, pct: number) => `- 距自动压缩 (~${limitK}k): 剩余 ~${remainingK}k (${pct}%)\n`,
+      cacheLine: (read: string, rate: string) => `- Prompt Cache 命中: **${read}** (${rate}%)\n`,
+      inputLine: (n: string) => `- 增量新输入: ${n}\n`,
+      outputLine: (total: string, thinking: string, response: string) => `- 上次输出 (思考/回复): ${total} (${thinking} / ${response})\n`,
+      turnLine: (isRunning: boolean, calls: number, tokens: string, elapsedSuffix: string) =>
+        `- ${isRunning ? '本轮' : '上轮'}累计: ${calls} 次调用 · ${tokens}${elapsedSuffix}\n`,
+    }
+  : {
+      noData: '**Token Stats** — No session data yet; waiting for the first model call.',
+      tooltipTitle: 'Current Session Context',
+      contextLine: (tokens: string, pct: number) => `- Context usage (last request): **${tokens}** tokens (${pct}%)\n`,
+      compactionLine: (limitK: number, remainingK: string, pct: number) => `- Until auto-compaction (~${limitK}k): ~${remainingK}k left (${pct}%)\n`,
+      cacheLine: (read: string, rate: string) => `- Prompt cache hit: **${read}** (${rate}%)\n`,
+      inputLine: (n: string) => `- New input: ${n}\n`,
+      outputLine: (total: string, thinking: string, response: string) => `- Last output (thinking/reply): ${total} (${thinking} / ${response})\n`,
+      turnLine: (isRunning: boolean, calls: number, tokens: string, elapsedSuffix: string) =>
+        `- ${isRunning ? 'This turn' : 'Last turn'} total: ${calls} calls · ${tokens}${elapsedSuffix}\n`,
+    };
 
 interface CurrentSession {
   id: string;
@@ -57,7 +85,7 @@ function selectCurrentSession(stats: AggregatedStats | null | undefined, lastCha
 function buildTooltip(target: CurrentSession | null): vscode.MarkdownString {
   const md = new vscode.MarkdownString();
   if (!target) {
-    md.appendMarkdown('**Token Stats** — 尚无会话数据，等待首次模型调用。');
+    md.appendMarkdown(STRINGS.noData);
     return md;
   }
   const { session } = target;
@@ -71,14 +99,18 @@ function buildTooltip(target: CurrentSession | null): vscode.MarkdownString {
     ? Math.max(0, Math.round((Date.now() - session.turnStartedAt) / 1000))
     : 0;
 
-  md.appendMarkdown('**当前会话上下文详情**\n\n');
-  md.appendMarkdown(`- 上下文占用 (上次请求): **${tokens.toLocaleString()}** tokens (${pct}%)\n`);
-  md.appendMarkdown(`- 距自动压缩 (~${Math.round(limit / 1000)}k): 剩余 ~${(remaining / 1000).toFixed(1)}k (${pct}%)\n`);
-  md.appendMarkdown(`- Prompt Cache 命中: **${session.latestCacheRead.toLocaleString()}** (${cacheRate}%)\n`);
-  md.appendMarkdown(`- 增量新输入: ${session.latestInput.toLocaleString()}\n`);
-  md.appendMarkdown(`- 上次输出 (思考/回复): ${session.latestOutput.toLocaleString()} (${session.latestThinking.toLocaleString()} / ${session.latestResponse.toLocaleString()})\n`);
-  const turnLine = `${session.turnCalls ?? 0} 次调用 · ${(session.turnTokens ?? 0).toLocaleString()}${turnElapsed > 0 ? ` · ${turnElapsed}s` : ''}`;
-  md.appendMarkdown(`- ${isRunning ? '本轮' : '上轮'}累计: ${turnLine}\n`);
+  md.appendMarkdown(`**${STRINGS.tooltipTitle}**\n\n`);
+  md.appendMarkdown(STRINGS.contextLine(tokens.toLocaleString(), pct));
+  md.appendMarkdown(STRINGS.compactionLine(Math.round(limit / 1000), (remaining / 1000).toFixed(1), pct));
+  md.appendMarkdown(STRINGS.cacheLine(session.latestCacheRead.toLocaleString(), cacheRate));
+  md.appendMarkdown(STRINGS.inputLine(session.latestInput.toLocaleString()));
+  md.appendMarkdown(STRINGS.outputLine(
+    session.latestOutput.toLocaleString(),
+    session.latestThinking.toLocaleString(),
+    session.latestResponse.toLocaleString(),
+  ));
+  const elapsedSuffix = turnElapsed > 0 ? ` · ${turnElapsed}s` : '';
+  md.appendMarkdown(STRINGS.turnLine(isRunning, session.turnCalls ?? 0, (session.turnTokens ?? 0).toLocaleString(), elapsedSuffix));
   md.appendMarkdown(`\n_${target.id}_`);
   return md;
 }

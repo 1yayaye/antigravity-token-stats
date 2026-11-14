@@ -31,7 +31,7 @@ const contract = require('../src/injection-contract.cjs');
 
 console.log('=== Testing QuotaHeroCard Morph 1 (Dual Radial Rings) ===\n');
 
-function renderCard(stats, mockWindowQuota, savedTier = null) {
+function renderCard(stats, mockWindowQuota, savedTier = null, lang = 'zh') {
   global.window = new EventTarget();
   global.localStorage = { getItem: () => savedTier, setItem: () => {}, removeItem: () => {} };
   if (mockWindowQuota !== undefined) {
@@ -41,7 +41,7 @@ function renderCard(stats, mockWindowQuota, savedTier = null) {
     return renderToStaticMarkup(
       React.createElement(
         LanguageProvider,
-        { initialLang: 'zh' },
+        { initialLang: lang },
         React.createElement(QuotaHeroCard, { stats })
       )
     );
@@ -253,5 +253,15 @@ assert(claudeUnusedHtml.includes('id="ringClaudeWeekCap">~</span>'), 'Unused Cla
 assert(!claudeUnusedHtml.includes('$40.00'), 'Unused Claude & GPT must NOT render hardcoded $40.00 cap');
 assert(claudeUnusedHtml.includes('id="ringMonthCap">~$340.00</span>'), '4-week cap must sum only active Gemini ($240) + Argon ($100) caps');
 console.log('PASS: Unused pool renders "$0.00 / ~" without hypothetical cap and is excluded from monthly cap sum');
+
+// 9. Test: English rendering pulls every ring title from the dictionary (no hardcoded zh fallback)
+const enHtml = renderCard(multiPoolStats, multiPoolLiveQuota, null, 'en');
+assert(enHtml.includes('Weekly Quota'), 'EN must render weekly title from the dictionary');
+assert(enHtml.includes('Gemini Models'), 'EN must render Gemini pool title from the dictionary');
+assert(enHtml.includes('Monthly quota · 4w'), 'EN must render monthly capacity title from the dictionary');
+assert(enHtml.includes('Multi-model weekly quota and monthly capacity view'), 'EN must render the dual-ring region aria-label from the dictionary');
+assert(!enHtml.includes('本周配额已用'), 'EN must NOT leak the zh weekly title');
+assert(!enHtml.includes('4周折算总容量'), 'EN must NOT leak the zh monthly capacity title');
+console.log('PASS: English rendering is fully dictionary-driven with no zh fallback leakage');
 
 console.log('\nALL QuotaHeroCard Morph 1 tests passed successfully!\n');
