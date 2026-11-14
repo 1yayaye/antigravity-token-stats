@@ -331,9 +331,9 @@ test('Phase 2.5 recovers daily stats, costUsd, and duration when transcript.json
     const db = new DatabaseSync(dbPath);
     db.exec('CREATE TABLE gen_metadata (idx INTEGER, data BLOB); CREATE TABLE steps (idx INTEGER, step_type INTEGER, step_payload BLOB, metadata BLOB);');
 
-    // Insert 1M input tokens on gemini-2.5-pro ($2.00)
+    // Insert 1M input tokens on gemini-4-carbon ($2.00)
     const usageBuf = Buffer.concat([Buffer.from([0x10]), encodeVarint(1000000)]);
-    const modelStr = Buffer.from('gemini-2.5-pro', 'utf8');
+    const modelStr = Buffer.from('gemini-4-carbon', 'utf8');
     const msg1 = Buffer.concat([
       Buffer.from([0x22, usageBuf.length]), usageBuf,
       Buffer.from([0x9a, 0x01, modelStr.length]), modelStr,
@@ -400,7 +400,7 @@ test('Exact DB step timestamps win when the transcript only knows part of the se
     const db = new DatabaseSync(path.join(tmpRoot, 'conversations', `${sessionId}.db`));
     db.exec('CREATE TABLE gen_metadata (idx INTEGER, data BLOB); CREATE TABLE steps (idx INTEGER, step_type INTEGER, step_payload BLOB, metadata BLOB);');
     const usageBuf = Buffer.concat([Buffer.from([0x10]), encodeVarint(1000000)]);
-    const modelStr = Buffer.from('gemini-2.5-pro', 'utf8');
+    const modelStr = Buffer.from('gemini-4-carbon', 'utf8');
     const msg = Buffer.concat([
       Buffer.from([0x22, usageBuf.length]), usageBuf,
       Buffer.from([0x9a, 0x01, modelStr.length]), modelStr,

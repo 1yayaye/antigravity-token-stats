@@ -32,12 +32,18 @@ async function main() {
     });
     const { fetchLiveQuota } = require(outfile);
     const quota = await fetchLiveQuota(true);
-    if (!quota || !quota.weeklyGemini) {
+    if (!quota || (!quota.weeklyGemini && !quota.weeklyClaude && !quota.weeklyArgon)) {
       console.error('[probe-quota] No live quota available (no IDE login token or endpoint refused the request).');
       process.exitCode = 1;
       return;
     }
-    console.log(JSON.stringify({ capturedAt: quota.capturedAt, weeklyGemini: quota.weeklyGemini }, null, 2));
+    console.log(JSON.stringify({
+      capturedAt: quota.capturedAt,
+      detectedAccountTier: quota.detectedAccountTier ?? null,
+      weeklyGemini: quota.weeklyGemini,
+      weeklyClaude: quota.weeklyClaude,
+      weeklyArgon: quota.weeklyArgon,
+    }, null, 2));
   } catch (err) {
     console.error('[probe-quota] Failed:', err.message);
     process.exitCode = 1;

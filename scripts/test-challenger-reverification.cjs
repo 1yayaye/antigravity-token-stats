@@ -183,11 +183,11 @@ testCase('Context breakdown conservation & non-negative invariant across ranges'
   assert.strictEqual(large.sum, 72400);
 });
 
-testCase('256K compaction threshold mark calculation', () => {
+testCase('256K context window limit calculation', () => {
   const compactionLimit = 256000;
-  const contextWindow1M = 1048576;
-  const markPct = (compactionLimit / contextWindow1M) * 100;
-  assert.strictEqual(markPct.toFixed(1), '24.4', 'Compaction threshold mark must be 24.4%');
+  const contextWindow256K = 256000;
+  const markPct = (compactionLimit / contextWindow256K) * 100;
+  assert.strictEqual(markPct.toFixed(1), '100.0', 'Compaction limit at full capacity must be 100%');
 });
 
 // -------------------------------------------------------------------

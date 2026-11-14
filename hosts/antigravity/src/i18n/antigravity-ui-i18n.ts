@@ -127,8 +127,69 @@ export class AntigravityUITranslator {
     return null;
   }
 
+  private hasAdjacentTextSibling(node: Text): boolean {
+    return (
+      node.previousSibling?.nodeType === Node.TEXT_NODE ||
+      node.nextSibling?.nodeType === Node.TEXT_NODE
+    );
+  }
+
+  private collectTextRun(node: Text): Text[] {
+    let first: Node = node;
+    while (first.previousSibling?.nodeType === Node.TEXT_NODE) {
+      first = first.previousSibling;
+    }
+    const run: Text[] = [];
+    let curr: Node | null = first;
+    while (curr && curr.nodeType === Node.TEXT_NODE) {
+      run.push(curr as Text);
+      curr = curr.nextSibling;
+    }
+    return run;
+  }
+
+  // React renders JSX interpolations like `No {type} yet` as adjacent Text siblings.
+  // Translate the joined run as one sentence and keep every Text node in place for React reconciliation.
+  private translateTextRun(run: Text[]): void {
+    const originals = run.map((node) => {
+      const currentVal = node.nodeValue || '';
+      const stored = this.originalTextStore.get(node);
+      return stored && stored.translated === currentVal ? stored.original : currentVal;
+    });
+
+    const rawCombined = originals.join('');
+    const translated = rawCombined.trim() ? this.translateText(rawCombined) : null;
+
+    if (!translated || translated === rawCombined) {
+      for (const node of run) {
+        const currentVal = node.nodeValue || '';
+        const stored = this.originalTextStore.get(node);
+        if (!stored) continue;
+        if (stored.translated === currentVal) {
+          node.nodeValue = stored.original;
+        }
+        this.originalTextStore.delete(node);
+      }
+      return;
+    }
+
+    for (let i = 0; i < run.length; i++) {
+      const node = run[i];
+      const targetVal = i === 0 ? translated : '';
+      this.originalTextStore.set(node, { original: originals[i], translated: targetVal });
+      if (node.nodeValue !== targetVal) {
+        node.nodeValue = targetVal;
+      }
+    }
+  }
+
   private translateTextNode(node: Text): void {
     if (this.isExcluded(node)) return;
+
+    if (this.hasAdjacentTextSibling(node)) {
+      this.translateTextRun(this.collectTextRun(node));
+      return;
+    }
 
     const currentVal = node.nodeValue || '';
     if (!currentVal.trim()) return;
@@ -176,43 +237,52 @@ export class AntigravityUITranslator {
     }
   }
 
+  private translateSubtreeInner(root: Node): void {
+    if (this.isExcluded(root)) return;
+
+    if (root.nodeType === Node.TEXT_NODE) {
+      this.translateTextNode(root as Text);
+      return;
+    }
+
+    if (root.nodeType === Node.ELEMENT_NODE) {
+      this.translateAttributes(root as Element);
+    }
+
+    const walker = document.createTreeWalker(
+      root,
+      NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode: (node) => {
+          if (this.isExcluded(node)) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      }
+    );
+
+    let curr = walker.nextNode();
+    while (curr) {
+      if (curr.nodeType === Node.TEXT_NODE) {
+        if (curr.previousSibling?.nodeType !== Node.TEXT_NODE) {
+          this.translateTextNode(curr as Text);
+        }
+      } else if (curr.nodeType === Node.ELEMENT_NODE) {
+        this.translateAttributes(curr as Element);
+      }
+      curr = walker.nextNode();
+    }
+  }
+
   public translateSubtree(root: Node): void {
     if (this.isExcluded(root)) return;
 
     this.isTranslating = true;
     try {
-      if (root.nodeType === Node.TEXT_NODE) {
-        this.translateTextNode(root as Text);
-        return;
-      }
-
-      if (root.nodeType === Node.ELEMENT_NODE) {
-        this.translateAttributes(root as Element);
-      }
-
-      const walker = document.createTreeWalker(
-        root,
-        NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
-        {
-          acceptNode: (node) => {
-            if (this.isExcluded(node)) {
-              return NodeFilter.FILTER_REJECT;
-            }
-            return NodeFilter.FILTER_ACCEPT;
-          }
-        }
-      );
-
-      let curr = walker.nextNode();
-      while (curr) {
-        if (curr.nodeType === Node.TEXT_NODE) {
-          this.translateTextNode(curr as Text);
-        } else if (curr.nodeType === Node.ELEMENT_NODE) {
-          this.translateAttributes(curr as Element);
-        }
-        curr = walker.nextNode();
-      }
+      this.translateSubtreeInner(root);
     } finally {
+      this.observer?.takeRecords?.();
       this.isTranslating = false;
     }
   }
@@ -250,6 +320,7 @@ export class AntigravityUITranslator {
         curr = walker.nextNode();
       }
     } finally {
+      this.observer?.takeRecords?.();
       this.isTranslating = false;
     }
   }
@@ -259,16 +330,43 @@ export class AntigravityUITranslator {
     try {
       for (const mutation of mutations) {
         if (mutation.type === 'characterData' && mutation.target.nodeType === Node.TEXT_NODE) {
-          this.translateTextNode(mutation.target as Text);
+          const textNode = mutation.target as Text;
+          this.originalTextStore.delete(textNode);
+          this.translateTextNode(textNode);
         } else if (mutation.type === 'attributes' && mutation.target.nodeType === Node.ELEMENT_NODE) {
           this.translateAttributes(mutation.target as Element);
         } else if (mutation.type === 'childList') {
-          mutation.addedNodes.forEach((node) => {
-            this.translateSubtree(node);
-          });
+          const hasRemovedText = Array.from(mutation.removedNodes).some(
+            (n) => n.nodeType === Node.TEXT_NODE
+          );
+          if (
+            hasRemovedText &&
+            mutation.target.nodeType === Node.ELEMENT_NODE &&
+            !this.isExcluded(mutation.target)
+          ) {
+            mutation.target.childNodes.forEach((child) => {
+              if (child.nodeType !== Node.TEXT_NODE) return;
+              const textChild = child as Text;
+              const stored = this.originalTextStore.get(textChild);
+              if (stored && stored.translated === (textChild.nodeValue || '')) {
+                textChild.nodeValue = stored.original;
+                this.originalTextStore.delete(textChild);
+              }
+            });
+            mutation.target.childNodes.forEach((child) => {
+              if (child.nodeType === Node.TEXT_NODE && child.previousSibling?.nodeType !== Node.TEXT_NODE) {
+                this.translateTextNode(child as Text);
+              }
+            });
+          } else {
+            mutation.addedNodes.forEach((node) => {
+              this.translateSubtreeInner(node);
+            });
+          }
         }
       }
     } finally {
+      this.observer?.takeRecords?.();
       this.isTranslating = false;
     }
   }

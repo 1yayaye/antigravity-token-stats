@@ -1,7 +1,7 @@
 {
   "name": "antigravity-token-stats",
   "private": true,
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Unofficial token-usage dashboard for Google Antigravity 2.0",
   "license": "MIT",
   "engines": {
@@ -31,7 +31,7 @@
     "proxy:diagnose": "node scripts/proxy-manager.cjs diagnose",
     "mock:data": "node scripts/generate-mock-data.cjs",
     "test:integration": "node scripts/test-integration.cjs",
-    "test": "node scripts/test-all.cjs && node scripts/test-persistent-cache.cjs && node scripts/test-subscription-pricing.cjs && node scripts/test-context-widget.cjs && node scripts/test-proxy-manager.cjs && node scripts/test-dsh-metrics.cjs && node scripts/test-dsh-components.cjs && node scripts/test-update-checker.cjs && node scripts/test-live-quota.cjs && node scripts/test-audit-fixes.cjs"
+    "test": "node scripts/test-all.cjs && node scripts/test-persistent-cache.cjs && node scripts/test-subscription-pricing.cjs && node scripts/test-context-widget.cjs && node scripts/test-proxy-manager.cjs && node scripts/test-dsh-metrics.cjs && node scripts/test-dsh-components.cjs && node scripts/test-update-checker.cjs && node scripts/test-live-quota.cjs && node scripts/test-audit-fixes.cjs && node scripts/test-quota-hero-morph1.cjs"
   },
   "dependencies": {
     "react": "^19.0.0",

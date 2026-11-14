@@ -10,8 +10,9 @@ export interface ContextUsagePopoverProps {
 export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metrics, lang = 'zh' }) => {
   const isZh = lang === 'zh';
   const promptTokens = metrics.usedTokens;
-  const fillWidthPct = metrics.limitTokens > 0
-    ? Math.min(100, (metrics.usedTokens / metrics.limitTokens) * 100)
+  const limitTokens = metrics.limitTokens || 256000;
+  const fillWidthPct = limitTokens > 0
+    ? Math.min(100, (metrics.usedTokens / limitTokens) * 100)
     : 0;
 
   const sysPct = promptTokens > 0 ? (metrics.systemPromptTokens / promptTokens) * 100 : 0;
@@ -40,7 +41,7 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
           <span className="font-bold tabular-nums" style={{ color: 'var(--foreground, var(--dsh-text-primary, #f4f4f5))' }}>{`${metrics.usedPct}%`}</span>
         </div>
         <span className="font-semibold tabular-nums" style={{ color: 'var(--foreground, var(--dsh-text-primary, #f4f4f5))' }}>
-          {`~${formatCompactTokens(metrics.usedTokens)} / ${formatCompactTokens(metrics.limitTokens)}`}
+          {`~${formatCompactTokens(metrics.usedTokens)} / ${formatCompactTokens(limitTokens)}`}
         </span>
       </div>
 
@@ -85,13 +86,6 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
             )}
           </div>
         </div>
-
-        {/* 256K Compaction Threshold Indicator (256,000 / 1,048,576 ≈ 24.41%) */}
-        <div
-          className="absolute w-[2px] h-[10px] -top-[2px] z-10 bg-amber-400 rounded-sm shadow-sm"
-          style={{ left: '24.41%' }}
-          title={isZh ? '256K 自动压缩阈值 (Antigravity 达到 256K 时将触发会话上下文自动压缩)' : '256K Auto-Compaction Threshold'}
-        />
       </div>
 
       {/* Breakdown Legend Stack */}

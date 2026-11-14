@@ -139,6 +139,11 @@ assert.strictEqual(testTranslate('3 files'), '3 个文件');
 assert.strictEqual(testTranslate('1 file'), '1 个文件');
 assert.strictEqual(testTranslate('9 files changed'), '9 个文件已修改');
 assert.strictEqual(testTranslate('9 files changed +839 -7 >'), '9 个文件已修改 +839 -7 >');
+assert.strictEqual(testTranslate('No automations yet'), '暂无自动化任务');
+assert.strictEqual(testTranslate("Run a prompt on a schedule, like a morning summary of yesterday's changes. Runs show up here."), '按定时计划运行提示词，例如每日早间汇总昨日变更。运行记录将显示在这里。');
+assert.strictEqual(testTranslate('No automations match “daily”.'), '没有匹配“daily”的自动化任务。');
+assert.strictEqual(testTranslate('Step 1 of 3'), '第 1 / 3 步');
+assert.strictEqual(testTranslate('An automation with the ID “abc” already exists.'), 'ID 为“abc”的自动化任务已存在。');
 assert.strictEqual(testTranslate('Custom prompt from user'), null);
 assert.strictEqual(testTranslate('constructor'), null, 'Object.prototype members must not translate');
 console.log('PASS: Dynamic RegExp pattern transformations work accurately');
@@ -218,6 +223,77 @@ engine.translateAttributes(el);
 walkNodes = [el];
 engine.revertSubtree(el);
 assert.strictEqual(el.attrs.title, 'Close', 'attribute revert must use the refreshed original');
+
+// Multi-Text-node React interpolations ("No ", "automations", " yet") must translate as one sentence.
+function linkRun(values) {
+  const parent = { nodeType: 1, matches: () => false, closest: () => null, childNodes: [] };
+  const nodes = values.map((v) => ({ nodeType: 3, nodeValue: v, parentElement: parent, previousSibling: null, nextSibling: null }));
+  for (let i = 0; i < nodes.length; i++) {
+    nodes[i].previousSibling = i > 0 ? nodes[i - 1] : null;
+    nodes[i].nextSibling = i < nodes.length - 1 ? nodes[i + 1] : null;
+  }
+  parent.childNodes = nodes;
+  return { parent, nodes };
+}
+
+const emptyRun = linkRun(['No ', 'automations', ' yet']);
+engine.translateTextNode(emptyRun.nodes[0]);
+assert.strictEqual(emptyRun.nodes.map((n) => n.nodeValue).join(''), '暂无自动化任务');
+walkNodes = [...emptyRun.nodes];
+engine.revertSubtree(emptyRun.parent);
+assert.deepStrictEqual(emptyRun.nodes.map((n) => n.nodeValue), ['No ', 'automations', ' yet'], 'multi-node run must revert losslessly');
+
+// Dynamic updates inside a multi-Text-node run must re-translate using preserved originals.
+const searchRun = linkRun(['No ', 'automations', ' match “', 'foo', '”.']);
+engine.translateTextNode(searchRun.nodes[0]);
+assert.strictEqual(searchRun.nodes.map((n) => n.nodeValue).join(''), '没有匹配“foo”的自动化任务。');
+searchRun.nodes[3].nodeValue = 'bar';
+engine.handleMutations([{ type: 'characterData', target: searchRun.nodes[3] }]);
+assert.strictEqual(searchRun.nodes.map((n) => n.nodeValue).join(''), '没有匹配“bar”的自动化任务。');
+
+// Unmatched multi-Text-node runs must NOT leak partial single-node translations like "No 自动化 tomorrow".
+const unmatchedRun = linkRun(['No ', 'automations', ' tomorrow']);
+engine.translateTextNode(unmatchedRun.nodes[1]);
+assert.deepStrictEqual(unmatchedRun.nodes.map((n) => n.nodeValue), ['No ', 'automations', ' tomorrow']);
+
+// handleMutations must keep isTranslating=true across the whole batch and not re-walk deep descendants on hasRemovedText.
+let treeWalkerCalls = 0;
+let lockViolations = 0;
+const origCreateTreeWalker = global.document.createTreeWalker;
+global.document.createTreeWalker = () => {
+  treeWalkerCalls++;
+  if (!engine.isTranslating) lockViolations++;
+  return { nextNode: () => null };
+};
+const deepChild = { nodeType: 3, nodeValue: 'Settings', parentElement: null, previousSibling: null, nextSibling: null };
+const batchParent = {
+  nodeType: 1,
+  matches: () => false,
+  closest: () => null,
+  childNodes: [],
+};
+const batchRun = linkRun(['No ', 'automations', ' yet']);
+batchParent.childNodes = batchRun.nodes;
+const addedEl = { nodeType: 1, matches: () => false, closest: () => null, getAttribute: () => null };
+const charNode = textNode('New Conversation');
+// Intercept translateTextNode to verify isTranslating stays true after childList mutation
+const origTranslateTextNode = engine.translateTextNode.bind(engine);
+engine.translateTextNode = function (node) {
+  if (!this.isTranslating) lockViolations++;
+  return origTranslateTextNode(node);
+};
+engine.handleMutations([
+  { type: 'childList', target: batchParent, removedNodes: [textNode('x')], addedNodes: [] },
+  { type: 'childList', target: batchParent, removedNodes: [], addedNodes: [addedEl] },
+  { type: 'characterData', target: charNode },
+]);
+assert.strictEqual(lockViolations, 0, 'isTranslating must remain true across all mutations in a batch');
+assert.strictEqual(treeWalkerCalls, 1, 'hasRemovedText must not walk full descendant subtree');
+assert.strictEqual(engine.isTranslating, false, 'isTranslating must reset after handleMutations completes');
+assert.strictEqual(batchRun.nodes.map((n) => n.nodeValue).join(''), '暂无自动化任务');
+assert.strictEqual(charNode.nodeValue, '新建对话');
+global.document.createTreeWalker = origCreateTreeWalker;
+engine.translateTextNode = origTranslateTextNode;
 
 console.log('ENGINE_PROBE_OK');
 `;

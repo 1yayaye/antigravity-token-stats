@@ -25,10 +25,11 @@ import { DatabaseSync } from 'node:sqlite';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { parseQuotaSummaryResponse } from '../../../../src/services/pricing-service';
-import type { LiveQuotaSummary } from '../../../../src/domain/pricing.types';
+import { parseQuotaSummaryResponse, resolveSubscriptionTierFromSignals } from '../../../../src/services/pricing-service';
+import type { DetectedAccountTier, LiveQuotaSummary } from '../../../../src/domain/pricing.types';
 
 const QUOTA_ENDPOINT = 'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary';
+const LOAD_CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist';
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
 // Public client credentials embedded in the Antigravity desktop & IDE client binaries.
@@ -60,6 +61,7 @@ const MIN_FETCH_INTERVAL_MS = 60_000;
 const TOKEN_REFRESH_MARGIN_MS = 120_000;
 const STATE_DB_RELATIVE = join('Antigravity IDE', 'User', 'globalStorage', 'state.vscdb');
 const TOKEN_DB_KEY = 'antigravityUnifiedStateSync.oauthToken';
+const USER_STATUS_DB_KEY = 'antigravityUnifiedStateSync.userStatus';
 
 export interface StoredToken {
   accessToken: string;
@@ -176,6 +178,47 @@ export function findTokenMessage(buf: Uint8Array, depth = 0): StoredToken | null
   return null;
 }
 
+function readUtf8Field(fields: ProtoField[], fieldNum: number): string | undefined {
+  const f = fields.find(item => item.field === fieldNum && item.wireType === 2);
+  const bytes = f ? asBytes(f.value) : null;
+  if (!bytes || bytes.length === 0) return undefined;
+  return Buffer.from(bytes).toString('utf8');
+}
+
+/**
+ * Extracts the cached UserTier (f36) and email identity (f7) from the IDE's
+ * `antigravityUnifiedStateSync.userStatus` ItemTable base64 protobuf record.
+ */
+export function parseUserStatusTier(rawBase64: string): DetectedAccountTier | null {
+  if (!rawBase64) return null;
+  try {
+    let userStatusFields = walkProto(Buffer.from(rawBase64, 'base64'));
+    // Unwrap the UnifiedStateSync sentinel envelope: f1 -> f2 -> f1 (base64 UserStatus).
+    const f1Bytes = asBytes(userStatusFields.find(f => f.field === 1 && f.wireType === 2)?.value ?? null);
+    if (f1Bytes && !userStatusFields.some(f => f.field === 36)) {
+      const sentinelFields = walkProto(f1Bytes);
+      const f2Bytes = asBytes(sentinelFields.find(f => f.field === 2 && f.wireType === 2)?.value ?? null);
+      if (f2Bytes) {
+        const entryFields = walkProto(f2Bytes);
+        const innerB64 = readUtf8Field(entryFields, 1);
+        if (innerB64) {
+          userStatusFields = walkProto(Buffer.from(innerB64, 'base64'));
+        }
+      }
+    }
+
+    const email = readUtf8Field(userStatusFields, 7);
+    const tierBytes = asBytes(userStatusFields.find(f => f.field === 36 && f.wireType === 2)?.value ?? null);
+    if (!tierBytes) return null;
+    const tierFields = walkProto(tierBytes);
+    const tierId = readUtf8Field(tierFields, 1);
+    const tierName = readUtf8Field(tierFields, 2) || readUtf8Field(tierFields, 3);
+    return resolveSubscriptionTierFromSignals({ tierId, tierName, accountIdentity: email });
+  } catch {
+    return null;
+  }
+}
+
 // --- token access -------------------------------------------------------------
 
 /** Path of the IDE's global state DB (readable even while the IDE is running). */
@@ -184,25 +227,40 @@ export function stateVscdbPath(): string {
   return join(appData, STATE_DB_RELATIVE);
 }
 
-/** Reads and decodes the OAuth token record the IDE keeps in state.vscdb. */
-export function readStoredToken(): StoredToken | null {
+function readStoredIdeState(): { token: StoredToken | null; userTier: DetectedAccountTier | null } {
   const dbPath = stateVscdbPath();
-  if (!existsSync(dbPath)) return null;
+  if (!existsSync(dbPath)) return { token: null, userTier: null };
   try {
     const db = new DatabaseSync(dbPath, { readOnly: true });
-    let raw: unknown;
+    let rawToken: unknown;
+    let rawUserStatus: unknown;
     try {
-      const row = db.prepare('SELECT value FROM ItemTable WHERE key = ?').get(TOKEN_DB_KEY);
-      raw = row?.value;
+      const rows = db
+        .prepare('SELECT key, value FROM ItemTable WHERE key IN (?, ?)')
+        .all(TOKEN_DB_KEY, USER_STATUS_DB_KEY) as Array<{ key?: unknown; value?: unknown }>;
+      for (const row of rows) {
+        if (row?.key === TOKEN_DB_KEY) rawToken = row.value;
+        else if (row?.key === USER_STATUS_DB_KEY) rawUserStatus = row.value;
+      }
     } finally {
       db.close();
     }
-    if (typeof raw !== 'string' || raw.length === 0) return null;
-    return findTokenMessage(Buffer.from(raw, 'base64'));
+    const token = typeof rawToken === 'string' && rawToken.length > 0
+      ? findTokenMessage(Buffer.from(rawToken, 'base64'))
+      : null;
+    const userTier = typeof rawUserStatus === 'string' && rawUserStatus.length > 0
+      ? parseUserStatusTier(rawUserStatus)
+      : null;
+    return { token, userTier };
   } catch (err) {
-    console.warn('[TokenStats IDE] Failed to read IDE OAuth token from state.vscdb:', (err as Error).message);
-    return null;
+    console.warn('[TokenStats IDE] Failed to read IDE state from state.vscdb:', (err as Error).message);
+    return { token: null, userTier: null };
   }
+}
+
+/** Reads and decodes the OAuth token record the IDE keeps in state.vscdb. */
+export function readStoredToken(): StoredToken | null {
+  return readStoredIdeState().token;
 }
 
 let refreshInFlight: Promise<string | null> | null = null;
@@ -267,6 +325,28 @@ export async function requestQuotaSummary(accessToken: string): Promise<{ status
   return { status: res.status, body };
 }
 
+/** Calls loadCodeAssist as a fallback to resolve paidTier/currentTier when local userStatus is absent. */
+async function requestLoadCodeAssistTier(accessToken: string): Promise<DetectedAccountTier | null> {
+  try {
+    const res = await fetch(LOAD_CODE_ASSIST_ENDPOINT, {
+      method: 'POST',
+      headers: { ...BASE_REQUEST_HEADERS, Authorization: `Bearer ${accessToken}` },
+      body: '{}',
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { paidTier?: any; currentTier?: any };
+    const tierObj = data?.paidTier || data?.currentTier;
+    if (!tierObj) return null;
+    return resolveSubscriptionTierFromSignals({
+      tierId: tierObj.id,
+      tierName: tierObj.name || tierObj.description,
+    });
+  } catch {
+    return null;
+  }
+}
+
 // --- cached entry point ---------------------------------------------------------
 
 let lastFetchAt = 0;
@@ -284,7 +364,7 @@ export async function fetchLiveQuota(force = false): Promise<LiveQuotaSummary | 
   }
   lastFetchAt = now;
   try {
-    const token = readStoredToken();
+    const { token, userTier: localTier } = readStoredIdeState();
     if (!token || !token.accessToken) return (lastResult = null);
 
     let accessToken = await resolveAccessToken(token);
@@ -301,7 +381,14 @@ export async function fetchLiveQuota(force = false): Promise<LiveQuotaSummary | 
       console.warn(`[TokenStats IDE] Live quota endpoint returned HTTP ${res.status}; hiding live quota`);
       return (lastResult = null);
     }
-    lastResult = parseQuotaSummaryResponse(res.body);
+    const summary = parseQuotaSummaryResponse(res.body);
+    if (summary) {
+      const detectedTier = localTier ?? await requestLoadCodeAssistTier(accessToken);
+      if (detectedTier) {
+        summary.detectedAccountTier = detectedTier;
+      }
+    }
+    lastResult = summary;
     return lastResult;
   } catch (err) {
     console.warn('[TokenStats IDE] Live quota fetch failed:', (err as Error).message);

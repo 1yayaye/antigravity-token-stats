@@ -143,8 +143,8 @@ console.log('\n--- Test 2: Popover Rendering & Degradation Rules ---');
     React.createElement(ContextUsagePopover, {
       metrics: {
         usedTokens: 72400,
-        limitTokens: 1048576,
-        usedPct: 7,
+        limitTokens: 256000,
+        usedPct: 28,
         systemPromptTokens: 8200,
         toolDefinitionTokens: 8300,
         chatMessageTokens: 55900,
@@ -153,9 +153,9 @@ console.log('\n--- Test 2: Popover Rendering & Degradation Rules ---');
     })
   );
   assert(htmlContext.includes('上下文已用'), 'Should render context used title');
-  assert(htmlContext.includes('7%'), 'Should render 7%');
-  assert(htmlContext.includes('~72.4K / 1M'), 'Should render ~72.4K / 1M');
-  assert(htmlContext.includes('24.41%'), 'Should render 256K threshold marker at 24.41%');
+  assert(htmlContext.includes('28%'), 'Should render 28%');
+  assert(htmlContext.includes('~72.4K / 256K'), 'Should render ~72.4K / 256K');
+  assert(!htmlContext.includes('24.41%'), 'Should not render obsolete 24.41% marker');
   assert(htmlContext.includes('系统提示词'), 'Should render system prompt legend');
   assert(htmlContext.includes('~8.2K'), 'Should render ~8.2K system prompt tokens');
   assert(htmlContext.includes('工具定义'), 'Should render tool definition legend');
@@ -163,7 +163,7 @@ console.log('\n--- Test 2: Popover Rendering & Degradation Rules ---');
   assert(htmlContext.includes('对话消息'), 'Should render chat message legend');
   assert(htmlContext.includes('压缩'), 'Should contain 压缩 keyword for acceptance check');
   assert(htmlContext.includes('缓存'), 'Should contain 缓存 keyword for acceptance check');
-  console.log('PASS: ContextUsagePopover renders segmented bar, 256K mark and legend');
+  console.log('PASS: ContextUsagePopover renders segmented bar and legend with 256K limit');
 }
 
 console.log('\n--- Test 3: DshStatusBar Component Rendering ---');
@@ -188,8 +188,8 @@ console.log('\n--- Test 3: DshStatusBar Component Rendering ---');
     },
     context: {
       usedTokens: 72400,
-      limitTokens: 1048576,
-      usedPct: 7,
+      limitTokens: 256000,
+      usedPct: 28,
       systemPromptTokens: 8200,
       toolDefinitionTokens: 8300,
       chatMessageTokens: 55900,
@@ -205,7 +205,7 @@ console.log('\n--- Test 3: DshStatusBar Component Rendering ---');
   assert(htmlBar.includes('3.8M tok · 缓存命中 99%'), 'Must contain usage text');
   assert(htmlBar.includes('dsh-pill-context'), 'Must contain context pill');
   assert(htmlBar.includes('antigravity-context-usage-pill'), 'Must contain backward-compatible container ID');
-  assert(htmlBar.includes('7%'), 'Must contain 7% context donut text');
+  assert(htmlBar.includes('28%'), 'Must contain 28% context donut text');
   console.log('PASS: DshStatusBar renders all 3 pills with correct text');
 
   // Null degradation test for status bar

@@ -27,7 +27,7 @@ export interface DailyStatEntry {
 export interface CostTimelineEntry {
   ts: number;
   costUsd: number;
-  pool: 'gemini' | 'claude';
+  pool: 'gemini' | 'claude' | 'argon';
 }
 
 export interface TokenBreakdown {

@@ -119,12 +119,16 @@ async function main() {
             const text = section.innerText;
 
             return {
-              hasWeekly: text.includes('周额度') || text.includes('Weekly Quota'),
-              hasMonthly: text.includes('月额度') || text.includes('Monthly Quota'),
-              hasClaude: text.includes('Claude') || text.includes('3P'),
-              hasFormula: text.includes('官方 API') || text.includes('Official API'),
-              hasResetCountdown: text.includes('重置') || text.includes('Reset'),
-              textSnippet: text.split('\\n').filter(Boolean).slice(0, 15)
+              hasWeekly: text.includes('周额度') || text.includes('本周配额') || text.includes('Weekly Quota'),
+              hasMonthly: text.includes('月额度') || text.includes('4周折算总容量') || text.includes('Monthly'),
+              hasGemini: text.includes('Gemini 系列') || text.includes('Gemini Models'),
+              hasClaude: text.includes('Claude & GPT') || text.includes('Claude'),
+              hasArgon: text.includes('Gemini 4 Argon') || text.includes('Argon'),
+              weekUsed: document.getElementById('ringWeekUsed')?.textContent || null,
+              claudeWeekUsed: document.getElementById('ringClaudeWeekUsed')?.textContent || null,
+              argonWeekUsed: document.getElementById('ringArgonWeekUsed')?.textContent || null,
+              monthUsed: document.getElementById('ringMonthUsed')?.textContent || null,
+              textSnippet: text.split('\\n').filter(Boolean).slice(0, 20)
             };
           })()`,
           returnByValue: true

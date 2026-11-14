@@ -74,7 +74,7 @@ let lastScanTime = 0;
 let lastAggregatedStats = null;
 let lastAggregatedDir = null;
 const FAST_SCAN_TTL = 300; // 300ms throttle for back-to-back incremental calls
-const PERSIST_CACHE_VERSION = 10;
+const PERSIST_CACHE_VERSION = 11;
 const CACHE_FLUSH_DELAY_MS = 50;
 const CACHE_LOCK_MAX_AGE_MS = 10000;
 let cacheDirty = false;
@@ -396,21 +396,142 @@ function decodeGenMetadata(buf) {
 }
 
 const OFFICIAL_MODEL_PRICING = {
-  flash: { inputPerM: 0.75, cacheReadPerM: 0.075, outputPerM: 3.75 },
-  pro: { inputPerM: 2.00, cacheReadPerM: 0.20, outputPerM: 12.00 },
-  opus: { inputPerM: 4.00, cacheReadPerM: 0.40, outputPerM: 20.00 },
-  sonnet: { inputPerM: 2.00, cacheReadPerM: 0.20, outputPerM: 10.00 },
+  'gemini-4-carbon': {
+    inputPerM: 2.00,
+    cacheReadPerM: 0.10,
+    outputPerM: 10.00,
+    pool: 'gemini',
+  },
+  'gemini-4-argon': {
+    inputPerM: 2.00,
+    cacheReadPerM: 0.10,
+    outputPerM: 10.00,
+    pool: 'argon',
+  },
+  'gemini-4-hydrogen': {
+    inputPerM: 1.50,
+    cacheReadPerM: 0.075,
+    outputPerM: 7.50,
+    pool: 'gemini',
+  },
+  'gemini-3.8-flash': {
+    inputPerM: 0.75,
+    cacheReadPerM: 0.075,
+    outputPerM: 3.75,
+    pool: 'gemini',
+  },
+  'gemini-3.7-flash': {
+    inputPerM: 0.75,
+    cacheReadPerM: 0.075,
+    outputPerM: 3.75,
+    pool: 'gemini',
+  },
+  'gemini-3.6-flash': {
+    inputPerM: 0.75,
+    cacheReadPerM: 0.075,
+    outputPerM: 3.75,
+    pool: 'gemini',
+  },
+  'gemini-3.1-pro': {
+    pool: 'gemini',
+    promptTierThreshold: 200_000,
+    standard: { inputPerM: 2.00, cacheReadPerM: 0.20, outputPerM: 12.00 },
+    longContext: { inputPerM: 4.00, cacheReadPerM: 0.40, outputPerM: 18.00 },
+  },
+  'claude-opus-5-5': {
+    inputPerM: 4.00,
+    cacheReadPerM: 0.20,
+    outputPerM: 20.00,
+    pool: 'claude',
+  },
+  'claude-sonnet-5-5': {
+    inputPerM: 2.00,
+    cacheReadPerM: 0.10,
+    outputPerM: 10.00,
+    pool: 'claude',
+  },
+  'claude-opus-4-6': {
+    inputPerM: 5.00,
+    cacheReadPerM: 0.50,
+    outputPerM: 25.00,
+    pool: 'claude',
+  },
+  'claude-sonnet-4-6': {
+    inputPerM: 3.00,
+    cacheReadPerM: 0.30,
+    outputPerM: 15.00,
+    pool: 'claude',
+  },
+  'gpt-oss-120b': {
+    inputPerM: 0,
+    cacheReadPerM: 0,
+    outputPerM: 0,
+    pool: 'claude',
+  },
 };
 
+function hasModelVersion(m, major, minor) {
+  return new RegExp(`(?:^|[^0-9])${major}[._-]${minor}(?:[^0-9]|$)`).test(m);
+}
+
+function hasModelKeyword(m, keyword) {
+  return new RegExp(`(?:^|[^a-z])${keyword}(?:$|[^a-z])`).test(m);
+}
+
+function resolveOfficialModelId(modelName) {
+  const m = String(modelName || '').trim().toLowerCase();
+  if (!m) return null;
+
+  if (m.includes('gpt-oss') || hasModelKeyword(m, 'gpt')) {
+    return 'gpt-oss-120b';
+  }
+  if (m.includes('carbon')) return 'gemini-4-carbon';
+  if (m.includes('argon')) return 'gemini-4-argon';
+  // worker must match before orchestrator and flash
+  if (
+    m.includes('hydrogen') ||
+    m.includes('worker') ||
+    /(?:^|[^a-z0-9])gemini[-_.]?4[-_.](?:low|medium|high|xhigh)(?:$|[^a-z0-9])/.test(m)
+  ) {
+    return 'gemini-4-hydrogen';
+  }
+  if (m.includes('orchestrator')) return 'gemini-4-argon';
+
+  if (hasModelKeyword(m, 'pro') && hasModelVersion(m, 3, 1)) {
+    return 'gemini-3.1-pro';
+  }
+  if (hasModelKeyword(m, 'flash')) {
+    if (hasModelVersion(m, 3, 8)) return 'gemini-3.8-flash';
+    if (hasModelVersion(m, 3, 7)) return 'gemini-3.7-flash';
+    if (hasModelVersion(m, 3, 6)) return 'gemini-3.6-flash';
+  }
+  if (hasModelKeyword(m, 'opus')) {
+    if (hasModelVersion(m, 5, 5)) return 'claude-opus-5-5';
+    if (hasModelVersion(m, 4, 6)) return 'claude-opus-4-6';
+  }
+  if (hasModelKeyword(m, 'sonnet')) {
+    if (hasModelVersion(m, 5, 5)) return 'claude-sonnet-5-5';
+    if (hasModelVersion(m, 4, 6)) return 'claude-sonnet-4-6';
+  }
+
+  return null;
+}
+
+function getModelPricing(modelName, inputTokens = 0, cacheReadTokens = 0) {
+  const modelId = resolveOfficialModelId(modelName);
+  if (!modelId) return null;
+  const spec = OFFICIAL_MODEL_PRICING[modelId];
+  if (!spec) return null;
+  if (spec.promptTierThreshold) {
+    const promptTokens = Math.max(0, inputTokens || 0) + Math.max(0, cacheReadTokens || 0);
+    return promptTokens > spec.promptTierThreshold ? spec.longContext : spec.standard;
+  }
+  return spec;
+}
+
 function computeGenerationCostUsd(modelName, inputTokens, cacheReadTokens, outputTokens) {
-  const m = String(modelName || '').toLowerCase();
-  const rate = m.includes('opus')
-    ? OFFICIAL_MODEL_PRICING.opus
-    : m.includes('sonnet') || m.includes('claude')
-      ? OFFICIAL_MODEL_PRICING.sonnet
-      : m.includes('pro')
-        ? OFFICIAL_MODEL_PRICING.pro
-        : OFFICIAL_MODEL_PRICING.flash;
+  const rate = getModelPricing(modelName, inputTokens, cacheReadTokens);
+  if (!rate) return 0;
   return (
     (Math.max(0, inputTokens || 0) / 1e6) * rate.inputPerM +
     (Math.max(0, cacheReadTokens || 0) / 1e6) * rate.cacheReadPerM +
@@ -434,10 +555,15 @@ function decodeStepTimestamp(buf) {
 }
 
 function classifyQuotaPool(modelName) {
+  const modelId = resolveOfficialModelId(modelName);
+  if (modelId && OFFICIAL_MODEL_PRICING[modelId]) {
+    return OFFICIAL_MODEL_PRICING[modelId].pool;
+  }
   const m = String(modelName || '').toLowerCase();
-  return (m.includes('claude') || m.includes('opus') || m.includes('sonnet') || m.includes('gpt') || m.includes('o1') || m.includes('o3'))
-    ? 'claude'
-    : 'gemini';
+  if (m.includes('claude') || m.includes('opus') || m.includes('sonnet') || m.includes('gpt') || m.includes('o1') || m.includes('o3')) {
+    return 'claude';
+  }
+  return 'gemini';
 }
 
 function pairGenerationDates(generationUsages, generationDates, fallbackDateKey, generationTimestampsMs = [], fallbackTimestampMs = null) {
@@ -1180,23 +1306,29 @@ function extractSessionPerformanceMetrics(dbOrSteps) {
         const usageBuf = top.get(9)?.[0];
         if (!plannerBuf || !usageBuf) continue;
         const planner = parseProtoFields(plannerBuf);
-        // Tool-call output cannot be separated reliably from text tokens in mixed steps.
+        // Exclude tool calls and non-text steps from text streaming speed calculation
         if (!planner.get(1)?.[0]?.length || planner.has(7)) continue;
         const usage = parseProtoFields(usageBuf);
+        const totalOut = Number(usage.get(3) ?? 0);
         const thinkingTokens = Number(usage.get(9) ?? 0);
-        const stepResponseTokens = Math.max(0, Number(usage.get(10) ?? (Number(usage.get(3) ?? 0) - thinkingTokens)));
+        const stepResponseTokens = Math.max(0, Number(usage.get(10) ?? (totalOut - thinkingTokens)));
+        if (!Number.isFinite(stepResponseTokens) || stepResponseTokens <= 0) continue;
+
         const thinkingBuf = planner.get(11)?.[0];
-        const hasThinking = thinkingTokens > 0 || planner.has(3) || planner.has(16) || planner.has(5);
-        if (hasThinking && !thinkingBuf) continue;
         const thinking = thinkingBuf ? parseProtoFields(thinkingBuf) : null;
-        const thinkingMs = thinking ? Number(thinking.get(1) ?? 0) * 1000 + Number(thinking.get(2) ?? 0) / 1e6 : 0;
+        const thinkingMs = thinking ? (Number(thinking.get(1) ?? 0) * 1000 + Number(thinking.get(2) ?? 0) / 1e6) : 0;
+
         // The host's thinking_duration includes the wait from created_at to the response phase.
-        const responseStartMs = Math.max(firstMs, startMs + thinkingMs);
+        // Fall back to first token arrival (firstMs) if thinking_duration is not present.
+        const responseStartMs = thinkingMs > 0 ? Math.max(firstMs, startMs + thinkingMs) : (firstMs > 0 ? firstMs : startMs);
         const generationTs = top.get(7)?.[0] ? parseProtoFields(top.get(7)[0]) : fTs;
-        const generationEndMs = generationTs ? Number(generationTs.get(1) ?? 0) * 1000 + Number(generationTs.get(2) ?? 0) / 1e6 : 0;
-        if (startMs > 0 && firstMs >= startMs && finishMs >= generationEndMs && generationEndMs > responseStartMs
-          && Number.isFinite(thinkingMs) && thinkingMs >= 0 && Number.isFinite(stepResponseTokens) && stepResponseTokens > 0) {
-          responseMs += generationEndMs - responseStartMs;
+        const generationEndMs = generationTs ? (Number(generationTs.get(1) ?? 0) * 1000 + Number(generationTs.get(2) ?? 0) / 1e6) : finishMs;
+        const stepDurationMs = generationEndMs - responseStartMs;
+
+        // Anti-jitter: valid streaming step must take at least 50ms and complete within step bounds
+        if (startMs > 0 && responseStartMs >= startMs && generationEndMs <= finishMs + 100
+          && stepDurationMs >= 50 && Number.isFinite(thinkingMs) && thinkingMs >= 0) {
+          responseMs += stepDurationMs;
           responseTokens += stepResponseTokens;
         }
       } catch {}
@@ -1278,7 +1410,7 @@ function buildDshTelemetry({
     }
   }
 
-  const limitTokens = 1048576; // 1M
+  const limitTokens = 256000; // 256K
   const usedPct = promptTokens > 0 ? Math.min(100, Math.round((promptTokens / limitTokens) * 100)) : 0;
   const totalTokens = totalInput + totalCache + totalOutput;
 
@@ -1386,7 +1518,9 @@ module.exports = {
   parseProtoFields,
   decodeGenMetadata,
   decodeStepTimestamp,
+  resolveOfficialModelId,
   computeGenerationCostUsd,
+  classifyQuotaPool,
   FAST_SCAN_TTL,
   getCacheFilePath,
 };

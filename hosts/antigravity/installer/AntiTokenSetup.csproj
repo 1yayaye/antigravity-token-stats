@@ -11,7 +11,7 @@
     <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
     <AllowedReferenceRelatedFileExtensions>none</AllowedReferenceRelatedFileExtensions>
     <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
-    <Version Condition="'$(Version)' == ''">1.7.0</Version>
+    <Version Condition="'$(Version)' == ''">1.8.0</Version>
     <Product>Antigravity Token Stats Setup</Product>
     <AssemblyTitle>Antigravity Token Stats Setup</AssemblyTitle>
     <Copyright>MIT License</Copyright>

@@ -29,7 +29,7 @@ export function mountStats(container: HTMLElement) {
       existingRoot.render(
         <React.StrictMode>
           <LanguageProvider>
-            <div className="w-full h-full" style={{ minHeight: '500px' }}>
+            <div className="w-full min-h-0">
               <StatsView />
             </div>
           </LanguageProvider>
@@ -49,7 +49,7 @@ export function mountStats(container: HTMLElement) {
     root.render(
       <React.StrictMode>
         <LanguageProvider>
-          <div className="w-full h-full" style={{ minHeight: '500px' }}>
+          <div className="w-full min-h-0">
             <StatsView />
           </div>
         </LanguageProvider>
@@ -203,7 +203,7 @@ export function mountDshStatusBar(container: HTMLElement) {
     },
     context: {
       usedTokens: 0,
-      limitTokens: 1048576,
+      limitTokens: 256000,
       usedPct: 0,
       systemPromptTokens: 0,
       toolDefinitionTokens: 0,
@@ -412,19 +412,50 @@ export function initAntigravitySettingsInjector() {
 
           // Swap right content with Stats view
           if (rightContentPanel && splitContainer) {
-            rightContentPanel.style.display = 'none';
+            const overlayScrollbar = rightContentPanel.querySelector('[data-testid="overlay-scrollbar"]');
+            const viewport = (overlayScrollbar
+              ? overlayScrollbar.previousElementSibling
+              : rightContentPanel.querySelector('.overflow-auto, .overflow-y-auto')) as HTMLElement | null;
+            const panelsContainer = (viewport?.firstElementChild || rightContentPanel.querySelector('.grow.w-full')) as HTMLElement | null;
 
-            let statsContainer = document.getElementById('antigravity-stats-settings-content');
-            if (!statsContainer) {
-              statsContainer = document.createElement('div');
-              statsContainer.id = 'antigravity-stats-settings-content';
-              statsContainer.className = 'flex-1 h-full min-h-0 overflow-y-auto bg-background text-foreground antialiased';
-              statsContainer.style.cssText = 'flex: 1 1 0%; min-width: 0; height: 100%; overflow-y: auto;';
-              splitContainer.appendChild(statsContainer);
+            if (panelsContainer) {
+              // Primary path: reuse official ScrollArea & Viewport
+              rightContentPanel.style.display = '';
+
+              Array.from(panelsContainer.children).forEach((child) => {
+                if (child.id !== 'antigravity-stats-settings-content') {
+                  (child as HTMLElement).style.display = 'none';
+                }
+              });
+
+              let statsContainer = document.getElementById('antigravity-stats-settings-content');
+              if (!statsContainer) {
+                statsContainer = document.createElement('div');
+                statsContainer.id = 'antigravity-stats-settings-content';
+                statsContainer.className = 'w-full min-h-0 bg-background text-foreground antialiased';
+                panelsContainer.appendChild(statsContainer);
+              } else if (statsContainer.parentElement !== panelsContainer) {
+                panelsContainer.appendChild(statsContainer);
+              }
+              statsContainer.style.cssText = 'display: block; width: 100%;';
+              syncThemeToElement(statsContainer);
+              mountStats(statsContainer);
+            } else {
+              // Defensive fallback: mount into splitContainer if official viewport structure is absent
+              rightContentPanel.style.display = 'none';
+
+              let statsContainer = document.getElementById('antigravity-stats-settings-content');
+              if (!statsContainer) {
+                statsContainer = document.createElement('div');
+                statsContainer.id = 'antigravity-stats-settings-content';
+                statsContainer.className = 'flex-1 h-full min-h-0 overflow-y-auto bg-background text-foreground antialiased';
+                statsContainer.style.cssText = 'flex: 1 1 0%; min-width: 0; height: 100%; overflow-y: auto;';
+                splitContainer.appendChild(statsContainer);
+              }
+              syncThemeToElement(statsContainer);
+              statsContainer.style.display = 'block';
+              mountStats(statsContainer);
             }
-            syncThemeToElement(statsContainer);
-            statsContainer.style.display = 'block';
-            mountStats(statsContainer);
           }
         });
 
@@ -445,8 +476,16 @@ export function initAntigravitySettingsInjector() {
 
             const statsContainer = document.getElementById('antigravity-stats-settings-content');
             if (statsContainer) {
+              const hostPanelsParent = statsContainer.parentElement;
               statsContainer.style.display = 'none';
               unmountStats();
+              if (hostPanelsParent && hostPanelsParent !== splitContainer) {
+                Array.from(hostPanelsParent.children).forEach((child) => {
+                  if (child.id !== 'antigravity-stats-settings-content') {
+                    (child as HTMLElement).style.display = '';
+                  }
+                });
+              }
             }
             if (rightContentPanel) {
               rightContentPanel.style.display = '';

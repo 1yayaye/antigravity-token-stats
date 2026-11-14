@@ -232,12 +232,15 @@ console.log('\n--- Test 4: Tool Duration 180s Cap & Text-only TPS ---');
   assert.strictEqual(extractSessionPerformanceMetrics([reasoning, toolOnly, mixedTool]).tps, 149);
 
   const missingThinkingTime = makeSyntheticStep(15, 1700000000, 1700000042, 1700000008, 5281, { thinkingTokens: 4537, responseTokens: 744 });
+  assert.strictEqual(extractSessionPerformanceMetrics([missingThinkingTime]).tps, 22, 'Missing thinking_duration falls back smoothly to firstMs');
+
   const zeroText = makeSyntheticStep(15, 1700000000, 1700000007, 1700000002, 1000, { responseTokens: 0 });
   const invalidTime = makeSyntheticStep(15, 1700000000, 1700000001, 1700000002, 100);
   const overlongThinking = makeSyntheticStep(15, 1700000000, 1700000007, 1700000002, 1000, { thinkingDurationSec: 10 });
+  const sub50msBurst = makeSyntheticStep(15, 1700000000, 1700000001, 1700000001, 10, { thinkingDurationSec: 1, thinkingDurationNanos: 70_000_000 }); // duration = 30ms (<50ms jitter filter)
   const missingPayload = { ...stepModel, step_payload: null };
-  assert.strictEqual(extractSessionPerformanceMetrics([missingThinkingTime, zeroText, invalidTime, overlongThinking, missingPayload, stepZeroOutput]).tps, null);
-  assert.strictEqual(extractSessionPerformanceMetrics([stepModel, missingThinkingTime, zeroText, missingPayload]).tps, perfTPS.tps, 'Missing measurements must not mix unmatched tokens or time');
+  assert.strictEqual(extractSessionPerformanceMetrics([zeroText, invalidTime, overlongThinking, sub50msBurst, missingPayload, stepZeroOutput]).tps, null);
+  assert.strictEqual(extractSessionPerformanceMetrics([stepModel, zeroText, invalidTime, sub50msBurst, missingPayload]).tps, perfTPS.tps, 'Invalid measurements must not mix unmatched tokens or time');
 
   const slow = makeSyntheticStep(15, 1700000000, 1700000007, 1700000002, 11);
   assert.strictEqual(extractSessionPerformanceMetrics([slow]).tps, 2.2, 'Low rates retain one decimal');
@@ -268,7 +271,8 @@ console.log('\n--- Test 5: Context Breakdown & Telemetry Packaging ---');
   assert.strictEqual(tLarge.context.systemPromptTokens, 8200);
   assert.strictEqual(tLarge.context.toolDefinitionTokens, 8300);
   assert.strictEqual(tLarge.context.chatMessageTokens, 72400 - 16500);
-  assert.strictEqual(tLarge.context.usedPct, 7); // 72400 / 1048576 = 6.9% -> 7%
+  assert.strictEqual(tLarge.context.limitTokens, 256000);
+  assert.strictEqual(tLarge.context.usedPct, 28); // 72400 / 256000 = 28.28% -> 28%
   assert.strictEqual(tLarge.token.cacheHitRatePct, 99); // 3699456 / (27687 + 3699456) = 99.25% -> 99% (honest rule)
 
   // Case B: Small session (8250 promptTokens < 16.5K baseline)

@@ -14,14 +14,18 @@ require.extensions['.tsx'] = require.extensions['.ts'];
 require.extensions['.css'] = () => {};
 const { requestDataSync } = require('../hosts/antigravity/src/standalone.tsx');
 
-const response = { groups: [{ displayName: 'Gemini Models', buckets: [
-  { bucketId: 'gemini-weekly', remainingFraction: 0.7, resetTime: '2026-11-20T00:00:00Z' },
-] }] };
+const response = {
+  groups: [
+    { displayName: 'Gemini Models', buckets: [{ bucketId: 'gemini-weekly', remainingFraction: 0.7, resetTime: '2026-11-20T00:00:00Z' }] },
+    { displayName: 'Claude and GPT models', buckets: [{ bucketId: '3p-weekly', remainingFraction: 0.8, resetTime: '2026-11-20T00:00:00Z' }] },
+    { displayName: 'Gemini 4 Argon', buckets: [{ bucketId: 'gemini-argon-wtu-weekly', remainingFraction: 0.9, resetTime: '2026-11-20T00:00:00Z' }] },
+  ],
+};
 const nextTurn = () => new Promise(setImmediate);
 const tests = [];
 const test = (name, run) => tests.push({ name, run });
 
-function setup() {
+function setup(options = {}) {
   const cleanups = [];
   const updates = [];
   let calls = 0;
@@ -39,14 +43,21 @@ function setup() {
   };
   Date.now = () => now;
   global.window = new EventTarget();
-  const cloudCodeService = { retrieveUserQuotaSummary: async () => {
-    calls++;
-    await nextTurn();
-    if (fail) throw new Error('Temporary RPC failure');
-    return { response };
-  } };
+  const cloudCodeService = {
+    retrieveUserQuotaSummary: async (arg) => {
+      calls++;
+      if (arg !== undefined && typeof arg !== 'boolean') {
+        throw new Error('expected boolean, got object');
+      }
+      await nextTurn();
+      if (fail) throw new Error('Temporary RPC failure');
+      return { response };
+    },
+    ...(options.loadCodeAssist ? { loadCodeAssist: options.loadCodeAssist } : {}),
+  };
+  const authService = options.authService || undefined;
   global.document = { querySelector: () => ({
-    __reactFiber_test: { memoizedProps: { services: { core: { cloudCodeService } } } },
+    __reactFiber_test: { memoizedProps: { services: { core: { cloudCodeService, ...(authService ? { authService } : {}) } } } },
   }) };
   const quotaPath = require.resolve('../hosts/antigravity/src/quota.ts');
   const hookPath = require.resolve('../src/components/stats/useQuotaMetrics.ts');
@@ -103,6 +114,8 @@ test('concurrent quota reads share one RPC, including forced reads', async env =
   const values = await Promise.all([env.fetchLiveQuota(), env.fetchLiveQuota(), env.fetchLiveQuota(true)]);
   assert.equal(env.calls, 1);
   assert.ok(values[0]?.weeklyGemini);
+  assert.ok(values[0]?.weeklyClaude);
+  assert.ok(values[0]?.weeklyArgon);
   assert.strictEqual(values[0], values[1]);
   assert.strictEqual(values[1], values[2]);
 });
@@ -158,6 +171,54 @@ test('disposing host quota updates removes refresh listeners', async env => {
   window.dispatchEvent(new CustomEvent(contract.EVENT_STATS_UPDATED));
   await nextTurn();
   assert.equal(env.calls, 1);
+});
+
+test('desktop fetchLiveQuota attaches detectedAccountTier from authService.getUserStatus', async () => {
+  const custom = setup({
+    authService: {
+      _lsClient: {
+        getUserStatus: async () => ({
+          userStatus: {
+            email: 'dev@example.com',
+            userTier: { id: 'g1-ultra-tier', name: 'Google AI Ultra' },
+            planStatus: { planInfo: { teamsTier: 8, planName: 'Ultra' } },
+          },
+        }),
+      },
+    },
+  });
+  try {
+    const summary = await custom.fetchLiveQuota(true);
+    assert.equal(summary?.detectedAccountTier?.tier, 'ultra_5x');
+    assert.equal(summary?.detectedAccountTier?.isUltraAmbiguous, true);
+    assert.equal(summary?.detectedAccountTier?.rawTierId, 'g1-ultra-tier');
+    assert.ok(summary?.detectedAccountTier?.accountKey);
+  } finally {
+    custom.dispose();
+  }
+});
+
+test('desktop fetchLiveQuota falls back to cloudCodeService.loadCodeAssist and survives auth errors', async () => {
+  const custom = setup({
+    authService: {
+      _lsClient: { getUserStatus: async () => { throw new Error('LS unavailable'); } },
+      refreshUserStatus: async () => { throw new Error('refresh unavailable'); },
+    },
+    loadCodeAssist: async force => {
+      assert.equal(typeof force, 'boolean');
+      return {
+        currentTier: { id: 'free-tier', name: 'Antigravity' },
+        paidTier: { id: 'g1-pro-tier', name: 'Google AI Pro' },
+      };
+    },
+  });
+  try {
+    const summary = await custom.fetchLiveQuota(true);
+    assert.equal(summary?.detectedAccountTier?.tier, 'pro');
+    assert.equal(summary?.detectedAccountTier?.rawTierId, 'g1-pro-tier');
+  } finally {
+    custom.dispose();
+  }
 });
 
 (async () => {

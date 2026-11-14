@@ -212,17 +212,36 @@ export const TokenActivityHeatmap: React.FC<TokenActivityHeatmapProps> = ({ cell
   }
 
   return (
-    <div
+    <section
       ref={cardRef}
-      className="bento-tile bento-heat text-foreground relative select-none"
+      className="bento-tile bento-heat heat-card text-foreground relative select-none w-full"
+      aria-label={t('tokenActivityTitle')}
     >
-      {/* 1. Card Header: Title and calendar range */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <div>
-          <h2 className="text-sm font-bold text-foreground tracking-tight">{t('tokenActivityTitle')}</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {`${getMonthLabel(calendar[0]?.month || currentMonth)} – ${getMonthLabel(currentMonth)}`}
-          </p>
+      {/* 1. Card Header: Title, range and legend in card header */}
+      <div className="card-head-simple flex flex-wrap items-center justify-between gap-3 mb-2.5">
+        <div className="flex items-baseline gap-2">
+          <span className="card-title-simple text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+            <span aria-hidden="true">🗓️</span>
+            <span className="text-foreground text-sm font-bold">{t('tokenActivityTitle')}</span>
+          </span>
+          <span className="text-xs text-muted-foreground">
+            ({getMonthLabel(calendar[0]?.month || currentMonth)} – {getMonthLabel(currentMonth)})
+          </span>
+        </div>
+
+        {/* Legend in card header */}
+        <div className="heat-legend-strip flex items-center gap-2 text-[11px] text-muted-foreground select-none" aria-label={t('activityLevelsTitle')}>
+          <span className="text-[10px]">{t('less')}</span>
+          <div className="heat-legend-cells flex items-center gap-1" aria-hidden="true">
+            {[0, 1, 2, 3, 4].map((lvl) => (
+              <span
+                key={lvl}
+                title={`Level ${lvl} (${getTierBadge(lvl)})`}
+                className={`w-2.5 h-2.5 rounded-[2px] inline-block heat-cell-${lvl} transition-transform hover:scale-125`}
+              />
+            ))}
+          </div>
+          <span className="text-[10px]">{t('more')}</span>
         </div>
       </div>
 
@@ -241,27 +260,12 @@ export const TokenActivityHeatmap: React.FC<TokenActivityHeatmapProps> = ({ cell
         onSetFocusedDate={setFocusedDate}
       />
 
-      {/* 6. Footer: Legend & A11y Shortcuts */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-3 border-t border-card-border/50 text-[11px] text-muted-foreground select-none">
-        <div className="flex items-center gap-2">
-          <span>{t('activityLevelsTitle')}</span>
-          <div className="flex items-center gap-1.5 ml-1">
-            <span className="text-[10px]">{t('less')}</span>
-            {[0, 1, 2, 3, 4].map((lvl) => (
-              <div
-                key={lvl}
-                title={`Level ${lvl} (${getTierBadge(lvl)})`}
-                className={`w-3 h-3 rounded-[2.5px] shadow-xs cursor-help transition-transform hover:scale-125 heat-cell-${lvl}`}
-              />
-            ))}
-            <span className="text-[10px]">{t('more')}</span>
-          </div>
-        </div>
-
-        <div className="text-[10.5px] text-muted-foreground hidden sm:block">{t('keyboardNavHint')}</div>
+      {/* Subtle keyboard shortcuts hint */}
+      <div className="text-[10px] text-muted-foreground text-right mt-2 hidden sm:block select-none">
+        {t('keyboardNavHint')}
       </div>
 
-      {/* 7. Extracted Day Inspector Popover */}
+      {/* Extracted Day Inspector Popover */}
       {activeCell && (
         <HeatmapDayDetailPopover
           cell={activeCell.cell}
@@ -272,6 +276,6 @@ export const TokenActivityHeatmap: React.FC<TokenActivityHeatmapProps> = ({ cell
           dailyStat={dailyStats?.[activeCell.cell.date]}
         />
       )}
-    </div>
+    </section>
   );
 };

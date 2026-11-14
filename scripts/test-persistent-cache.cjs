@@ -92,12 +92,23 @@ try {
   assert.strictEqual(first.sessions['cache-session'].ttftSec, 1);
   assert(fs.existsSync(cachePath), 'Process A should write the persistent cache');
   const firstCache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-  assert.strictEqual(firstCache.version, 10, 'Cache version should be 10');
+  assert.strictEqual(firstCache.version, 11, 'Cache version should be 11');
   assert(firstCache.dbs['cache-session'], 'Cache should contain database metrics');
   assert(firstCache.transcripts['cache-session'], 'Cache should contain transcript metrics');
 
   const second = runAggregator();
   assert.deepStrictEqual(withoutUpdatedAt(second), withoutUpdatedAt(first), 'A new process should reproduce cached statistics');
+
+  // Stale cache version (e.g. v10) must be invalidated and recompute costUsd from SQLite
+  const staleCache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+  staleCache.version = 10;
+  staleCache.dbs['cache-session'].metrics.costUsd = 999.99;
+  staleCache.dbs['cache-session'].metrics.generationUsages[0].costUsd = 999.99;
+  fs.writeFileSync(cachePath, JSON.stringify(staleCache), 'utf8');
+  const upgraded = runAggregator();
+  assert.strictEqual(upgraded.sessions['cache-session'].costUsd, first.sessions['cache-session'].costUsd, 'Stale v10 cache must invalidate and recompute costUsd');
+  const upgradedCache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+  assert.strictEqual(upgradedCache.version, 11, 'Cache should be rewritten with version 11');
 
   const originalDbFingerprint = firstCache.dbs['cache-session'].fingerprint;
   const originalTranscriptFingerprint = firstCache.transcripts['cache-session'].fingerprint;

@@ -2,6 +2,27 @@
 
 All notable changes to Antigravity Token Stats will be documented in this file.
 
+## [1.8.0] - 2026-11-14
+
+### Added
+- **Multi-Pool Dual Radial Rings & Exact Model Pricing (`QuotaHeroCard.tsx`, `pricing-service.ts`, `aggregate-stats.cjs`)**:
+  - Redesigned `QuotaHeroCard` into dual 60px gradient radial rings paired with pool-level capacity breakdowns across **Gemini**, **Claude & GPT**, and the new **Argon** pool (merged into Gemini automatically on Ultra tiers).
+  - Updated `aggregate-stats.cjs` (`PERSIST_CACHE_VERSION = 11`) with exact per-model official API pricing (Gemini 4 Carbon/Argon/Hydrogen, Gemini 3.6–3.8 Flash, Gemini 3.1 Pro with 200K long-context tiering, Claude Opus/Sonnet 4.6 & 5.5, GPT-OSS 120B) and pool classification.
+  - Aligned the 4-week ring progress denominator/numerator with `cappedMonthlyCostUsd` (excluding uncapped legacy pools from capacity %) while keeping full `monthlyCostUsd` for ROI valuation.
+- **Automatic Account Tier Detection (`hosts/antigravity/src/quota.ts`, `hosts/antigravity-ide/extension/src/quota-service.ts`, `useQuotaMetrics.ts`)**:
+  - Automatically detects Pro / Ultra / Free subscription tiers from `authService.getUserStatus` / `cloudCodeService.loadCodeAssist` on desktop and cached `userStatus` protobuf / `loadCodeAssist` on IDE, switching tier metrics without manual configuration.
+- **Expanded Antigravity 2.0 UI Localization (`antigravity-ui-dict.ts`, `antigravity-ui-i18n.ts`)**:
+  - Massively expanded the bilingual UI dictionary (+1,000 lines) for newer Antigravity settings, model selectors, and workspace panels.
+  - Refactored `translateSubtreeInner` to hold `isTranslating` across the entire `handleMutations` batch and narrowed `hasRemovedText` re-translation to direct `TEXT_NODE` children.
+
+### Improved & Fixed
+- **Host Settings Tab Restoration (`hosts/antigravity/src/standalone.tsx`)**:
+  - Fixed switching away from **Settings → Usage Stats** back to host tabs (`Models`, `Editor`, etc.) by restoring `style.display` on sibling panels inside `panelsContainer`, backed by a new DOM regression test in `scripts/test-audit-fixes.cjs`.
+- **4-Channel Token Summary & DSH Polish (`TokenSummaryTile.tsx`, `DshStatusBar.tsx`, `ContextUsagePopover.tsx`, `src/index.css`)**:
+  - Aligned the 4th composition channel to display net `Response` tokens as the primary metric and `Output` total in `subDetail`.
+  - Added DSH token count settle animation and context ring color/pulse thresholds (warning >= 70%, danger >= 85%), and standardized the context popover denominator fallback.
+  - Cleaned up unused `.bento-card` CSS selectors and temporary scratch preview/probe files.
+
 ## [1.7.0] - 2026-11-13
 
 ### Reissued - 2026-11-13

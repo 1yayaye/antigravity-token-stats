@@ -30,7 +30,7 @@ function makeUsageBlob(inputTokens, modelName) {
   return Buffer.concat([Buffer.from([0x0a, message.length]), message]);
 }
 
-function makeSessionDb(convDir, sessionId, inputs, modelName = 'gemini-2.5-pro') {
+function makeSessionDb(convDir, sessionId, inputs, modelName = 'gemini-4-carbon') {
   const db = new DatabaseSync(path.join(convDir, `${sessionId}.db`));
   db.exec('CREATE TABLE gen_metadata (idx INTEGER, data BLOB); CREATE TABLE steps (idx INTEGER, step_type INTEGER, step_payload BLOB, metadata BLOB);');
   inputs.forEach((input, i) => {
@@ -49,7 +49,7 @@ process.on('exit', () => {
 const convDir = path.join(fixtureDir, 'conversations');
 fs.mkdirSync(convDir, { recursive: true });
 
-// gemini-2.5-pro bills $2 per 1M input tokens, so each session's expected cost is exact.
+// gemini-4-carbon bills $2 per 1M input tokens, so each session's expected cost is exact.
 makeSessionDb(convDir, 'row-recent', [1000000]);            // $2, mtime = now
 makeSessionDb(convDir, 'row-running', [500000]);            // $1, mtime = 3 days ago, host says running
 makeSessionDb(convDir, 'row-old', [1000000, 1000000]);      // $4, mtime = 3 days ago, idle

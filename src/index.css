@@ -21,7 +21,7 @@
   --heat-3: #3b8df7;
   --heat-4: #60a5fa;
 
-  --ring-track: var(--muted, #1c1c22);
+  --ring-track: rgba(255, 255, 255, 0.08);
   --pill-active: var(--secondary, #1c1c22);
 
   color: var(--foreground);
@@ -35,7 +35,7 @@
 #antigravity-stats-modal-overlay.light {
   --accent-primary: var(--primary, #2F71E3);
   --accent-primary-subtle: color-mix(in srgb, var(--primary, #2F71E3) 8%, transparent);
-  --ring-track: var(--muted, #e2e8f0);
+  --ring-track: rgba(0, 0, 0, 0.07);
   --heat-0: #e2e8f0;
   --heat-1: #badcff;
   --heat-2: #74b3ff;
@@ -124,6 +124,62 @@
   outline: none !important;
   box-shadow: none !important;
 }
+
+/* DSH Status Bar Micro-Interactions (2.5s calm breathing, settle ticker & physics damping) */
+@keyframes dsh-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes dsh-token-settle {
+  from {
+    opacity: 0.35;
+    transform: translateY(2.5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dsh-donut-breathe {
+  0%, 100% {
+    stroke-opacity: 1;
+    filter: drop-shadow(0 0 0px transparent);
+  }
+  50% {
+    stroke-opacity: 0.4;
+    filter: drop-shadow(0 0 2.5px var(--primary, #2F71E3));
+  }
+}
+
+@keyframes dsh-donut-danger-breathe {
+  0%, 100% {
+    stroke-opacity: 1;
+    filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.4));
+  }
+  50% {
+    stroke-opacity: 0.4;
+    filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.4));
+  }
+}
+
+.antigravity-dsh-statusbar .dsh-icon-pulse {
+  animation: dsh-breathe 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.antigravity-dsh-statusbar .dsh-token-settle {
+  display: inline-block;
+  animation: dsh-token-settle 0.37s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.antigravity-dsh-statusbar .dsh-donut-pulse {
+  animation: dsh-donut-breathe 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.antigravity-dsh-statusbar .dsh-donut-danger-pulse {
+  animation: dsh-donut-danger-breathe 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
 .stats-view *, .stats-view *::before, .stats-view *::after { box-sizing: border-box; }
 :where(.stats-view, .stats-view *) { border: 0 solid var(--card-border, var(--border, rgba(255, 255, 255, 0.08))); }
 .stats-view dd, .stats-view dl { margin: 0; }
@@ -190,6 +246,13 @@
 }
 
 /* Custom Scrollbar - strictly scoped to Stats views & containers */
+.overlay-scrollbars .stats-view::-webkit-scrollbar,
+.overlay-scrollbars .antigravity-stats-container::-webkit-scrollbar,
+.overlay-scrollbars #antigravity-stats-settings-content::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
 .stats-view::-webkit-scrollbar,
 .stats-view ::-webkit-scrollbar,
 .antigravity-stats-container::-webkit-scrollbar,
@@ -263,107 +326,355 @@
 .stats-view {
   container: stats-panel / inline-size;
 }
+.stats-view .bento-container,
 .stats-view .bento-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  width: 100%;
   padding-top: 16px;
-  align-items: stretch;
 }
 .stats-view .bento-tile {
   min-width: 0;
-  padding: 16px;
-  border-radius: 12px;
+  width: 100%;
+  padding: 16px 20px;
+  border-radius: 14px;
   border: 1px solid var(--card-border, var(--border, rgba(255, 255, 255, 0.08)));
-  background: var(--card, #131317);
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.2), 0 0 0 1px var(--border, rgba(255, 255, 255, 0.04));
+  background: var(--card, #17181d);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 2px 8px rgba(0, 0, 0, 0.15);
   display: flex;
   flex-direction: column;
+  position: relative;
+  transition: border-color 180ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 180ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .stats-view.light .bento-tile {
   border-color: var(--card-border, var(--border, rgba(0, 0, 0, 0.08)));
   background: var(--card, #ffffff);
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 0 0 1px var(--border, rgba(0, 0, 0, 0.04));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
-.stats-view .bento-hero,
-.stats-view .bento-token { grid-column: 1 / -1; }
-.stats-view .bento-heat { grid-column: span 2; }
-/* Left column: trend chart stretches to fill, proxy strip sits below it,
-   so both columns match the heatmap-driven row height */
-.stats-view .bento-col {
-  grid-column: span 2;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.stats-view .bento-tile:hover {
+  border-color: var(--border-strong, rgba(255, 255, 255, 0.14));
 }
-.stats-view .bento-col .bento-trend { flex: 1; }
+.stats-view.light .bento-tile:hover {
+  border-color: var(--border-strong, rgba(0, 0, 0, 0.16));
+}
 
-/* Quota hero: ROI headline + monthly/weekly rings, evenly split across three zones */
-.stats-view .bento-hero-body {
-  flex: 1;
-  display: grid;
-  grid-template-columns: auto 1px minmax(0, 1fr) 1px minmax(0, 1fr);
-  gap: 12px 24px;
-  align-items: center;
-  margin-top: 12px;
+/* --- Row 1: Quota Hero Card (多模型周配额 + 4周总容量并列视图) --- */
+.stats-view .quota-card-row {
+  padding: 14px 20px 16px;
+  min-height: 84px;
+  justify-content: center;
 }
-.stats-view .bento-hero-main { min-width: 140px; }
-.stats-view .bento-hero-divider {
-  height: 100%;
-  width: 1px;
-  background: var(--card-border, var(--border, rgba(255, 255, 255, 0.08)));
-}
-.stats-view .bento-hero-quota {
+.stats-view .quota-top-meta {
   display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--card-border, var(--border, rgba(255, 255, 255, 0.08)));
+}
+.stats-view.light .quota-top-meta {
+  border-bottom-color: var(--card-border, var(--border, rgba(0, 0, 0, 0.08)));
+}
+.stats-view .view-dual-rings {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  gap: 10px;
+  width: 100%;
+}
+.stats-view .ring-col {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
   min-width: 0;
 }
-.stats-view .quota-ring { position: relative; flex-shrink: 0; }
-.stats-view .quota-ring-center {
+.stats-view .ring-col.ring-col-summary .track-pill-badge {
+  font-size: 10.5px;
+  padding: 1px 6px;
+}
+.stats-view .ring-svg-wrap {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.stats-view .ring-svg-wrap svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.stats-view .ring-inner-stat {
   position: absolute;
   inset: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  line-height: 1.2;
+  pointer-events: none;
 }
-.stats-view .quota-ring-center > span:first-child { font-size: 14px; font-weight: 500; }
-.stats-view .quota-ring-label { font-size: 10px; color: var(--muted-foreground); }
-
-/* Token summary strip: stat segments split by hairlines, composition bar on the right */
-.stats-view .bento-token {
-  flex-direction: row;
-  align-items: stretch;
-  gap: 0;
-  padding: 14px 16px;
+.stats-view .ring-inner-num {
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--foreground, #f4f4f6);
 }
-.stats-view .bento-token-seg {
+.stats-view.light .ring-inner-num {
+  color: var(--foreground, #111318);
+}
+.stats-view .ring-col-info {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 2px;
-  padding: 2px 16px;
-  border-left: 1px solid var(--card-border, var(--border, rgba(255, 255, 255, 0.08)));
-}
-.stats-view .bento-token-seg:first-child { border-left: 0; padding-left: 0; }
-.stats-view .bento-token-viz {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 8px;
-  padding: 2px 4px 2px 20px;
-  border-left: 1px solid var(--card-border, var(--border, rgba(255, 255, 255, 0.08)));
-}
-.stats-view .bento-track {
-  display: flex;
   gap: 3px;
-  height: 10px;
+  min-width: 0;
 }
-.stats-view .bento-track i { display: block; height: 100%; min-width: 2px; }
+.stats-view .ring-info-title-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.stats-view .ring-col-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted-foreground, #9da0aa);
+}
+.stats-view .ring-col-amount {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  letter-spacing: -0.015em;
+  color: var(--foreground, #f4f4f6);
+}
+.stats-view.light .ring-col-amount {
+  color: var(--foreground, #111318);
+}
+.stats-view .ring-vertical-divider {
+  width: 1px;
+  height: 44px;
+  margin: 0;
+  background: var(--card-border, var(--border, rgba(255, 255, 255, 0.08)));
+  flex-shrink: 0;
+}
+.stats-view.light .ring-vertical-divider {
+  background: var(--card-border, var(--border, rgba(0, 0, 0, 0.08)));
+}
+.stats-view .track-pill-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--secondary, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--card-border, var(--border, rgba(255, 255, 255, 0.08)));
+  color: var(--muted-foreground, #9da0aa);
+  line-height: 1.4;
+}
+.stats-view.light .track-pill-badge {
+  background: var(--secondary, rgba(0, 0, 0, 0.04));
+  border-color: var(--card-border, var(--border, rgba(0, 0, 0, 0.08)));
+  color: var(--muted-foreground, #5e626e);
+}
+.stats-view .track-pill-badge.badge-primary {
+  color: var(--primary, #2F71E3);
+  background: color-mix(in srgb, var(--primary, #2F71E3) 10%, transparent);
+  border-color: color-mix(in srgb, var(--primary, #2F71E3) 25%, transparent);
+}
+.stats-view select.track-pill-badge {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 18px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%239da0aa' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 8px 8px;
+}
+.stats-view select.track-pill-badge option {
+  background-color: var(--card, #17181d);
+  color: var(--foreground, #f4f4f6);
+}
+.stats-view.light select.track-pill-badge option {
+  background-color: #ffffff;
+  color: #111318;
+}
+
+/* --- Row 2: Token Breakdown Card --- */
+.stats-view .token-card-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+}
+.stats-view .token-top-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.stats-view .token-headline-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.stats-view .token-headline-val {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--foreground, #f4f4f6);
+}
+.stats-view.light .token-headline-val {
+  color: var(--foreground, #111318);
+}
+.stats-view .token-headline-unit {
+  font-size: 12px;
+  color: var(--muted-foreground, #71717a);
+}
+.stats-view .cache-rate-badge {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-cache, #34b8ac);
+  background: color-mix(in srgb, var(--color-cache, #34b8ac) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-cache, #34b8ac) 25%, transparent);
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+.stats-view .channel-strip {
+  width: 100%;
+  height: 7px;
+  border-radius: 999px;
+  overflow: hidden;
+  display: flex;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.stats-view.light .channel-strip {
+  background: rgba(0, 0, 0, 0.06);
+}
+.stats-view .channel-seg {
+  height: 100%;
+}
+.stats-view .channel-legend-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  padding-top: 4px;
+  border-top: 1px solid var(--card-border, var(--border, rgba(255, 255, 255, 0.08)));
+}
+.stats-view.light .channel-legend-grid {
+  border-top-color: var(--card-border, var(--border, rgba(0, 0, 0, 0.08)));
+}
+.stats-view .legend-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stats-view .legend-lbl-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted-foreground, #9da0aa);
+  font-size: 11px;
+}
+.stats-view .legend-color-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.stats-view .legend-val-row {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--foreground, #f4f4f6);
+}
+.stats-view.light .legend-val-row {
+  color: var(--foreground, #111318);
+}
+.stats-view .legend-pct-row {
+  font-size: 10.5px;
+  color: var(--muted-foreground, #71717a);
+}
+
+/* --- Row 3: Daily Trend Card --- */
+.stats-view .trend-card {
+  padding: 16px 20px 14px;
+}
+.stats-view .card-head-simple {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.stats-view .card-title-simple {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-foreground, #9da0aa);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.stats-view .trend-summary-tags {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--muted-foreground, #71717a);
+}
+.stats-view .trend-svg-stage {
+  width: 100%;
+  height: 125px;
+  position: relative;
+}
+.stats-view .trend-chart-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+.stats-view .chart-grid-line {
+  stroke: var(--card-border, var(--border, rgba(255, 255, 255, 0.08)));
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+.stats-view.light .chart-grid-line {
+  stroke: var(--card-border, var(--border, rgba(0, 0, 0, 0.08)));
+}
+.stats-view .chart-axis-txt {
+  font-size: 9.5px;
+  fill: var(--muted-foreground, #71717a);
+}
+.stats-view .chart-area-path {
+  fill: url(#daily-trend-fill);
+}
+.stats-view .chart-line-path {
+  fill: none;
+  stroke: var(--accent-primary, #2F71E3);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* --- Row 4: Activity Heatmap Card --- */
+.stats-view .heat-card {
+  padding: 16px 20px 18px;
+}
+.stats-view .heat-legend-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--muted-foreground, #71717a);
+}
+.stats-view .heat-legend-cells {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
 
 /* Proxy status strip */
 .stats-view .bento-proxy {
@@ -388,40 +699,43 @@
   letter-spacing: 0.04em;
 }
 
-/* Narrow container (the settings modal caps at 1024px, so this is the primary
-   layout inside the injected settings panel, not an edge case) */
-@container stats-panel (max-width: 860px) {
-  .stats-view .bento-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .stats-view .bento-col,
-  .stats-view .bento-heat { grid-column: 1 / -1; }
-  /* Token strip: 4 stat segments share one row, composition bar full-width below */
-  .stats-view .bento-token {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 14px;
-    padding: 14px 16px;
+/* Responsive adjustments */
+@container stats-panel (max-width: 740px) {
+  .stats-view .view-dual-rings {
+    flex-wrap: wrap;
+    gap: 14px 16px;
   }
-  .stats-view .bento-token-seg > div { white-space: normal; }
-  .stats-view .bento-token-seg,
-  .stats-view .bento-token-viz {
-    border-left: 0;
-    padding-left: 0;
+  .stats-view .ring-col,
+  .stats-view .ring-col.ring-col-summary {
+    flex: 1 1 calc(50% - 10px);
+    min-width: 210px;
   }
-  .stats-view .bento-token-viz {
-    grid-column: 1 / -1;
-    border-top: 1px solid var(--card-border, var(--border, rgba(255, 255, 255, 0.08)));
-    padding-top: 10px;
+  .stats-view .ring-vertical-divider {
+    display: none;
   }
-  /* Hero folds to two rows: ROI headline full-width, monthly/weekly rings side by side */
-  .stats-view .bento-hero-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .stats-view .bento-hero-main { grid-column: 1 / -1; }
-  .stats-view .bento-hero-divider { display: none; }
 }
-/* Very narrow window: single-column stack */
-@container stats-panel (max-width: 560px) {
-  .stats-view .bento-grid { grid-template-columns: minmax(0, 1fr); }
-  .stats-view .bento-hero-body { grid-template-columns: minmax(0, 1fr); }
-  .stats-view .bento-token { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@container stats-panel (max-width: 600px) {
+  .stats-view .channel-legend-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@container stats-panel (max-width: 480px) {
+  .stats-view .view-dual-rings {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .stats-view .ring-col,
+  .stats-view .ring-col.ring-col-summary {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+  }
+  .stats-view .ring-vertical-divider {
+    display: block;
+    width: 100%;
+    height: 1px;
+  }
 }
 
 /* Appica Popover Glassmorphism Card */

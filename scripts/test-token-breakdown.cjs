@@ -119,7 +119,9 @@ for (const key of ['kpiLifetimeTokens', 'inputChannelTitle', 'outputChannelTitle
 // Must contain formatted values and percentage shares
 assert(normalHtml.includes('1.91B'), 'Must render formatted lifetime token value');
 assert(normalHtml.includes('1.24B'), 'Must render formatted input value');
-assert(normalHtml.includes('7.1M'), 'Must render formatted output value');
+assert(normalHtml.includes('4.0M'), 'Must render formatted response value');
+assert(normalHtml.includes('7.1M'), 'Must render formatted output value in subDetail');
+assert(normalHtml.includes('<span class="legend-val-row tabular-nums">4.0M</span>'), 'Response channel main number must be responseTokensFormatted, not outputTokensFormatted');
 assert(normalHtml.includes('28'), 'Must render active days count');
 // Channel shares of the full total (1,247,810,000 overall)
 const totalTokens = 1170000000 + 73700000 + 3100000 + 4000000;

@@ -1,84 +1,180 @@
 import React from 'react';
 import { AggregatedStats } from '../../domain/stats.types';
-import { SubscriptionTierId } from '../../domain/pricing.types';
-import { formatResetCountdown } from '../../services/pricing-service';
+import { QuotaPoolId, SubscriptionTierId } from '../../domain/pricing.types';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { useQuotaMetrics } from './useQuotaMetrics';
 
-const SAVINGS_COLOR = '#10b981';
-const RING_SIZE = 76;
-const RING_RADIUS = 30;
-const RING_STROKE = 5;
-const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+const RING_SIZE = 60;
+const RING_RADIUS = 26.5;
+const RING_STROKE = 4.5;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS; // ~166.504
 
-const QuotaRing: React.FC<{ fraction: number; label: string; color: string }> = ({ fraction, label, color }) => {
-  const pct = Math.round(Math.min(1, Math.max(0, fraction)) * 1000) / 10;
-  const dash = Math.min(1, Math.max(0, fraction)) * RING_CIRCUMFERENCE;
+interface RadialRingProps {
+  fraction: number;
+  label: string;
+  gradientId: string;
+  startColor: string;
+  endColor: string;
+  pctText: string;
+}
+
+const RadialRing: React.FC<RadialRingProps> = ({ fraction, label, gradientId, startColor, endColor, pctText }) => {
+  const clampedFraction = Math.min(1, Math.max(0, fraction));
+  const dash = clampedFraction * RING_CIRCUMFERENCE;
   return (
-    <div className="quota-ring">
-      <svg width={RING_SIZE} height={RING_SIZE} viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`} role="img" aria-label={`${label} ${pct}%`}>
-        <circle cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_RADIUS} fill="none" stroke="var(--ring-track)" strokeWidth={RING_STROKE} />
+    <div className="ring-svg-wrap">
+      <svg
+        width={RING_SIZE}
+        height={RING_SIZE}
+        viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`}
+        role="img"
+        aria-label={`${label} ${pctText}`}
+      >
+        <defs>
+          <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor={startColor} />
+            <stop offset="100%" stopColor={endColor} />
+          </linearGradient>
+        </defs>
         <circle
           cx={RING_SIZE / 2}
           cy={RING_SIZE / 2}
           r={RING_RADIUS}
           fill="none"
-          stroke={color}
+          stroke="var(--ring-track)"
           strokeWidth={RING_STROKE}
-          strokeLinecap="round"
-          strokeDasharray={`${dash} ${RING_CIRCUMFERENCE - dash}`}
+        />
+        <circle
+          cx={RING_SIZE / 2}
+          cy={RING_SIZE / 2}
+          r={RING_RADIUS}
+          fill="none"
+          stroke={`url(#${gradientId})`}
+          strokeWidth={RING_STROKE}
+          strokeLinecap={dash > 0.5 ? 'round' : 'butt'}
+          strokeDasharray={`${dash.toFixed(1)} ${RING_CIRCUMFERENCE.toFixed(1)}`}
           transform={`rotate(-90 ${RING_SIZE / 2} ${RING_SIZE / 2})`}
+          style={{ transition: 'stroke-dasharray 350ms cubic-bezier(0.16, 1, 0.3, 1)' }}
         />
       </svg>
-      <div className="quota-ring-center" aria-hidden="true">
-        <span className="tabular-nums">{pct}%</span>
-        <span className="quota-ring-label">{label}</span>
+      <div className="ring-inner-stat" aria-hidden="true">
+        <span className="ring-inner-num tabular-nums">{pctText}</span>
       </div>
     </div>
   );
 };
 
+interface WeeklyPoolRenderConfig {
+  pool: QuotaPoolId;
+  titleKey: 'weeklyGeminiTitle' | 'weeklyClaudeTitle' | 'weeklyArgonTitle';
+  gradientId: string;
+  startColor: string;
+  endColor: string;
+  usedId: string;
+  capId: string;
+}
+
+const WEEKLY_POOL_CONFIGS: WeeklyPoolRenderConfig[] = [
+  {
+    pool: 'gemini',
+    titleKey: 'weeklyGeminiTitle',
+    gradientId: 'ringWeekGrad',
+    startColor: '#10b981',
+    endColor: '#3b82f6',
+    usedId: 'ringWeekUsed',
+    capId: 'ringWeekCap',
+  },
+  {
+    pool: 'claude',
+    titleKey: 'weeklyClaudeTitle',
+    gradientId: 'ringClaudeGrad',
+    startColor: '#f59e0b',
+    endColor: '#ea580c',
+    usedId: 'ringClaudeWeekUsed',
+    capId: 'ringClaudeWeekCap',
+  },
+  {
+    pool: 'argon',
+    titleKey: 'weeklyArgonTitle',
+    gradientId: 'ringArgonGrad',
+    startColor: '#06b6d4',
+    endColor: '#6366f1',
+    usedId: 'ringArgonWeekUsed',
+    capId: 'ringArgonWeekCap',
+  },
+];
+
 export const QuotaHeroCard: React.FC<{ stats: AggregatedStats }> = ({ stats }) => {
   const { lang, t } = useLanguage();
-  const { liveQuota, selectedTier, setTier, metrics, plan } = useQuotaMetrics(stats);
+  const { liveQuota, selectedTier, detectedTier, isAutoSelected, setTier, resetToAuto, metrics, plan } = useQuotaMetrics(stats);
 
-  // User specification: If online quota is NOT captured, do NOT show concrete content
-  if (!liveQuota?.weeklyGemini) {
+  const visibleWeeklyPools = WEEKLY_POOL_CONFIGS.filter(cfg => Boolean(metrics.pools[cfg.pool].bucket));
+
+  // User specification: If online quota is NOT captured (or no visible pool remains), do NOT show concrete content
+  if (!liveQuota || visibleWeeklyPools.length === 0) {
     return null;
   }
 
-  const gemini = liveQuota.weeklyGemini;
+  const monthlyCost = metrics.cappedMonthlyCostUsd ?? metrics.monthlyCostUsd;
+  const monthlyCap = metrics.totalMonthlyCapUsd;
+  const hasMonthlyCap = monthlyCap !== null && monthlyCap > 0;
   const monthlyFraction =
-    metrics.monthlyCostUsd !== null && metrics.totalMonthlyCapUsd > 0
-      ? metrics.monthlyCostUsd / metrics.totalMonthlyCapUsd
+    monthlyCost !== null && hasMonthlyCap
+      ? Math.min(1, Math.max(0, monthlyCost / monthlyCap))
       : 0;
+  const monthlyPctVal =
+    monthlyCost !== null && hasMonthlyCap
+      ? Math.min(100, Math.round((monthlyCost / monthlyCap) * 1000) / 10)
+      : null;
+  const monthlyPctText = monthlyPctVal !== null
+    ? `${monthlyPctVal % 1 === 0 ? monthlyPctVal : monthlyPctVal.toFixed(1)}%`
+    : '—';
+
   const roiMultiplier =
     metrics.monthlyCostUsd === null
-      ? '—'
+      ? null
       : plan.monthlyFeeUsd > 0
         ? (metrics.monthlyCostUsd / plan.monthlyFeeUsd).toFixed(1) + 'x'
         : '∞';
-  const netSavingsUsd = Number(Math.max(0, (metrics.monthlyCostUsd ?? 0) - plan.monthlyFeeUsd).toFixed(2));
 
   return (
-    <section className="bento-tile bento-hero" aria-label={t('subscriptionQuotaTitle')}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-foreground">✨ {t('subscriptionQuotaTitle')}</h2>
-          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-[#10b981]/10 text-[#10b981] border border-[#10b981]/25 flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse" />
-            {t('liveQuotaDetected')}
-          </span>
+    <section className="bento-tile quota-card-row" aria-label={t('subscriptionQuotaTitle')}>
+      <div className="quota-top-meta">
+        <div className="ring-info-title-row">
+          <span className="ring-col-title">{lang === 'zh' ? '本周配额已用' : t('weeklyQuota')}</span>
+          <span
+            className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse"
+            title={t('liveQuotaDetected')}
+            aria-label={t('liveQuotaDetected')}
+          />
         </div>
-        <div className="flex items-center gap-2">
-          <label htmlFor="quota-tier-select" className="text-xs text-muted-foreground whitespace-nowrap">
-            {t('planFee')}:
-          </label>
+        <div className="flex items-center gap-1.5">
+          {detectedTier && isAutoSelected && (
+            <span
+              id="quota-tier-auto-badge"
+              className="track-pill-badge opacity-80"
+              title={detectedTier.isUltraAmbiguous ? t('tierAutoUltraTooltip') : t('tierAutoTooltip')}
+            >
+              {t('tierAutoBadge')}
+            </span>
+          )}
+          {detectedTier && !isAutoSelected && (
+            <button
+              id="quota-tier-reset-auto"
+              type="button"
+              onClick={resetToAuto}
+              className="track-pill-badge cursor-pointer transition-colors hover:opacity-90"
+              title={detectedTier.isUltraAmbiguous ? t('tierAutoUltraTooltip') : t('tierResetAutoTooltip')}
+            >
+              {t('tierResetAuto')}
+            </button>
+          )}
           <select
             id="quota-tier-select"
             value={selectedTier}
             onChange={e => setTier(e.target.value as SubscriptionTierId)}
-            className="h-8 max-w-full px-2.5 text-xs font-medium bg-card text-foreground border border-card-border rounded-lg outline-none cursor-pointer hover:border-foreground/20 transition-colors focus:ring-1 focus:ring-primary"
+            className="track-pill-badge cursor-pointer outline-none transition-colors"
+            aria-label={t('selectPlan')}
           >
             <option value="pro">{t('tierPro')}</option>
             <option value="ultra_5x">{t('tierUltra5x')}</option>
@@ -88,50 +184,70 @@ export const QuotaHeroCard: React.FC<{ stats: AggregatedStats }> = ({ stats }) =
         </div>
       </div>
 
-      <div className="bento-hero-body">
-        <div className="bento-hero-main">
-          <div className="text-xs text-muted-foreground">{t('roiMultiple')}</div>
-          <div className="text-4xl font-semibold tabular-nums leading-tight" style={{ color: SAVINGS_COLOR }}>
-            {roiMultiplier}
-          </div>
-          <div className="text-sm tabular-nums" style={{ color: SAVINGS_COLOR }}>
-            +${netSavingsUsd} {t('netSavingsBooked')}
-          </div>
-          <div className="text-[11px] text-muted-foreground tabular-nums">
-            {t('quotaHeroBasis')}: {metrics.monthlyCostUsd === null ? '—' : `$${metrics.monthlyCostUsd.toFixed(2)}`} ÷ ${plan.monthlyFeeUsd}{t('perMonth')}
-          </div>
-        </div>
-
-        <div className="bento-hero-divider" />
-
-        <div className="bento-hero-quota">
-          <QuotaRing fraction={monthlyFraction} label={t('monthlyQuotaShort')} color="var(--accent-primary)" />
-          <div className="text-xs space-y-0.5 min-w-0">
-            <div className="text-sm font-medium text-foreground">{t('monthlyQuotaShort')} · 4w</div>
-            <div className="text-muted-foreground tabular-nums">
-              {t('quotaUsedShort')}{' '}
-              <span className="text-foreground">{metrics.monthlyCostUsd === null ? '—' : `${metrics.isMonthlyExtrapolated ? '~' : ''}$${metrics.monthlyCostUsd.toFixed(2)}`}</span>
+      <div className="view-dual-rings" role="region" aria-label={lang === 'zh' ? '多模型周配额与月容量视图' : t('subscriptionQuotaTitle')}>
+        {visibleWeeklyPools.map(cfg => {
+          const poolMetrics = metrics.pools[cfg.pool];
+          const fraction = Math.min(1, Math.max(0, poolMetrics.usedFraction));
+          const pct = Math.min(100, Math.round(fraction * 100));
+          const title = t(cfg.titleKey);
+          return (
+            <div key={cfg.pool} className="ring-col">
+              <RadialRing
+                fraction={fraction}
+                label={title}
+                gradientId={cfg.gradientId}
+                startColor={cfg.startColor}
+                endColor={cfg.endColor}
+                pctText={`${pct}%`}
+              />
+              <div className="ring-col-info">
+                <div className="ring-info-title-row">
+                  <span className="ring-col-title truncate">{title}</span>
+                </div>
+                <div className="ring-col-amount tabular-nums">
+                  <strong id={cfg.usedId}>
+                    {poolMetrics.weeklyCostUsd === null ? '—' : `$${poolMetrics.weeklyCostUsd.toFixed(2)}`}
+                  </strong>
+                  {' / '}
+                  <span className="text-muted-foreground" id={cfg.capId}>
+                    {poolMetrics.totalWeeklyCapUsd === null ? '~' : `~$${poolMetrics.totalWeeklyCapUsd.toFixed(2)}`}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="text-muted-foreground tabular-nums">
-              {t('quotaCapacityShort')} <span className="text-foreground">~${metrics.totalMonthlyCapUsd.toFixed(2)}</span>
+          );
+        })}
+
+        {/* Subtle divider between weekly model pools and 4-week aggregate */}
+        <div className="ring-vertical-divider" aria-hidden="true" />
+
+        {/* Right column: Monthly Extrapolated Capacity */}
+        <div className="ring-col ring-col-summary">
+          <RadialRing
+            fraction={monthlyFraction}
+            label={lang === 'zh' ? '4周容量' : t('monthlyQuotaShort')}
+            gradientId="ringMonthGrad"
+            startColor="#3b82f6"
+            endColor="#8b5cf6"
+            pctText={monthlyPctText}
+          />
+          <div className="ring-col-info">
+            <div className="ring-info-title-row">
+              <span className="ring-col-title truncate">{lang === 'zh' ? '4周折算总容量' : `${t('monthlyQuotaShort')} · 4w`}</span>
+              <span className="track-pill-badge badge-primary tabular-nums shrink-0" id="ringRoiBadge">
+                {roiMultiplier !== null ? `${roiMultiplier} ROI` : '—'}
+              </span>
             </div>
-          </div>
-        </div>
-
-        <div className="bento-hero-divider" />
-
-        <div className="bento-hero-quota">
-          <QuotaRing fraction={gemini.usedFraction} label={t('weeklyQuotaShort')} color={SAVINGS_COLOR} />
-          <div className="text-xs space-y-0.5 min-w-0">
-            <div className="text-sm font-medium text-foreground">{t('weeklyQuota')}</div>
-            <div className="text-muted-foreground tabular-nums">
-              {t('quotaUsedShort')}{' '}
-              <span className="text-foreground">{metrics.weeklyCostUsd === null ? '—' : `$${metrics.weeklyCostUsd.toFixed(2)}`}</span>
+            <div className="ring-col-amount tabular-nums">
+              <strong id="ringMonthUsed">
+                {metrics.monthlyCostUsd === null
+                  ? '—'
+                  : `${metrics.isMonthlyExtrapolated ? '~' : ''}$${metrics.monthlyCostUsd.toFixed(2)}`}
+              </strong>
               {' / '}
-              <span className="text-foreground">~${metrics.totalWeeklyCapUsd.toFixed(2)}</span>
-            </div>
-            <div className="text-muted-foreground tabular-nums">
-              {t('resetCountdown')} {formatResetCountdown(gemini.resetTime, lang)}
+              <span className="text-muted-foreground" id="ringMonthCap">
+                {metrics.totalMonthlyCapUsd === null ? '~' : `~$${metrics.totalMonthlyCapUsd.toFixed(2)}`}
+              </span>
             </div>
           </div>
         </div>

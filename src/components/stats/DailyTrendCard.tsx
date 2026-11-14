@@ -42,8 +42,8 @@ export function selectTrendSeries(cells: HeatmapCell[], timeRange: TimeRange): A
   return series;
 }
 
-const MIN_CHART_HEIGHT = 150;
-const PAD = { top: 10, right: 10, bottom: 22, left: 44 };
+const MIN_CHART_HEIGHT = 125;
+const PAD = { top: 12, right: 16, bottom: 24, left: 44 };
 
 // Round up to a 1/2/2.5/5 × 10^n step so gridline ticks stay round and even.
 function niceCeil(value: number): number {
@@ -73,7 +73,7 @@ function useMeasuredSize(): [React.RefObject<HTMLDivElement | null>, { width: nu
 
 // Memoized: only new heatmap cells or a range change should redraw the SVG.
 const DailyTrendCardImpl: React.FC<{ cells: HeatmapCell[]; timeRange: TimeRange }> = ({ cells, timeRange }) => {
-  const { t } = useLanguage();
+  const { lang, t } = useLanguage();
   const [containerRef, { width, height }] = useMeasuredSize();
   const chartHeight = Math.max(height, MIN_CHART_HEIGHT);
 
@@ -81,6 +81,14 @@ const DailyTrendCardImpl: React.FC<{ cells: HeatmapCell[]; timeRange: TimeRange 
 
   const max = useMemo(() => series.reduce((m, d) => Math.max(m, d.tokens), 0), [series]);
   const hasData = series.length > 1 && max > 0;
+
+  const { avgTokens, peakTokens, peakDate } = useMemo(() => {
+    if (!series.length) return { avgTokens: 0, peakTokens: 0, peakDate: '' };
+    const sum = series.reduce((acc, d) => acc + d.tokens, 0);
+    const avg = Math.round(sum / series.length);
+    const peak = series.reduce((maxItem, d) => (d.tokens > maxItem.tokens ? d : maxItem), { date: '', tokens: 0 });
+    return { avgTokens: avg, peakTokens: peak.tokens, peakDate: peak.date };
+  }, [series]);
 
   const chart = useMemo(() => {
     if (!hasData || width <= 0) return null;
@@ -113,12 +121,28 @@ const DailyTrendCardImpl: React.FC<{ cells: HeatmapCell[]; timeRange: TimeRange 
   }, [hasData, width, chartHeight, series, max]);
 
   return (
-    <section className="bento-tile bento-trend" aria-label={t('dailyTrendTitle')}>
-      <div className="flex items-center justify-between gap-2 mb-1">
-        <h2 className="text-sm font-semibold text-foreground">{t('dailyTrendTitle')}</h2>
-        <span className="text-[11px] text-muted-foreground">{t('dailyTrendUnit')}</span>
+    <section className="bento-tile trend-card" aria-label={t('dailyTrendTitle')}>
+      <div className="card-head-simple flex items-center justify-between gap-3 mb-2">
+        <span className="card-title-simple text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+          <span aria-hidden="true">📈</span>
+          <span className="text-foreground text-sm font-bold">{t('dailyTrendTitle')}</span>
+          <span className="text-[11px] font-normal text-muted-foreground">({t('dailyTrendUnit')})</span>
+        </span>
+        <div className="trend-summary-tags flex items-center gap-3.5 text-[11px] text-muted-foreground select-none">
+          <span>
+            {lang === 'zh' ? '统计期日均' : 'Avg'}:{' '}
+            <strong className="font-semibold text-foreground tabular-nums">{hasData ? formatTokens(avgTokens) : '—'}</strong>
+          </span>
+          <span>
+            {lang === 'zh' ? '峰值' : 'Peak'}:{' '}
+            <strong className="font-semibold tabular-nums" style={{ color: 'var(--accent-primary, #2F71E3)' }}>
+              {hasData ? `${formatTokens(peakTokens)}${peakDate ? ` (${peakDate.slice(5)})` : ''}` : '—'}
+            </strong>
+          </span>
+        </div>
       </div>
-      <div ref={containerRef} className="flex-1 min-h-0">
+
+      <div ref={containerRef} className="trend-svg-stage flex-1 min-h-[125px]">
         {!hasData ? (
           <div className="h-full flex items-center justify-center text-sm text-muted-foreground">{t('noData')}</div>
         ) : chart ? (
@@ -128,12 +152,12 @@ const DailyTrendCardImpl: React.FC<{ cells: HeatmapCell[]; timeRange: TimeRange 
             viewBox={`0 0 ${width} ${chartHeight}`}
             role="img"
             aria-label={t('dailyTrendTitle')}
-            className="block"
+            className="trend-chart-svg block"
           >
             <defs>
               <linearGradient id="daily-trend-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="var(--accent-primary)" stopOpacity="0.16" />
-                <stop offset="1" stopColor="var(--accent-primary)" stopOpacity="0" />
+                <stop offset="0%" stopColor="var(--accent-primary, #2F71E3)" stopOpacity="0.25" />
+                <stop offset="100%" stopColor="var(--accent-primary, #2F71E3)" stopOpacity="0.0" />
               </linearGradient>
             </defs>
             {chart.ticks.map(tick => (
@@ -143,19 +167,29 @@ const DailyTrendCardImpl: React.FC<{ cells: HeatmapCell[]; timeRange: TimeRange 
                   x2={width - PAD.right}
                   y1={tick.y}
                   y2={tick.y}
-                  stroke="var(--card-border)"
-                  strokeWidth="1"
+                  className="chart-grid-line"
                 />
-                <text x={PAD.left - 6} y={tick.y + 3.5} textAnchor="end" fontSize="11" fill="currentColor" className="text-muted-foreground tabular-nums">
+                <text
+                  x={PAD.left - 6}
+                  y={tick.y + 3.5}
+                  textAnchor="end"
+                  className="chart-axis-txt tabular-nums"
+                >
                   {formatTokens(tick.value)}
                 </text>
               </g>
             ))}
-            <path d={chart.area} fill="url(#daily-trend-fill)" />
-            <path d={chart.line} fill="none" stroke="var(--accent-primary)" strokeWidth="2" strokeLinejoin="round" />
-            <circle cx={chart.lastX} cy={chart.lastY} r="3" fill="var(--accent-primary)" />
+            <path d={chart.area} className="chart-area-path" />
+            <path d={chart.line} className="chart-line-path" />
+            <circle cx={chart.lastX} cy={chart.lastY} r="3.5" fill="var(--accent-primary, #2F71E3)" />
             {chart.xLabels.map(l => (
-              <text key={l.x} x={l.x} y={chartHeight - 6} textAnchor="middle" fontSize="11" fill="currentColor" className="text-muted-foreground tabular-nums">
+              <text
+                key={l.x}
+                x={l.x}
+                y={chartHeight - 6}
+                textAnchor="middle"
+                className="chart-axis-txt tabular-nums"
+              >
                 {l.label}
               </text>
             ))}

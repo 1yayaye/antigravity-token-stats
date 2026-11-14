@@ -64,7 +64,7 @@ const root = ReactDOM.createRoot(container);
 root.render(
   <React.StrictMode>
     <LanguageProvider>
-      <div className="w-full h-full" style={{ height: '100%', minHeight: '500px' }}>
+      <div className="w-full h-full overflow-y-auto" style={{ height: '100%', minHeight: '500px' }}>
         <StatsView />
       </div>
     </LanguageProvider>

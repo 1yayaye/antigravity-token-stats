@@ -37,7 +37,7 @@ export interface TokenMetrics {
 export interface ContextMetrics {
   /** Currently occupied context tokens (promptTokens of latest completed request) */
   usedTokens: number;
-  /** Context window upper limit (default 1,048,576 / 1M) */
+  /** Context window upper limit (default 256,000 / 256K) */
   limitTokens: number;
   /** Context used percentage (0 - 100) */
   usedPct: number;

@@ -309,10 +309,17 @@ function resolveBuiltInstallerExe() {
     path.join(projectRoot, 'dist-release', `antigravity-token-stats-v${pkg.version}-setup.exe`),
     path.join(projectRoot, 'hosts', 'antigravity', 'installer', 'bin', 'Release', 'net48', 'AntiTokenSetup.exe'),
   ];
-  const existing = candidates.find((p) => fs.existsSync(p));
-  if (existing) return existing;
+  const trackedInputs = [
+    path.join(projectRoot, 'scripts', 'aggregate-stats.cjs'),
+    path.join(projectRoot, 'dist-bundle', 'antigravity-stats-bundle.js'),
+    path.join(projectRoot, 'hosts', 'antigravity', 'installer', 'EmbeddedAssets', 'aggregate-stats.cjs'),
+    path.join(projectRoot, 'hosts', 'antigravity', 'installer', 'EmbeddedAssets', 'antigravity-stats-bundle.js'),
+  ].filter((p) => fs.existsSync(p));
+  const newestInputMtimeMs = trackedInputs.reduce((max, p) => Math.max(max, fs.statSync(p).mtimeMs), 0);
+  const fresh = candidates.find((p) => fs.existsSync(p) && fs.statSync(p).mtimeMs >= newestInputMtimeMs);
+  if (fresh) return fresh;
 
-  // Build installer if not built yet
+  // Build installer if missing or stale compared to bundled assets
   execFileSync(process.execPath, [path.join(projectRoot, 'hosts', 'antigravity', 'installer-gen', 'prepare-assets.cjs'), '--skip-bundle'], {
     cwd: projectRoot,
     stdio: 'inherit',

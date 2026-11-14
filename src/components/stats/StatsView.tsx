@@ -9,7 +9,7 @@ import { AggregatedStats, TimeRange } from '../../domain/stats.types';
 import { fetchRawStats, filterStatsByRange, EMPTY_STATS, detectAntigravityTheme, syncThemeToElement } from '../../services/stats-service';
 import { EVENT_STATS_UPDATED } from '../../injection-contract.cjs';
 
-export const StatsView: React.FC = () => {
+export const StatsView: React.FC<{ className?: string }> = ({ className = '' }) => {
   const [rawStats, setRawStats] = useState<AggregatedStats>(EMPTY_STATS);
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -106,8 +106,7 @@ export const StatsView: React.FC = () => {
 
   return (
     <div
-      className={`stats-view antigravity-stats-container ${isDark ? 'dark' : 'light'} flex flex-col h-full min-w-0 overflow-y-auto px-4 sm:px-6 pt-4 pb-5 bg-background text-foreground antialiased`}
-      style={{ scrollbarGutter: 'stable' }}
+      className={`stats-view antigravity-stats-container ${isDark ? 'dark' : 'light'} flex flex-col min-w-0 px-4 sm:px-6 pt-4 pb-5 bg-background text-foreground antialiased ${className}`}
     >
       <div className="w-full max-w-5xl mx-auto min-w-0 flex flex-col">
         {/* Header */}
@@ -118,15 +117,12 @@ export const StatsView: React.FC = () => {
           isRefreshing={isRefreshing}
         />
 
-        <div className="bento-grid">
+        <div className="bento-container bento-grid flex flex-col gap-3.5 w-full pt-4">
           <QuotaHeroCard stats={rawStats} />
           <TokenSummaryTile stats={stats} />
-          {/* Trend + proxy stack in one column so the left side fills the heatmap's row height */}
-          <div className="bento-col">
-            <DailyTrendCard cells={rawStats.activity.heatmap} timeRange={timeRange} />
-            <ProxyStatusCard proxy={rawStats.proxy} />
-          </div>
+          <DailyTrendCard cells={rawStats.activity.heatmap} timeRange={timeRange} />
           <TokenActivityHeatmap cells={rawStats.activity.heatmap} dailyStats={rawStats.activity.dailyStats} />
+          {rawStats.proxy && <ProxyStatusCard proxy={rawStats.proxy} />}
         </div>
       </div>
     </div>

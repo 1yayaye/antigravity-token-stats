@@ -132,9 +132,9 @@ function encodeFieldVarint(fieldNum, value) {
   console.log('PASS: package.json unpatch references existing unpatch script');
 }
 
-// 3. IDE quota-service protobuf OAuth token parsing
+// 3. IDE quota-service protobuf OAuth token & userStatus tier parsing
 {
-  const { findTokenMessage } = loadTsModule(
+  const { findTokenMessage, parseUserStatusTier } = loadTsModule(
     path.join(repoRoot, 'hosts', 'antigravity-ide', 'extension', 'src', 'quota-service.ts')
   );
 
@@ -164,7 +164,29 @@ function encodeFieldVarint(fieldNum, value) {
   ]);
   assert.equal(findTokenMessage(wrongPrefix), null, 'Must ignore non-OAuth strings');
   assert.equal(findTokenMessage(new Uint8Array()), null, 'Must return null on empty buffer');
-  console.log('PASS: IDE quota-service protobuf OAuth token decoder');
+
+  // Synthetic antigravityUnifiedStateSync.userStatus sentinel envelope:
+  // outer f1 -> f2 -> f1 (base64 UserStatus) where UserStatus has f7=email and f36=UserTier{f1=id,f2=name}
+  const tierMsg = Buffer.concat([
+    encodeFieldBytes(1, Buffer.from('g1-pro-tier', 'utf8')),
+    encodeFieldBytes(2, Buffer.from('Google AI Pro', 'utf8')),
+  ]);
+  const userStatusMsg = Buffer.concat([
+    encodeFieldBytes(7, Buffer.from('user@example.com', 'utf8')),
+    encodeFieldBytes(36, tierMsg),
+  ]);
+  const entryMsg = encodeFieldBytes(1, Buffer.from(userStatusMsg.toString('base64'), 'utf8'));
+  const sentinelMsg = Buffer.concat([
+    encodeFieldBytes(1, Buffer.from('userStatusSentinelKey', 'utf8')),
+    encodeFieldBytes(2, entryMsg),
+  ]);
+  const outer = encodeFieldBytes(1, sentinelMsg).toString('base64');
+  const parsedTier = parseUserStatusTier(outer);
+  assert.equal(parsedTier?.tier, 'pro', 'Must decode UserTier f36 from userStatus sentinel');
+  assert.equal(parsedTier?.rawTierId, 'g1-pro-tier');
+  assert.ok(parsedTier?.accountKey && !parsedTier.accountKey.includes('user@example.com'));
+  assert.equal(parseUserStatusTier(''), null);
+  console.log('PASS: IDE quota-service protobuf OAuth token & userStatus tier decoder');
 }
 
 // 4. IDE extension CSPRNG getNonce & .db-wal/.db-shm session tracking
@@ -265,4 +287,218 @@ function encodeFieldVarint(fieldNum, value) {
     'loader IPC_REQUEST_SYNC must throttle full scans via FULL_SCAN_MIN_GAP_MS'
   );
   console.log('PASS: loader.cjs IPC_REQUEST_SYNC full-scan throttling guard verified');
+}
+
+// 8. standalone.tsx restores sibling host panels inside panelsContainer when switching back from Usage Stats
+{
+  const savedWindow = global.window;
+  const savedDocument = global.document;
+  const savedMutationObserver = global.MutationObserver;
+  const savedLocalStorage = global.localStorage;
+  const savedNavigator = global.navigator;
+  const savedCssHook = require.extensions['.css'];
+
+  const createMockElement = (tagName = 'div') => {
+    const listeners = {};
+    const attrs = {};
+    const classSet = new Set();
+    const el = {
+      tagName: tagName.toUpperCase(),
+      id: '',
+      className: '',
+      innerText: '',
+      textContent: '',
+      innerHTML: '',
+      offsetWidth: 0,
+      style: {},
+      children: [],
+      parentElement: null,
+      previousElementSibling: null,
+      get firstElementChild() {
+        return el.children[0] || null;
+      },
+      classList: {
+        add: (...names) => names.forEach((n) => classSet.add(n)),
+        remove: (...names) => names.forEach((n) => classSet.delete(n)),
+        contains: (n) => classSet.has(n),
+      },
+      setAttribute: (k, v) => {
+        attrs[k] = String(v);
+        if (k === 'id') el.id = String(v);
+      },
+      getAttribute: (k) => (k === 'id' ? el.id || null : (k in attrs ? attrs[k] : null)),
+      removeAttribute: (k) => {
+        delete attrs[k];
+      },
+      appendChild: (child) => {
+        child.parentElement = el;
+        const prev = el.children[el.children.length - 1] || null;
+        child.previousElementSibling = prev;
+        el.children.push(child);
+        return child;
+      },
+      after: (sibling) => {
+        if (!el.parentElement) return;
+        const siblings = el.parentElement.children;
+        const idx = siblings.indexOf(el);
+        sibling.parentElement = el.parentElement;
+        if (idx >= 0) {
+          siblings.splice(idx + 1, 0, sibling);
+        } else {
+          siblings.push(sibling);
+        }
+      },
+      contains: (target) => {
+        if (target === el) return true;
+        return el.children.some((c) => c.contains(target));
+      },
+      addEventListener: (type, fn) => {
+        if (!listeners[type]) listeners[type] = [];
+        listeners[type].push(fn);
+      },
+      removeEventListener: (type, fn) => {
+        if (!listeners[type]) return;
+        listeners[type] = listeners[type].filter((f) => f !== fn);
+      },
+      trigger: (type, event = {}) => {
+        const evt = { preventDefault() {}, stopPropagation() {}, ...event };
+        (listeners[type] || []).forEach((fn) => fn(evt));
+      },
+      querySelector: () => null,
+      querySelectorAll: () => [],
+    };
+    return el;
+  };
+
+  try {
+    delete global.window;
+    require.extensions['.css'] = () => {};
+
+    const modal = createMockElement('div');
+    modal.className = 'settings-modal-container';
+    const splitContainer = createMockElement('div');
+    splitContainer.offsetWidth = 900;
+    const leftNav = createMockElement('div');
+    leftNav.offsetWidth = 220;
+    const rightContentPanel = createMockElement('div');
+    rightContentPanel.offsetWidth = 680;
+
+    const modelsBtn = createMockElement('button');
+    modelsBtn.innerText = 'Models';
+    const editorBtn = createMockElement('button');
+    editorBtn.innerText = 'Editor';
+    leftNav.appendChild(modelsBtn);
+    leftNav.appendChild(editorBtn);
+
+    const viewport = createMockElement('div');
+    const panelsContainer = createMockElement('div');
+    const hostPanelModels = createMockElement('div');
+    const hostPanelEditor = createMockElement('div');
+    panelsContainer.appendChild(hostPanelModels);
+    panelsContainer.appendChild(hostPanelEditor);
+    viewport.appendChild(panelsContainer);
+
+    const overlayScrollbar = createMockElement('div');
+    rightContentPanel.appendChild(viewport);
+    rightContentPanel.appendChild(overlayScrollbar);
+    rightContentPanel.querySelector = (sel) => (sel === '[data-testid="overlay-scrollbar"]' ? overlayScrollbar : null);
+
+    splitContainer.appendChild(leftNav);
+    splitContainer.appendChild(rightContentPanel);
+    modal.appendChild(splitContainer);
+    modal.querySelectorAll = (sel) => {
+      if (sel === 'button') return leftNav.children.filter((c) => c.tagName === 'BUTTON');
+      return [];
+    };
+
+    const body = createMockElement('body');
+    body.appendChild(modal);
+
+    const findById = (root, id) => {
+      if (root.id === id) return root;
+      for (const child of root.children) {
+        const hit = findById(child, id);
+        if (hit) return hit;
+      }
+      return null;
+    };
+
+    global.document = {
+      head: createMockElement('head'),
+      body,
+      documentElement: createMockElement('html'),
+      createElement: (tag) => createMockElement(tag),
+      getElementById: (id) => findById(body, id) || findById(global.document.head, id),
+      querySelector: (sel) => (sel === '.settings-modal-container' ? modal : null),
+      querySelectorAll: () => [],
+    };
+    global.MutationObserver = class {
+      observe() {}
+      disconnect() {}
+      takeRecords() { return []; }
+    };
+    global.localStorage = { getItem: () => null, setItem: () => {} };
+    global.navigator = { language: 'en-US' };
+
+    const standaloneMod = loadTsModule(path.join(repoRoot, 'hosts', 'antigravity', 'src', 'standalone.tsx'), {
+      '../../../src/index.css': {},
+      './i18n/antigravity-ui-i18n': {
+        antigravityI18n: {
+          translateSubtree: () => {},
+          startObserver: () => {},
+          stopObserver: () => {},
+          getLanguage: () => 'en',
+          setLanguage: () => {},
+        },
+      },
+      './quota': { startQuotaUpdates: () => {} },
+      '../../../src/components/stats/StatsView': { StatsView: () => null },
+      '../../../src/components/dsh/DshStatusBar': { DshStatusBar: () => null },
+      '../../../src/services/stats-service': {
+        detectAntigravityTheme: () => ({ mode: 'dark' }),
+        syncThemeToElement: () => {},
+      },
+      'react': { createElement: () => ({}), Fragment: 'Fragment' },
+      'react-dom/client': {
+        createRoot: () => ({
+          render: () => {},
+          unmount: () => {},
+        }),
+      },
+    });
+
+    global.window = {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => {},
+      getComputedStyle: () => ({ backgroundColor: 'rgb(30, 30, 30)', color: 'rgb(200, 200, 200)' }),
+    };
+
+    standaloneMod.initAntigravitySettingsInjector();
+
+    const statsBtn = global.document.getElementById('antigravity-stats-nav-btn');
+    assert.ok(statsBtn, 'Usage Stats nav button must be injected after Models');
+
+    statsBtn.trigger('click');
+    const statsContainer = global.document.getElementById('antigravity-stats-settings-content');
+    assert.ok(statsContainer, 'Clicking Usage Stats must mount stats container');
+    assert.strictEqual(statsContainer.parentElement, panelsContainer, 'Stats container must mount inside panelsContainer');
+    assert.strictEqual(hostPanelModels.style.display, 'none', 'Sibling host panel 1 must be hidden when Usage Stats is open');
+    assert.strictEqual(hostPanelEditor.style.display, 'none', 'Sibling host panel 2 must be hidden when Usage Stats is open');
+
+    modelsBtn.trigger('click');
+    assert.strictEqual(statsContainer.style.display, 'none', 'Clicking Models must hide Usage Stats container');
+    assert.strictEqual(hostPanelModels.style.display, '', 'Clicking Models must restore sibling host panel 1 display');
+    assert.strictEqual(hostPanelEditor.style.display, '', 'Clicking Models must restore sibling host panel 2 display');
+    assert.strictEqual(rightContentPanel.style.display, '', 'Clicking Models must keep rightContentPanel visible');
+
+    console.log('PASS: standalone.tsx restores sibling host panels when switching back from Usage Stats');
+  } finally {
+    if (savedWindow === undefined) delete global.window; else global.window = savedWindow;
+    if (savedDocument === undefined) delete global.document; else global.document = savedDocument;
+    if (savedMutationObserver === undefined) delete global.MutationObserver; else global.MutationObserver = savedMutationObserver;
+    if (savedLocalStorage === undefined) delete global.localStorage; else global.localStorage = savedLocalStorage;
+    if (savedNavigator === undefined) delete global.navigator; else global.navigator = savedNavigator;
+    if (savedCssHook === undefined) delete require.extensions['.css']; else require.extensions['.css'] = savedCssHook;
+  }
 }

@@ -168,10 +168,34 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
     ? `${compactTotal} tok · ${isZh ? '缓存命中' : 'Cache'} ${token.cacheHitRatePct}%`
     : `${compactTotal} tok`;
 
-  // Context Donut Calculations
+  // Token settle micro-animation on count update
+  const [isTokenSettling, setIsTokenSettling] = useState(false);
+  const prevTokensRef = useRef(token.totalTokens);
+
+  useEffect(() => {
+    if (prevTokensRef.current !== token.totalTokens) {
+      prevTokensRef.current = token.totalTokens;
+      setIsTokenSettling(true);
+      const timer = setTimeout(() => setIsTokenSettling(false), 400);
+      return () => clearTimeout(timer);
+    }
+  }, [token.totalTokens]);
+
+  // Context Donut Calculations & Threshold Styling
   const radius = 6;
   const circumference = 2 * Math.PI * radius; // 37.6991
   const offset = circumference - (Math.min(100, Math.max(0, context.usedPct)) / 100) * circumference;
+
+  const usedPct = Math.min(100, Math.max(0, context.usedPct));
+  let donutStroke = isStreaming ? 'var(--primary, var(--dsh-accent, #2F71E3))' : 'var(--dsh-donut-fill, #e4e4e7)';
+  let donutAnimClass = isStreaming ? 'dsh-donut-pulse' : '';
+  if (usedPct >= 85) {
+    donutStroke = '#ef4444';
+    donutAnimClass = 'dsh-donut-danger-pulse';
+  } else if (usedPct >= 70) {
+    donutStroke = '#f59e0b';
+    if (isStreaming) donutAnimClass = 'dsh-donut-pulse';
+  }
 
   const probeVars = {
     ...(hostStyle?.textColor ? { '--dsh-text-secondary': hostStyle.textColor } : {}),
@@ -202,7 +226,6 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
         onMouseLeave={scheduleHide}
         onClick={() => handlePillClick('session')}
         className="dsh-pill flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
-        style={{ color: isStreaming ? 'var(--primary, var(--dsh-accent, #2F71E3))' : undefined }}
         aria-label={`性能统计: ${perfText}`}
       >
         <svg
@@ -214,7 +237,8 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className={isStreaming ? 'animate-pulse' : 'shrink-0 opacity-80'}
+          className={isStreaming ? 'dsh-icon-pulse shrink-0' : 'shrink-0 opacity-80'}
+          style={{ color: isStreaming ? 'var(--primary, var(--dsh-accent, #2F71E3))' : undefined }}
         >
           <path d="m12 14 4-4" />
           <path d="M3.34 19a10 10 0 1 1 17.32 0" />
@@ -242,13 +266,19 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="shrink-0 opacity-80"
+          className={isStreaming ? 'dsh-icon-pulse shrink-0' : 'shrink-0 opacity-80'}
+          style={{ color: isStreaming ? 'var(--primary, var(--dsh-accent, #2F71E3))' : undefined }}
         >
           <ellipse cx="12" cy="5" rx="9" ry="3" />
           <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
           <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
         </svg>
-        <span className="font-medium whitespace-nowrap text-xs" style={pillTextStyle}>{usageText}</span>
+        <span
+          className={`font-medium whitespace-nowrap text-xs ${isTokenSettling ? 'dsh-token-settle' : ''}`}
+          style={pillTextStyle}
+        >
+          {usageText}
+        </span>
       </button>
 
       {/* 3. Context Donut Pill (with backward-compatible id antigravity-context-usage-pill) */}
@@ -274,16 +304,19 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
                 fill="none"
               />
               <circle
+                className={donutAnimClass}
                 cx="8"
                 cy="8"
                 r="6"
-                stroke={isStreaming ? 'var(--primary, var(--dsh-accent, #2F71E3))' : 'var(--dsh-donut-fill, #e4e4e7)'}
+                stroke={donutStroke}
                 strokeWidth="2"
                 strokeLinecap="round"
                 fill="none"
                 strokeDasharray={circumference.toFixed(1)}
                 strokeDashoffset={offset.toFixed(1)}
-                style={{ transition: 'stroke-dashoffset 0.25s ease' }}
+                style={{
+                  transition: 'stroke-dashoffset 0.5s cubic-bezier(0.16, 1, 0.3, 1), stroke 0.35s ease',
+                }}
               />
             </svg>
           </div>
