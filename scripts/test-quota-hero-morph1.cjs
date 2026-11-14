@@ -41,7 +41,7 @@ function renderCard(stats, mockWindowQuota, savedTier = null) {
     return renderToStaticMarkup(
       React.createElement(
         LanguageProvider,
-        null,
+        { initialLang: 'zh' },
         React.createElement(QuotaHeroCard, { stats })
       )
     );
