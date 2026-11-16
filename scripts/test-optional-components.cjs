@@ -119,7 +119,15 @@ assert(mainFormCs.includes('_chkStatusBar = new CheckBox'), 'installer GUI must 
 const prepareAssets = fs.readFileSync(path.join(repoRoot, 'hosts', 'antigravity', 'installer-gen', 'prepare-assets.cjs'), 'utf8');
 assert(prepareAssets.includes('contract.ZH_PACK_FILE'), 'prepare-assets must copy the zh-pack');
 assert(prepareAssets.includes('features: contract.FEATURES'), 'prepare-assets contract.json must carry contract.FEATURES');
-const embeddedContract = JSON.parse(fs.readFileSync(path.join(repoRoot, 'hosts', 'antigravity', 'installer', 'EmbeddedAssets', 'contract.json'), 'utf8'));
+const embeddedContractPath = path.join(repoRoot, 'hosts', 'antigravity', 'installer', 'EmbeddedAssets', 'contract.json');
+if (!fs.existsSync(embeddedContractPath)) {
+  const { execFileSync } = require('node:child_process');
+  execFileSync(process.execPath, [path.join(repoRoot, 'hosts', 'antigravity', 'installer-gen', 'prepare-assets.cjs'), '--skip-bundle'], {
+    cwd: repoRoot,
+    stdio: 'inherit',
+  });
+}
+const embeddedContract = JSON.parse(fs.readFileSync(embeddedContractPath, 'utf8'));
 assert.deepStrictEqual(embeddedContract.features, contract.FEATURES, 'Embedded contract.json features must match contract.FEATURES (run npm run build:installer after prepare-assets)');
 assert(fs.existsSync(path.join(repoRoot, 'hosts', 'antigravity', 'installer', 'EmbeddedAssets', contract.ZH_PACK_FILE)), 'EmbeddedAssets must contain the zh-pack');
 console.log('PASS: C# installer and embedded assets expose the optional components');
