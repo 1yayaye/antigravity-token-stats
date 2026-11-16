@@ -32,6 +32,35 @@ module.exports = {
   EVENT_QUOTA_UPDATED: 'antigravity:quota-updated',
   EVENT_LANGUAGE_CHANGED: 'antigravity:language-changed',
 
+  // Native IDE host: restricted to its workbench main frame by the loader.
+  MARKER_IDE_MAIN_HOOK: '__ANTIGRAVITY_IDE_STATS_INJECTION__',
+  IPC_IDE_SYNC: 'vscode:antigravity-stats:ide-sync',
+  WINDOW_IDE_STATE: '__ANTIGRAVITY_IDE_STATE__',
+  WINDOW_IDE_ROUTE: '__ANTIGRAVITY_IDE_ACTIVE_ROUTE__',
+  IDE_NATIVE_CHAT_RPC: {
+    iframeId: 'jetski-frame',
+    channel: 'agy-ext-extension-api',
+    source: 'antigravity-iframe',
+    path: '/gemini_coder.agent_ui_toolkit.iframe.ExtensionApi/OnDidChangeUrl',
+  },
+  CONTAINER_IDE_STATUSBAR_ID: 'antigravity-ide-stats-statusbar',
+  CONTAINER_IDE_POPOVER_ID: 'antigravity-ide-stats-popover',
+
+  // Optional Chinese translation pack: an independently injected IIFE that sets
+  // window[WINDOW_ZH_PACK] before the main bundle runs (loader.cjs / installer).
+  // Missing pack = English-only UI; see LanguageContext and antigravity-ui-i18n.
+  WINDOW_ZH_PACK: '__ANTIGRAVITY_ZH_PACK__',
+  ZH_PACK_FILE: 'antigravity-stats-zh-pack.js',
+
+  // Feature flags the injector hands to the bundle. The loader always sets this
+  // global (from contract.json's features), so npm dev and IDE hosts are unaffected;
+  // a missing global means "all features on".
+  WINDOW_STATS_FEATURES: '__ANTIGRAVITY_STATS_FEATURES__',
+
+  // Single source for every contract.json features payload. Installing without
+  // --no-status-bar keeps the status-bar widget on.
+  FEATURES: { statusBar: true },
+
   // <style> element the bundle build inlines its CSS into.
   STYLE_ELEMENT_ID: 'antigravity-stats-styles',
 

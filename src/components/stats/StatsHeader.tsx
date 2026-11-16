@@ -10,7 +10,7 @@ interface StatsHeaderProps {
 }
 
 export const StatsHeader: React.FC<StatsHeaderProps> = ({ timeRange, onTimeRangeChange, onRefresh, isRefreshing }) => {
-  const { lang, toggleLang, t } = useLanguage();
+  const { lang, toggleLang, canSwitchLang, t } = useLanguage();
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-card-border shrink-0">
       <div className="flex items-center gap-2">
@@ -35,12 +35,14 @@ export const StatsHeader: React.FC<StatsHeaderProps> = ({ timeRange, onTimeRange
           ))}
         </select>
         <div className="flex items-center gap-2 shrink-0">
-          <button className="stats-icon-button" onClick={toggleLang} aria-label={t('switchLanguage')} title={lang === 'zh' ? 'Switch to English' : '切换为中文'}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" />
-              <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
-            </svg>
-          </button>
+          {canSwitchLang && (
+            <button className="stats-icon-button" onClick={toggleLang} aria-label={t('switchLanguage')} title={lang === 'zh' ? 'Switch to English' : '切换为中文'}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+              </svg>
+            </button>
+          )}
           <button className="stats-icon-button" onClick={onRefresh} disabled={isRefreshing} aria-label={t('refreshTitle')} title={t('refreshTitle')}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true">
               <path d="M20 11a8 8 0 0 0-14.7-4L4 9" />

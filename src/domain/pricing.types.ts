@@ -29,6 +29,8 @@ export interface LiveQuotaSummary {
   weeklyArgon?: CapturedQuotaBucket;
   description?: string;
   detectedAccountTier?: DetectedAccountTier;
+  /** Runtime-sniffed context window limits keyed by modelId when provided by host. */
+  modelContextLimits?: Record<string, number>;
 }
 
 export interface SubscriptionTierConfig {

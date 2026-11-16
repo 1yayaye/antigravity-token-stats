@@ -1,57 +1,87 @@
 # hosts/antigravity-ide — Antigravity IDE 适配层
 
-以 VSCode 扩展形式为 Antigravity IDE（VSCode fork，内核 1.107.0）提供 Token Stats 侧边栏视图。
-共享核心（`src/`）与聚合引擎（`scripts/aggregate-stats.cjs`）零改动复用。
+在 IDE 底部状态栏提供上下文、额度、今日 Token 三个独立入口，点击后向上展开交互浮层。
+界面采用 IDE 原生主题；统计仅汇总 `~/.gemini/antigravity-ide/`，不混入桌面端数据。
+设计与数据口径见 [IDE 重构设计](../../docs/ide-redesign.md)。
 
-## 结构
+## 构建、安装与启动
+
+关闭目标 Antigravity IDE 后执行：
+
+```powershell
+npm run dev:ide
+```
+
+该命令依次构建 UI 和原生宿主、安装补丁，再直接启动发现的 `Antigravity IDE.exe`。
+通过 `ANTIGRAVITY_IDE_DIR` 指定安装目录；也支持现有的 `ANTIGRAVITY_IDE_CMD` 路径发现方式。
+目标 IDE 仍在运行时安装会停止，不会结束进程。
+
+分步操作：
+
+- `npm run build:bundle:ide`：构建工作台 UI 到 `dist/antigravity-stats-ide-bundle.js`。
+- `npm run build:host:ide`：构建额度服务并复制 loader、聚合器和共享注入契约到同一 `dist/`。
+- `npm run patch:ide`：安装已构建产物；指定安装目录时直接调用脚本更可靠
+  （本机 npm/PowerShell 可能丢失 `--dir` 参数）：`node hosts/antigravity-ide/scripts/patch-ide.cjs --dir 'D:\Programs\Antigravity IDE'`。
+- `npm run unpatch:ide`：恢复原始入口并移除本工具的五个运行资产；同样支持 `--dir`。
+- `npm run test:ide`：运行 loader、组件和安装回滚的隔离测试。
+- `npm run inspect:ide`：检查运行中的原生 IDE：三入口顺序、浮层适配、同入口开关、
+  外部点击关闭、Esc 焦点返回、缩小视口适配，以及 `--state` / `--models` / `--screenshot` 诊断。
+
+可选设置 `ANTIGRAVITY_IDE_CDP_PORT` 为 1–65535 的端口号，再运行 `dev:ide`，为本机验收启用 CDP。
+未设置时不添加调试端口。启动器直接传递参数，不使用 shell 或扩展开发宿主。
+
+## 登录与代理继承
+
+原生 Go backend 只认环境变量与 `http.proxy` 设置；系统代理仅存于 WinINET 时，
+backend 直连 Google 域名并超时，表现为重启 IDE 或电脑后模型加载失败。
+宿主 loader 在 import 时注册首个 `ready` 监听（先于原生启动逻辑），在
+环境变量与 `http.proxy` 均未配置时，通过 Chromium 的 `resolveProxy` 读取系统
+对 OAuth 端点实际使用的代理并注入 `HTTP(S)_PROXY` 与本地 bypass 的 `NO_PROXY`。
+任何显式配置、不可读设置、DIRECT 或 SOCKS 解析都会跳过继承，不猜测、不覆盖。
+
+## 集成与回滚
+
+安装器只接受 `resources/app/package.json` 中名称为 `Antigravity IDE`、入口为 `./out/main.js` 的 ESM 应用。
+它在 `out/main.js` 前添加原生宿主的导入，将构建资产复制到 `out/antitoken/`；不改 preload、CSP、账户数据库或桌面端。
+首次安装以排他方式创建 `out/main.js.antitoken-backup`，后续安装更新资产并保留该原始备份。
+
+卸载恢复与备份完全相同的字节，仅删除已知运行资产，保留目录内其他文件和原始备份。
+主入口既不匹配备份也不匹配本工具生成的补丁时，安装和卸载均停止，避免覆盖其他修改。
+应用更新导致备份不匹配时也会停止，不会自动覆盖备份或重设数据。
+
+## 数据与显示边界
+
+- 当前会话取当前窗口可见原生聊天的路由信号（应用自身的 OnDidChangeUrl RPC，或 iframe src 路径）；多义或不可识别时显示未识别，不按最近会话推选。
+- 上下文显示最近一次已记录请求的输入与缓存；生成期间保留最近采样。没有可信上限时显示 Token 数和“上限未确认”。
+- 周额度显示服务端各额度池的剩余比例与重置时间。四周估算复用现有计算，区分外推、无有效样本和不可用状态；API 等值消耗不代表实测月度额度。
+- 今日、近七天、近三十天按设备本地自然日汇总全部 IDE 会话。思考包含在输出内，不重复累加；缺失分项显示 `—`。
+- 安装的额度服务使用 Electron `net.fetch`，复用宿主网络栈。独立诊断 `node hosts/antigravity-ide/scripts/probe-quota.cjs` 使用 Node fetch，不能据此证明 IDE 代理或原生登录正常；不会输出令牌值。
+- 额度凭据来自 IDE 本地存储的 OAuth token。hub 模式的新版 IDE（认证由桌面端守护进程承载）本地只有登录状态哨兵，没有 token，此时额度诚实显示“不可用”，不代读桌面端数据。
+
+## 真实验收记录（2026-11-15）
+
+以下结果来自真实 `Antigravity IDE.exe`（v1.107.0 / Electron 39.2.3）冷启动与重复启动：
+
+- 五个安装资产哈希与仓库构建一致；原始备份在重复安装间保持不变；卸载按字节恢复 `main.js` 并保留备份。
+- 三个状态栏入口在 Tab Settings 右侧按序渲染；检查器验证各浮层适配、Token 三行、
+  同入口开关、外部点击关闭、Esc 关闭与焦点返回、缩小视口（640×520）适配，全部通过。
+- 浮层挂载点为 `.monaco-workbench`（z-index 2500）：聊天面板是跨进程 iframe，
+  其合成面无视 body 直挂元素的 z-index，挂进工作台层叠上下文才能盖住它（真机对照验证）。
+- 代理继承修复后模型加载恢复正常（错误横幅消失、可选模型出现），重复启动保持有效。
+- 当前聊天路由识别经应用自身 RPC 协议端到端验证；会话数据仍只来自 IDE 数据根。
+- 未验证：电脑重启后的场景、浮层超长内容滚动（当前无足够数据触发）、深浅主题切换。
+
+## 结构与验收
 
 | 路径 | 职责 |
 |---|---|
-| `extension/package.json` | 扩展清单：活动栏视图容器 + WebviewView + `antigravity-ide-stats.refresh` / `antigravity-ide-stats.open` 命令、侧边栏标题刷新按钮、`Alt+T` 快捷键 |
-| `extension/src/extension.ts` | 扩展宿主：require 仓库根 `scripts/aggregate-stats.cjs`（显式 `dataDir=~/.gemini/antigravity-ide`），`fs.watch` conversations/ 与 brain/，防抖节奏沿用 `hosts/antigravity/scripts/loader.cjs`（400ms 最小防抖、2s 全量扫描间隔、在途合并），经 `webview.postMessage` 推送统计、主题与实时配额 |
-| `extension/src/status-bar.ts` | 状态栏项（桌面 chat context pill 的等价物）：`$(beaker) <tokens> (<pct>%)`，当前会话按 running → 最新 turn → watcher 最新 .db 兜底选取；>55% 警告 / >85% 错误背景；点击（`Alt+T`）打开 Token Stats 侧边栏；tooltip 对齐桌面 popover 信息集 |
-| `extension/src/quota-service.ts` | 实时配额服务（纯 Node，可独立探测）：读 IDE `state.vscdb` 的 OAuth token（protobuf 解码）→ 过期前 120s 单飞刷新 → 携桌面 UA 头直调 `retrieveUserQuotaSummary` → 复用共享 `parseQuotaSummaryResponse`；60s 节流，403/无登录优雅返回 null |
-| `extension/out/` | 编译产物（esbuild 打包，见 `scripts/build-extension-ide.cjs`；类型检查由根 tsconfig 承担） |
-| `extension/media/` | 构建产物 `antigravity-stats-ide-bundle.js`（勿手改）+ 活动栏图标 |
-| `src/ide-contract.ts` | IDE 特有的 extension↔webview 消息契约（不进共享契约；视图/命令 id 同时存在于清单 JSON，属 VSCode 限制） |
-| `src/webview/standalone.tsx` | Webview 入口：收到消息后设置 `window.__ANTIGRAVITY_STATS__` / `window.__ANTIGRAVITY_LIVE_QUOTA__`，分别派发共享契约的统计更新与配额更新事件，驱动 `StatsView` / 配额视图渲染 |
-| `scripts/probe-quota.cjs` | 配额探测/回归工具：esbuild 打包 quota-service 后调用 `fetchLiveQuota(true)`，stdout 输出 weeklyGemini + capturedAt（退出码 0=拿到数据） |
+| `src/webview/standalone.tsx`、`widgets.css` | 三个状态栏组件、互斥浮层、键盘交互和主题 |
+| `src/host-state.ts` | 原生宿主与界面的状态类型 |
+| `src/quota-service.ts` | IDE 登录态解析与服务端额度读取 |
+| `scripts/loader.cjs` | 原生工作台注入、可见聊天识别、IDE 聚合与受限 IPC |
+| `scripts/patch-ide.cjs` | 目标校验、安装与精确回滚 |
+| `tests/` | 无真实账户数据的 loader、UI 与安装夹具测试 |
+| `dist/` | 可重建的 UI 与原生宿主产物，不手工编辑 |
 
-主题：扩展宿主读 `window.activeColorTheme.kind`（高对比度归并为 dark/light）下发；webview 在
-`documentElement` 设置 `data-vscode-theme-kind` 并同步 `dark`/`light` class，`detectAntigravityTheme`
-据此自动切换。
-
-## 实时配额通道
-
-桌面端从渲染进程 React Fiber 上的 `cloudCodeService` 取实时配额，IDE webview 拿不到。IDE 扩展宿主
-改走云端直连：用 IDE 自己的登录 token（`AppData/Roaming/Antigravity IDE/User/globalStorage/
-state.vscdb` → `antigravityUnifiedStateSync.oauthToken`，base64 protobuf，IDE 运行中可并发只读），
-过期前 120 秒单飞刷新，然后以 Antigravity 桌面端相同的 UA 头（缺失会 403 SUBSCRIPTION_REQUIRED）
-POST `retrieveUserQuotaSummary`。60 秒内存节流（失败同样计入，避免请求风暴）；无登录或 403/错误时
-返回 null，webview 侧优雅隐藏实时配额卡片。token 值绝不写入日志。探测/回归：
-
-```
-node hosts/antigravity-ide/scripts/probe-quota.cjs
-```
-
-## 命令
-
-- `npm run build:bundle:ide` — 以 `HOST_TARGET=antigravity-ide` 构建共享 UI 到 `extension/media/`。
-- `npm run build:extension:ide` — 编译扩展宿主到 `extension/out/`。
-- `npm run dev:ide` — 依次执行上述两步，并以 `--extensionDevelopmentPath` 启动开发宿主。
-  IDE 安装路径因机器而异，须先设置环境变量 `ANTIGRAVITY_IDE_CMD` 指向启动器，例如
-  `set ANTIGRAVITY_IDE_CMD=D:/Programs/Antigravity IDE/bin/antigravity-ide.cmd`。首次运行需在
-  IDE 中 F5 或直接打开侧边栏 Token Stats 视图；数据落在 `~/.gemini/antigravity-ide/`。
-  设置 `ANTIGRAVITY_IDE_CDP_PORT`（如 9222）会给 IDE 追加 `--remote-debugging-port=<port>`，
-  便于 CDP 验收脚本连接；不设置时启动行为不变。
-- `Alt+T`（或点击状态栏 `$(beaker)` 项）打开 Token Stats 侧边栏，对齐桌面端快捷键。
-
-第一版本地加载（Extension Development Host），不做 VSIX 打包；不做宿主界面汉化与 workbench
-文件补丁。
-
-## 约定
-
-- IDE 专属代码只放本目录，不进入 `src/` 共享层；host 依赖 shared，不允许 shared import host。
-- 注入器与共享 UI 之间的接口事实一律引用 `src/injection-contract.cjs` 常量，不重复字符串字面量。
-- 验收标准与桌面端一致：`npm run build`、`npm test` 通过，且在真实 IDE 中 Stats 视图实际渲染
-  （冷启动 + 二次启动 + 侧边栏入口）。
+IDE 专属代码留在本目录，共享层不反向依赖宿主。跨注入边界的常量统一引用 `src/injection-contract.cjs`。
+构建和夹具通过之后，仍需在真实 IDE 验证冷启动、重复启动、三个浮层、当前聊天切换和原生账户登录；构建成功不等于完成集成验收。

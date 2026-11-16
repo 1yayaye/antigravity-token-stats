@@ -311,6 +311,10 @@ namespace AntiTokenSetup.Services
             bool hasAsar = File.Exists(asarPath);
             bool isPatched = hasAsar && AsarPatcher.ContainsMarker(asarPath, contract.MarkerMainHook);
             bool hasBackup = File.Exists(backupPath);
+            // The zh-pack is optional, so its presence needs the exact asar entry, not a
+            // byte scan: unconditionally injected assets also contain the file name.
+            bool zhPackInstalled = hasAsar && AsarPatcher.ContainsFileEntry(
+                asarPath, $"dist/antigravity-stats/{contract.ZhPackFileName}");
             bool running = isRunningOverride ?? IsAntigravityRunning();
             bool isAdmin = isAdminOverride ?? IsAdministrator();
 
@@ -358,6 +362,7 @@ namespace AntiTokenSetup.Services
                 IsRunning = running,
                 NeedsElevation = needsElevation,
                 ProxyInstalled = dllExists && configExists,
+                ZhPackInstalled = zhPackInstalled,
                 ExistingProxyType = existingType,
                 ExistingProxyHost = existingHost,
                 ExistingProxyPort = existingPort

@@ -2,14 +2,30 @@
 
 All notable changes to Antigravity Token Stats will be documented in this file.
 
-## [1.8.1] - 2026-11-15
+## [1.8.1] - 2026-11-16
+
+### Added
+- **Installer Optional Components: Chinese Translation Pack & Status Bar Widget (`hosts/antigravity/installer/`, `src/i18n/`, `hosts/antigravity/src/i18n/zh-pack.ts`)**:
+  - Two new installer checkboxes, **中文翻译包** and **状态栏小部件**, both **unchecked by default** in the installer GUI (same opt-in pattern as the transparent proxy); CLI routes (`npm run patch` and `AntiTokenSetup.exe --patch-dir`) keep everything **on by default** with `--no-zh-pack` / `--no-status-bar` opt-outs, preserving the GUI/CLI asymmetry established in v1.7.0.
+  - The Chinese translation pack is built as an independent injection bundle (`dist-bundle/antigravity-stats-zh-pack.js`, contract `ZH_PACK_FILE` / `WINDOW_ZH_PACK`): the host UI dictionary and stats-panel zh strings are excluded from the main bundle. When absent, `LanguageContext` (`hasZhStatsSupport()`), `AntigravityUITranslator`, and `DshStatusBar` clamp the active UI language to pure English (even under `zh-CN`) and hide the language toggle.
+  - `loader.cjs` executes the zh-pack before the main bundle when present and relays `contract.json` `features` through `window.__ANTIGRAVITY_STATS_FEATURES__`; `standalone.tsx` gates status-bar mounting on it (missing global = all features on).
+  - `contract.json` generation (JS patcher, C# installer, `prepare-assets.cjs`) derives from `contract.FEATURES`; `AsarPatcher.cs` preserves existing `features` entries when toggling `statusBar`.
+- **512K Model Context Limits & Extended Session Metrics (`aggregate-stats.cjs`, `dsh-format.ts`, `hosts/antigravity/src/quota.ts`, `standalone.tsx`)**:
+  - Added `resolveContextLimit` and `resolveModelContextLimit` with 512K baseline support for Gemini 4 Argon / Carbon / Hydrogen / Orchestrator / Worker models, live `modelContextLimits` extraction from `userStatus.cascadeModelConfigData.clientModelConfigs`, longest-prefix boundary matching, composer model pill detection before the first turn, and dynamic threshold labels in `ContextUsagePopover`.
+  - Exposed `samplesCount` and `lastRequestTps` in `SessionSummary` and `extractSessionPerformanceMetrics`.
+- **Antigravity IDE Native Workbench Integration (`hosts/antigravity-ide/`)**:
+  - Replaced the VS Code sidebar extension (`hosts/antigravity-ide/extension/`, `ide-contract.ts`, `build:extension:ide`) with native workbench injection (`patch-ide.cjs`, `loader.cjs`, `build:host:ide`, `dev-ide.cjs`) rendering three bottom status-bar pills (`session`, `tokens`, `context`) with upward popovers (368px, `.monaco-workbench` portal, `Esc`/outside/blur dismissal), out-of-process `#jetski-frame` chat route tracking (including iframe remount rebinding), and Chromium `resolveProxy` system proxy inheritance for the Go backend.
 
 ### Improved & Fixed
-- **IDE Host Adaptation of v1.8.0 Quota UI (`hosts/antigravity-ide/`)**:
-  - Verified the IDE webview bundle, `extension/out/aggregate-stats.cjs` (`PERSIST_CACHE_VERSION = 11`), `EXT_TO_WEBVIEW.QUOTA` channel, and `quota-service.ts` tier detection are in sync with the v1.8.0 shared sources; rebuilt both checked-in artifacts.
-  - **Bilingual Status Bar (`hosts/antigravity-ide/extension/src/status-bar.ts`)**: tooltip copy now follows the IDE display language (`vscode.env.language`, zh/en) like the desktop pill's `lang` prop, instead of hardcoded Chinese; severity thresholds (>55% warning, >85% error) unchanged.
-  - **Dictionary-Driven Quota Titles (`QuotaHeroCard.tsx`, `translations.ts`)**: replaced the four `lang === 'zh' ? … : t(…)` hardcoded fallbacks (weekly title, region aria-label, monthly ring label/title) with pure dictionary lookups (`weeklyQuota` zh copy updated to 本周配额已用, new `monthlyCapacityTitle` / `quotaRingsRegionLabel` keys); added an en-US rendering regression in `scripts/test-quota-hero-morph1.cjs` and updated the desktop acceptance probe's weekly-title match.
-  - **Status Bar Regression Coverage (`scripts/test-audit-fixes.cjs`)**: new section asserts the IDE status bar tooltip follows `vscode.env.language` and keeps its severity thresholds.
+- **Strict Quota Parsing & Dictionary-Driven Titles (`pricing-service.ts`, `QuotaHeroCard.tsx`, `translations.ts`)**:
+  - `parseRawBucket` and `parseQuotaSummaryResponse` now reject missing, non-finite, out-of-range, wrong-type, or non-`remainingFraction` oneof quota readings instead of fabricating 100%, guard invalid `resetTime` values, and keep valid duplicate pool readings intact.
+  - Replaced the remaining hardcoded `lang === 'zh'` quota card fallbacks in `QuotaHeroCard.tsx` with pure dictionary keys (`weeklyQuota`, `monthlyCapacityTitle`, `quotaRingsRegionLabel`).
+- **CI & Regression Coverage (`.github/workflows/ci.yml`, `scripts/test-*.cjs`, `hosts/antigravity-ide/tests/`)**:
+  - Updated CI to run `npm run build:host:ide`, added `scripts/test-optional-components.cjs` (including no-zh-pack `zh-CN` pure-English render checks), updated `test-i18n-engine.cjs` / `test-dsh-components.cjs` / `test-context-widget.cjs` / `test-subscription-pricing.cjs` / `test-integration.cjs`, and added IDE test suites (`npm run test:ide`).
+
+### Release Notes (补充说明)
+- **Scope**: Release asset `antigravity-token-stats-v1.8.1-setup.exe` targets **Antigravity Desktop only** (does not package or patch Antigravity IDE; IDE users continue using `npm run build:bundle:ide && npm run build:host:ide && npm run patch:ide`).
+- **GUI Installer Defaults**: In `AntiTokenSetup.exe` GUI, **透明代理 (Proxy)**, **中文翻译包 (Zh-pack)**, and **状态栏小部件 (Status Bar)** are all **unchecked by default** — check the ones you want before clicking **Install / Update Patch**. CLI installs (`npm run patch` / `AntiTokenSetup.exe --patch-dir`) keep all optional components enabled by default unless `--no-proxy`, `--no-zh-pack`, or `--no-status-bar` is passed.
 
 ## [1.8.0] - 2026-11-14
 

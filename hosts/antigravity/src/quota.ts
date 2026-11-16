@@ -6,15 +6,36 @@ let lastQuotaFetchTime = 0;
 let quotaFetchInFlight: Promise<LiveQuotaSummary | null> | null = null;
 const QUOTA_CACHE_TTL_MS = 30_000;
 
+function extractModelContextLimits(userStatus: any): Record<string, number> | undefined {
+  const configs = userStatus?.cascadeModelConfigData?.clientModelConfigs;
+  if (!Array.isArray(configs)) return undefined;
+  const limits: Record<string, number> = {};
+  for (const cfg of configs) {
+    const modelId = typeof cfg?.modelId === 'string' ? cfg.modelId : '';
+    if (!modelId) continue;
+    const opts = Array.isArray(cfg.contextWindowOptions) ? cfg.contextWindowOptions : [];
+    const candidates = [
+      cfg.contextWindow,
+      cfg.maxTokens,
+      ...opts.map((o: any) => (typeof o === 'number' ? o : o?.maxTokens ?? o?.contextWindow ?? o?.tokens ?? o?.limit)),
+    ].filter((n): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 1000);
+    if (candidates.length > 0) {
+      limits[modelId] = Math.max(...candidates);
+    }
+  }
+  return Object.keys(limits).length > 0 ? limits : undefined;
+}
+
 async function detectDesktopAccountTier(
   authService: any,
   cloudCodeService: any,
   force: boolean
-): Promise<DetectedAccountTier | null> {
+): Promise<{ tier: DetectedAccountTier | null; modelContextLimits?: Record<string, number> }> {
   let tierId: string | undefined;
   let tierName: string | undefined;
   let teamsTier: number | string | undefined;
   let accountIdentity: string | undefined;
+  let modelContextLimits: Record<string, number> | undefined;
 
   try {
     if (typeof authService?._lsClient?.getUserStatus === 'function') {
@@ -25,6 +46,7 @@ async function detectDesktopAccountTier(
         tierName = us.userTier?.name || us.userTier?.description || us.planStatus?.planInfo?.planName || tierName;
         teamsTier = us.planStatus?.planInfo?.teamsTier ?? teamsTier;
         accountIdentity = typeof us.email === 'string' ? us.email : accountIdentity;
+        modelContextLimits = extractModelContextLimits(us);
       }
     }
   } catch {}
@@ -52,7 +74,10 @@ async function detectDesktopAccountTier(
     } catch {}
   }
 
-  return resolveSubscriptionTierFromSignals({ tierId, tierName, teamsTier, accountIdentity });
+  return {
+    tier: resolveSubscriptionTierFromSignals({ tierId, tierName, teamsTier, accountIdentity }),
+    modelContextLimits,
+  };
 }
 
 /**
@@ -119,7 +144,12 @@ export async function fetchLiveQuota(force = false): Promise<LiveQuotaSummary | 
         const summary = parseQuotaSummaryResponse(quotaSettled.value?.response ?? quotaSettled.value);
         if (summary) {
           if (tierSettled.status === 'fulfilled' && tierSettled.value) {
-            summary.detectedAccountTier = tierSettled.value;
+            if (tierSettled.value.tier) {
+              summary.detectedAccountTier = tierSettled.value.tier;
+            }
+            if (tierSettled.value.modelContextLimits) {
+              summary.modelContextLimits = tierSettled.value.modelContextLimits;
+            }
           }
           quotaStore[WINDOW_LIVE_QUOTA] = summary;
           window.dispatchEvent(new CustomEvent(EVENT_QUOTA_UPDATED, { detail: summary }));

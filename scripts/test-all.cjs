@@ -11,6 +11,7 @@ require('./test-token-breakdown.cjs');
 require('./test-heatmap.cjs');
 require('./test-theme.cjs');
 require('./test-i18n-engine.cjs');
+require('./test-optional-components.cjs');
 require('./test-data-dir.cjs');
 require('./test-session-rows.cjs');
 

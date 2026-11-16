@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
-const { computeStats, readSingleSession } = require('./aggregate-stats.cjs');
+const { computeStats, readSingleSession, resolveContextLimit } = require('./aggregate-stats.cjs');
 
 console.log('--- Testing Context Usage Feature & Session Metadata ---');
 
@@ -22,7 +22,7 @@ if (sessionIds.length > 0) {
   assert.ok('latestInput' in sample, 'Session should have latestInput');
   assert.ok('latestCacheRead' in sample, 'Session should have latestCacheRead');
   assert.ok('latestOutput' in sample, 'Session should have latestOutput');
-  assert.strictEqual(sample.compactionLimit, 256000, 'Compaction limit should be 256,000 (256k)');
+  assert.ok(sample.compactionLimit >= 256000, 'Compaction limit should be at least 256,000 (256k)');
   console.log('PASS: Sample session context structure verified:', {
     promptTokens: sample.promptTokens,
     latestInput: sample.latestInput,
@@ -42,7 +42,7 @@ if (sessionIds.length > 0) {
   assert.ok(directSession, 'Direct single session read should succeed');
   assert.strictEqual(directSession.sessionId, sessionIds[0]);
   assert.strictEqual(directSession.promptTokens, sample.promptTokens, 'Prompt tokens should match');
-  assert.strictEqual(directSession.compactionLimit, 256000);
+  assert.strictEqual(directSession.compactionLimit, sample.compactionLimit);
   // Includes the summaries-DB run-state lookup; still far below one full rescan.
   assert.ok(duration < 60, `Fast-path read should be < 60ms, got ${duration.toFixed(2)}ms`);
   console.log(`PASS: readSingleSession executed in ${duration.toFixed(2)}ms with matching ground truth`);
@@ -171,5 +171,28 @@ try {
   if (previousCacheFlag === undefined) delete process.env.ANTIGRAVITY_DISABLE_PERSIST_CACHE;
   else process.env.ANTIGRAVITY_DISABLE_PERSIST_CACHE = previousCacheFlag;
 }
+
+// --- Adaptive context limit & compaction sniffer ---
+assert.strictEqual(resolveContextLimit({ modelName: 'gemini-4-hydrogen', promptTokens: 266816 }).limitTokens, 512000);
+assert.strictEqual(resolveContextLimit({ modelName: 'gemini-4-argon-high', promptTokens: 100000 }).limitTokens, 512000);
+assert.strictEqual(resolveContextLimit({ modelName: 'gemini-pro-orchestrator-g1-pro', promptTokens: 100000 }).limitTokens, 512000);
+assert.strictEqual(resolveContextLimit({ modelName: 'orchestrator-carbon', promptTokens: 100000 }).limitTokens, 512000);
+assert.strictEqual(resolveContextLimit({ modelName: 'Orchestrator (Carbon)', promptTokens: 100000 }).limitTokens, 512000);
+assert.strictEqual(resolveContextLimit({ modelName: 'gemini-4-high', promptTokens: 100000 }).limitTokens, 512000);
+assert.strictEqual(resolveContextLimit({ modelName: 'orchestrator-worker', promptTokens: 100000 }).limitTokens, 512000);
+assert.strictEqual(resolveContextLimit({ modelName: 'gemini-4-carbon', promptTokens: 100000 }).limitTokens, 512000);
+assert.strictEqual(resolveContextLimit({ modelName: 'claude-sonnet-5.5', promptTokens: 100000 }).limitTokens, 256000);
+assert.strictEqual(resolveContextLimit({ modelName: 'gemini-4-hydrogen', promptTokens: 540000 }).limitTokens, 1000000);
+const sniffed = resolveContextLimit({
+  modelName: 'gemini-4-hydrogen',
+  usages: [
+    { inputTokens: 10000, cacheReadTokens: 300000 },
+    { inputTokens: 10000, cacheReadTokens: 100000 },
+  ],
+  promptTokens: 110000,
+});
+assert.strictEqual(sniffed.limitTokens, 512000);
+assert.strictEqual(sniffed.observedCompactionTokens, 310000);
+console.log('PASS: resolveContextLimit handles doubled models, tier step-up, and compaction sniffing');
 
 console.log('ALL Context Usage tests passed successfully!\n');

@@ -104,10 +104,11 @@ function attachPinnedSessions(stats) {
   }
 }
 
-// Bundle injection re-runs on every window load and navigation; the ~300KB source is
-// cached keyed by file identity so repeats serve from memory while a rebuilt bundle
+// Bundle injection re-runs on every window load and navigation; sources are cached
+// keyed by file identity so repeats serve from memory while a rebuilt bundle
 // (dev-bundle.path redirect) still invalidates through its mtime/size change.
-let bundleCodeCache = null; // { path, mtimeMs, size, code }
+let bundleCodeCache = { path: null, mtimeMs: 0, size: 0, code: null };
+let zhPackCodeCache = { path: null, mtimeMs: 0, size: 0, code: null };
 
 function resolveBundleCandidatePaths() {
   const candidates = [];
@@ -122,21 +123,44 @@ function resolveBundleCandidatePaths() {
   return candidates;
 }
 
-function getBundleCode() {
-  for (const bundlePath of resolveBundleCandidatePaths()) {
+// The zh-pack rides in the same directory as whichever main bundle resolves (dev
+// redirect target or the patched asar layout), falling back to this script's dir.
+function resolveZhPackCandidatePaths() {
+  const candidates = [];
+  for (const mainPath of resolveBundleCandidatePaths()) {
     try {
-      const stat = fs.statSync(bundlePath);
-      const cached = bundleCodeCache;
-      if (cached && cached.path === bundlePath && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
-        return cached.code;
+      if (fs.statSync(mainPath).isFile()) {
+        candidates.push(path.join(path.dirname(mainPath), contract.ZH_PACK_FILE));
+        break;
       }
-      const code = fs.readFileSync(bundlePath, 'utf8');
+    } catch (e) {}
+  }
+  candidates.push(path.join(__dirname, contract.ZH_PACK_FILE));
+  return candidates;
+}
+
+function readInjectableCode(candidates, cache) {
+  for (const filePath of candidates) {
+    try {
+      const stat = fs.statSync(filePath);
+      if (cache.path === filePath && cache.mtimeMs === stat.mtimeMs && cache.size === stat.size) {
+        return cache.code;
+      }
+      const code = fs.readFileSync(filePath, 'utf8');
       if (!code || code.length <= 50) continue;
-      bundleCodeCache = { path: bundlePath, mtimeMs: stat.mtimeMs, size: stat.size, code };
+      Object.assign(cache, { path: filePath, mtimeMs: stat.mtimeMs, size: stat.size, code });
       return code;
     } catch (e) {}
   }
   return null;
+}
+
+function getBundleCode() {
+  return readInjectableCode(resolveBundleCandidatePaths(), bundleCodeCache);
+}
+
+function getZhPackCode() {
+  return readInjectableCode(resolveZhPackCandidatePaths(), zhPackCodeCache);
 }
 
 function resolveWebContents(target) {
@@ -189,6 +213,9 @@ async function injectStatsIntoWindow(target) {
   try {
     const bundleCode = getBundleCode();
     if (!bundleCode) return;
+    // Optional Chinese pack must run before the bundle so its globals are in place
+    // when the UI's i18n fallback chain first reads them. Missing file = English UI.
+    const zhPackCode = getZhPackCode();
 
     if (!lastStats && computeStats) {
       try {
@@ -198,6 +225,11 @@ async function injectStatsIntoWindow(target) {
       }
     }
 
+    let injectedFeatures = {};
+    try {
+      injectedFeatures = require('./contract.json').features || {};
+    } catch (e) {}
+
     const statsPayload = (lastStats && lastStats.kpis) ? JSON.stringify(lastStats) : 'null';
     const setupScript = `
       (() => {
@@ -205,6 +237,7 @@ async function injectStatsIntoWindow(target) {
         if (stats) {
           window.${contract.WINDOW_STATS} = stats;
         }
+        window.${contract.WINDOW_STATS_FEATURES} = ${JSON.stringify(injectedFeatures)};
         window.${contract.WINDOW_REQUEST_SYNC} = (sessionId) => {
           if (window.${contract.WINDOW_SYNC_BRIDGE} && typeof window.${contract.WINDOW_SYNC_BRIDGE}.requestSync === 'function') {
             window.${contract.WINDOW_SYNC_BRIDGE}.requestSync(sessionId).catch(() => {});
@@ -215,6 +248,9 @@ async function injectStatsIntoWindow(target) {
       })()
     `;
     await wc.executeJavaScript(setupScript);
+    if (zhPackCode) {
+      await wc.executeJavaScript(zhPackCode);
+    }
     await wc.executeJavaScript(bundleCode);
 
     const postScript = `
@@ -482,6 +518,8 @@ module.exports = {
   broadcastSessionUpdate,
   pushSessionUpdate,
   getBundleCode,
+  getZhPackCode,
+  resolveZhPackCandidatePaths,
   setupWatchers,
   flush,
   getDevBundlePathFile,

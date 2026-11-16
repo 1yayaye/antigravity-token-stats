@@ -27,6 +27,20 @@ namespace AntiTokenSetup.Services
             "antigravity-stats-bundle.js"
         };
 
+        // The optional Chinese translation pack is injected only when the user opts in;
+        // verification follows the same condition.
+        private static IEnumerable<string> GetInjectedAssetNames(ContractData contract, bool includeZhPack)
+        {
+            foreach (string name in InjectedAssetNames)
+            {
+                yield return name;
+            }
+            if (includeZhPack)
+            {
+                yield return contract.ZhPackFileName;
+            }
+        }
+
         private sealed class WriteSpan
         {
             public long SourceOffset;
@@ -89,12 +103,49 @@ namespace AntiTokenSetup.Services
             return -1;
         }
 
+        // Exact asar entry existence via the header's file tree. Byte-scanning the whole
+        // archive (ContainsMarker) cannot answer this: unconditionally injected assets
+        // (contract.json, injection-contract.cjs) also contain optional file names.
+        public static bool ContainsFileEntry(string asarPath, string relativePath)
+        {
+            if (!File.Exists(asarPath)) return false;
+            try
+            {
+                using (var fs = new FileStream(asarPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    var (root, _) = ReadArchiveHeader(fs);
+                    var files = JsonHelper.GetObject(root, "files");
+                    if (files == null) return false;
+
+                    string[] segments = relativePath.Replace('\\', '/').Split('/');
+                    for (int i = 0; i < segments.Length; i++)
+                    {
+                        var node = JsonHelper.GetObject(files, segments[i]);
+                        if (node == null) return false;
+                        if (i == segments.Length - 1)
+                        {
+                            return !node.ContainsKey("files") && !node.ContainsKey("link");
+                        }
+                        files = JsonHelper.GetObject(node, "files");
+                        if (files == null) return false;
+                    }
+                    return false;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public static PatchResult Patch(
             string resourcesDir,
             ContractData contract,
             long minAsarSize = 3L * 1024 * 1024,
             bool skipDevRedirect = false,
             string devBundleOverride = null,
+            bool includeZhPack = true,
+            bool statusBarEnabled = true,
             Action<string> log = null)
         {
             resourcesDir = EnvironmentDetector.NormalizeDirectoryPath(resourcesDir);
@@ -165,10 +216,13 @@ namespace AntiTokenSetup.Services
 
                     // Prepare injected files map for dist/antigravity-stats/
                     var injectedMap = new Dictionary<string, byte[]>(StringComparer.Ordinal);
-                    foreach (string assetName in InjectedAssetNames)
+                    foreach (string assetName in GetInjectedAssetNames(contract, includeZhPack))
                     {
                         injectedMap[assetName] = EmbeddedAssets.ReadBytes(assetName);
                     }
+                    // The injected contract.json must reflect this install's feature
+                    // selection so the loader relays it to the UI.
+                    injectedMap["contract.json"] = Utf8NoBom.GetBytes(SerializeContractWithFeatures(statusBarEnabled));
 
                     // Update dist/main.js and dist/preload.js entries in place, and populate dist/antigravity-stats/
                     var replacedInDist = new Dictionary<string, byte[]>(StringComparer.Ordinal)
@@ -187,12 +241,18 @@ namespace AntiTokenSetup.Services
                         statsFiles = new Dictionary<string, object>(StringComparer.Ordinal);
                         statsDirNode["files"] = statsFiles;
                     }
-                    foreach (string assetName in InjectedAssetNames)
+                    foreach (string assetName in GetInjectedAssetNames(contract, includeZhPack))
                     {
                         if (!statsFiles.ContainsKey(assetName))
                         {
                             statsFiles[assetName] = new Dictionary<string, object>(StringComparer.Ordinal);
                         }
+                    }
+                    // A previous install may have injected the zh-pack; opting out must
+                    // remove it rather than leave a stale pack behind.
+                    if (!includeZhPack)
+                    {
+                        statsFiles.Remove(contract.ZhPackFileName);
                     }
 
                     var spans = new List<WriteSpan>();
@@ -323,7 +383,7 @@ namespace AntiTokenSetup.Services
                     throw new InvalidDataException($"Generated app.asar size ({tmpInfo.Length} bytes) is below minimum threshold ({minAsarSize} bytes).");
                 }
 
-                VerifyAsar(tempAsarPath, contract, requirePatched: true, verifyAllHashes: false);
+                VerifyAsar(tempAsarPath, contract, requirePatched: true, verifyAllHashes: false, requireZhPack: includeZhPack);
 
                 if (!alreadyModified)
                 {
@@ -456,7 +516,7 @@ namespace AntiTokenSetup.Services
             };
         }
 
-        public static void VerifyAsar(string asarPath, ContractData contract, bool requirePatched, bool verifyAllHashes)
+        public static void VerifyAsar(string asarPath, ContractData contract, bool requirePatched, bool verifyAllHashes, bool requireZhPack = true)
         {
             if (!File.Exists(asarPath))
             {
@@ -540,7 +600,7 @@ namespace AntiTokenSetup.Services
                         throw new InvalidDataException($"Patched dist/preload.js missing {contract.MarkerPreloadBridge}.");
                     }
 
-                    foreach (string assetName in InjectedAssetNames)
+                    foreach (string assetName in GetInjectedAssetNames(contract, requireZhPack))
                     {
                         string expectedPath = $"dist/antigravity-stats/{assetName}";
                         if (!seenFiles.Contains(expectedPath))
@@ -768,6 +828,18 @@ namespace AntiTokenSetup.Services
                 ["blockSize"] = IntegrityBlockSize,
                 ["blocks"] = blocks
             };
+        }
+
+        // Reads the embedded contract.json, writes the install's feature selection into
+        // its features block, and re-serializes it so the injected payload always
+        // matches what the loader relays to the UI.
+        private static string SerializeContractWithFeatures(bool statusBarEnabled)
+        {
+            var dict = JsonHelper.DeserializeObject(Utf8NoBom.GetString(EmbeddedAssets.ReadBytes("contract.json")));
+            var features = JsonHelper.GetObject(dict, "features") ?? new Dictionary<string, object>(StringComparer.Ordinal);
+            features["statusBar"] = statusBarEnabled;
+            dict["features"] = features;
+            return JsonHelper.SerializePretty(dict);
         }
 
         private static string InjectMainHook(string mainContent, ContractData contract)

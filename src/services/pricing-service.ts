@@ -229,32 +229,29 @@ export function formatResetCountdown(resetTimeIso: string | null | undefined, la
 
 function parseRawBucket(b: any): CapturedQuotaBucket | undefined {
   if (!b) return undefined;
-  // Remaining fraction sources, in order: the current proto oneof wrapper
-  // `remaining: { case: 'remainingFraction', value }` (Antigravity client update),
-  // the legacy flat `remainingFraction` number, and the older `remainingAmount`
-  // string. Missing all three means "no usage recorded", i.e. fully remaining.
-  let fraction = 1;
-  if (b.remaining && typeof b.remaining.value === 'number' && Number.isFinite(b.remaining.value)) {
+  // A present protobuf oneof is authoritative; do not reinterpret other cases as fractions.
+  let fraction: unknown;
+  if (b.remaining !== undefined) {
+    if (b.remaining?.case !== 'remainingFraction') return undefined;
     fraction = b.remaining.value;
-  } else if (typeof b.remainingFraction === 'number' && Number.isFinite(b.remainingFraction)) {
+  } else if (b.remainingFraction !== undefined) {
     fraction = b.remainingFraction;
-  } else if (typeof b.remainingAmount === 'string' && b.remainingAmount.trim() !== '' && Number.isFinite(Number(b.remainingAmount))) {
+  } else if (typeof b.remainingAmount === 'string' && b.remainingAmount.trim() !== '') {
     fraction = Number(b.remainingAmount);
   }
-  const remainingFraction = Math.max(0, Math.min(1, fraction));
-  let resetTimeIso: string | null = null;
-  if (b.resetTime) {
-    if (typeof b.resetTime === 'string') {
-      resetTimeIso = b.resetTime;
-    } else if (b.resetTime.seconds) {
-      resetTimeIso = new Date(Number(b.resetTime.seconds) * 1000).toISOString();
-    }
-  }
+  if (typeof fraction !== 'number' || !Number.isFinite(fraction) || fraction < 0 || fraction > 1) return undefined;
+  const seconds = b.resetTime?.seconds;
+  const resetMs = typeof b.resetTime === 'string' ? Date.parse(b.resetTime)
+    : typeof seconds === 'number' || typeof seconds === 'bigint' || (typeof seconds === 'string' && seconds.trim() !== '')
+      ? Number(seconds) * 1000 : NaN;
+  const resetDate = new Date(resetMs);
+  const resetTimeIso = Number.isFinite(resetDate.getTime())
+    ? typeof b.resetTime === 'string' ? b.resetTime : resetDate.toISOString() : null;
   return {
     displayName: b.displayName || b.bucketId || 'Weekly Limit',
     bucketId: b.bucketId || 'weekly',
-    remainingFraction,
-    usedFraction: Number((1 - remainingFraction).toFixed(4)),
+    remainingFraction: fraction,
+    usedFraction: Number((1 - fraction).toFixed(4)),
     resetTime: resetTimeIso,
   };
 }
@@ -292,9 +289,11 @@ export function parseQuotaSummaryResponse(resp: any): LiveQuotaSummary | null {
       const dName = String(bucket.displayName || '').toLowerCase();
       const isWeekly = win === 'weekly' || bId.includes('weekly') || dName.includes('weekly');
       if (!isWeekly) continue;
+      const parsed = parseRawBucket(bucket);
+      if (!parsed) continue;
 
       if (bId.includes('argon') || dName.includes('argon') || groupName.includes('argon')) {
-        weeklyArgon = parseRawBucket(bucket);
+        weeklyArgon = parsed;
       } else if (
         bId.includes('3p') ||
         bId.includes('claude') ||
@@ -304,9 +303,9 @@ export function parseQuotaSummaryResponse(resp: any): LiveQuotaSummary | null {
         groupName.includes('claude') ||
         groupName.includes('gpt')
       ) {
-        weeklyClaude = parseRawBucket(bucket);
+        weeklyClaude = parsed;
       } else if (bId.includes('gemini') || groupName.includes('gemini') || !weeklyGemini) {
-        weeklyGemini = parseRawBucket(bucket);
+        weeklyGemini = parsed;
       }
     }
   }

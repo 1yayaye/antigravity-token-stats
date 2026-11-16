@@ -11,10 +11,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:bundle": "vite build --config vite.bundle.config.ts",
+    "build:bundle": "node scripts/build-bundle.cjs",
     "build:bundle:ide": "node scripts/build-bundle-ide.cjs",
-    "build:extension:ide": "node scripts/build-extension-ide.cjs",
-    "dev:ide": "npm run build:bundle:ide && npm run build:extension:ide && node scripts/dev-ide.cjs",
+    "build:host:ide": "node scripts/build-host-ide.cjs",
+    "patch:ide": "node hosts/antigravity-ide/scripts/patch-ide.cjs",
+    "unpatch:ide": "node hosts/antigravity-ide/scripts/patch-ide.cjs --uninstall",
+    "dev:ide": "npm run build:bundle:ide && npm run build:host:ide && node scripts/dev-ide.cjs",
     "inspect:ide": "node hosts/antigravity-ide/scripts/inspect-ide.cjs",
     "preview": "vite preview",
     "aggregate": "node scripts/aggregate-stats.cjs",
@@ -31,7 +33,8 @@
     "proxy:diagnose": "node scripts/proxy-manager.cjs diagnose",
     "mock:data": "node scripts/generate-mock-data.cjs",
     "test:integration": "node scripts/test-integration.cjs",
-    "test": "node scripts/test-all.cjs && node scripts/test-persistent-cache.cjs && node scripts/test-subscription-pricing.cjs && node scripts/test-context-widget.cjs && node scripts/test-proxy-manager.cjs && node scripts/test-dsh-metrics.cjs && node scripts/test-dsh-components.cjs && node scripts/test-update-checker.cjs && node scripts/test-live-quota.cjs && node scripts/test-audit-fixes.cjs && node scripts/test-quota-hero-morph1.cjs"
+    "test:ide": "node hosts/antigravity-ide/tests/test-loader.cjs && node hosts/antigravity-ide/tests/test-widgets.cjs && node hosts/antigravity-ide/tests/test-patch-ide.cjs",
+    "test": "node scripts/test-all.cjs && node scripts/test-persistent-cache.cjs && node scripts/test-subscription-pricing.cjs && node scripts/test-context-widget.cjs && node scripts/test-proxy-manager.cjs && node scripts/test-dsh-metrics.cjs && node scripts/test-dsh-components.cjs && node scripts/test-update-checker.cjs && node scripts/test-live-quota.cjs && node scripts/test-audit-fixes.cjs && node scripts/test-quota-hero-morph1.cjs && npm run test:ide"
   },
   "dependencies": {
     "react": "^19.0.0",

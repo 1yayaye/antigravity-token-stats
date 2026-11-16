@@ -248,6 +248,10 @@ console.log('\n--- Test 4: Tool Duration 180s Cap & Text-only TPS ---');
   assert.strictEqual(extractSessionPerformanceMetrics([longWait]).tps, 10, 'TPS is independent of the TTFT anomaly filter');
   const weighted = extractSessionPerformanceMetrics([reasoning, stepModel]);
   assert.strictEqual(weighted.tps, Math.round((744 + 1000) / (5 + 5.05)), 'Weight by matched text duration, not mean step rates');
+  assert.strictEqual(weighted.samplesCount, 2, 'samplesCount must count valid text streaming steps');
+  assert.strictEqual(weighted.lastRequestTps, 198, 'lastRequestTps must reflect the final valid streaming step');
+  assert.strictEqual(extractSessionPerformanceMetrics([stepZeroOutput]).samplesCount, 0);
+  assert.strictEqual(extractSessionPerformanceMetrics([stepZeroOutput]).lastRequestTps, null);
   console.log('PASS: Text-only TPS excludes thinking/tools and guards missing or invalid measurements');
 }
 

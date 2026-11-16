@@ -9,6 +9,11 @@ namespace AntiTokenSetup.Models
         public string MarkerPreloadBridge { get; set; } = "__ANTIGRAVITY_STATS_PRELOAD_BRIDGE__";
         public string WindowSyncBridge { get; set; } = "__ANTIGRAVITY_SYNC_BRIDGE__";
         public string IpcRequestSync { get; set; } = "antigravity:request-sync";
+        public string ZhPackFileName { get; set; } = "antigravity-stats-zh-pack.js";
+
+        // Feature flags relayed to the injected UI via contract.json; missing fields
+        // default to enabled.
+        public bool StatusBarEnabled { get; set; } = true;
     }
 
     public sealed class DesktopInstallInfo
@@ -28,6 +33,7 @@ namespace AntiTokenSetup.Models
         public bool NeedsElevation { get; set; }
 
         public bool ProxyInstalled { get; set; }
+        public bool ZhPackInstalled { get; set; }
         public string ExistingProxyType { get; set; }
         public string ExistingProxyHost { get; set; }
         public int ExistingProxyPort { get; set; }

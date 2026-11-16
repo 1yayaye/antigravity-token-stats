@@ -208,11 +208,49 @@ const amountFallback = parseQuotaSummaryResponse({
 });
 assert.equal(amountFallback.weeklyGemini.remainingFraction, 0.42, 'remainingAmount string is the fallback source');
 
-// A bucket with neither field means "no usage recorded" -> fully remaining.
+// Missing readings are unavailable, never an invented fully-remaining bucket.
 const missingFraction = parseQuotaSummaryResponse({
   groups: [{ buckets: [{ bucketId: 'gemini-weekly', displayName: 'Weekly Limit' }] }],
 });
-assert.equal(missingFraction.weeklyGemini.remainingFraction, 1, 'absent fraction defaults to fully remaining');
+assert.equal(missingFraction, null, 'absent fractions must remain unavailable');
+
+for (const invalid of [undefined, null, NaN, Infinity, -Infinity, -0.01, 1.01, '0.5']) {
+  for (const reading of [{ remainingFraction: invalid }, { remaining: { case: 'remainingFraction', value: invalid } }]) {
+    assert.equal(parseQuotaSummaryResponse({ groups: [{ buckets: [{ bucketId: 'gemini-weekly', ...reading }] }] }), null,
+      `Invalid fraction ${String(invalid)} must not be coerced or clamped`);
+  }
+}
+for (const invalid of ['', ' ', 'NaN', 'Infinity', '-0.01', '1.01']) {
+  assert.equal(parseQuotaSummaryResponse({ groups: [{ buckets: [{ bucketId: 'gemini-weekly', remainingAmount: invalid }] }] }), null);
+}
+for (const caseName of [undefined, 'remainingAmount', 'remainingRequests']) {
+  assert.equal(parseQuotaSummaryResponse({ groups: [{ buckets: [{
+    bucketId: 'gemini-weekly', remaining: { case: caseName, value: 0.5 }, remainingFraction: 0.9,
+  }] }] }), null, 'Other oneof cases cannot supply or fall back to a fraction');
+}
+for (const remainingFraction of [0, 1]) {
+  const edge = parseQuotaSummaryResponse({ groups: [{ buckets: [{ bucketId: 'gemini-weekly', remainingFraction }] }] });
+  assert.equal(edge.weeklyGemini.remainingFraction, remainingFraction, 'Exact exhausted/full readings remain valid');
+}
+
+for (const resetTime of ['not-a-timestamp', {}, { seconds: '' }, { seconds: null }, { seconds: true }, { seconds: 'bad' }, { seconds: Infinity }, { seconds: '99999999999999999999999999' }]) {
+  const invalidReset = parseQuotaSummaryResponse({ groups: [{ buckets: [{ bucketId: 'gemini-weekly', remainingFraction: 0.5, resetTime }] }] });
+  assert.equal(invalidReset.weeklyGemini.resetTime, null, 'Invalid reset time must not throw or fabricate a date');
+}
+for (const seconds of [0, '0', 0n]) {
+  const epochReset = parseQuotaSummaryResponse({ groups: [{ buckets: [{ bucketId: 'gemini-weekly', remainingFraction: 0.5, resetTime: { seconds } }] }] });
+  assert.equal(epochReset.weeklyGemini.resetTime, '1970-01-01T00:00:00.000Z', 'Zero seconds is a valid timestamp');
+}
+
+const validDuplicates = ['gemini-weekly', '3p-weekly', 'gemini-argon-wtu-weekly'].map(bucketId => ({ bucketId, remainingFraction: 0.6 }));
+const duplicateSummary = parseQuotaSummaryResponse({
+  groups: [{ buckets: validDuplicates }],
+  buckets: validDuplicates.map(bucket => ({ ...bucket, remainingFraction: NaN })),
+});
+for (const pool of ['weeklyGemini', 'weeklyClaude', 'weeklyArgon']) {
+  assert.equal(duplicateSummary[pool].remainingFraction, 0.6, 'A later invalid duplicate must preserve a valid reading');
+}
+console.log('PASS: quota parsing rejects untrustworthy fractions and reset dates without erasing valid duplicates');
 
 // Current schema (client update): the fraction moved into the protobuf oneof
 // wrapper `remaining: { case, value }`; resetTime became a protobuf Timestamp.

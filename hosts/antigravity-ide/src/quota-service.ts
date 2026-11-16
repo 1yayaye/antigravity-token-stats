@@ -25,8 +25,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { parseQuotaSummaryResponse, resolveSubscriptionTierFromSignals } from '../../../../src/services/pricing-service';
-import type { DetectedAccountTier, LiveQuotaSummary } from '../../../../src/domain/pricing.types';
+import { parseQuotaSummaryResponse, resolveSubscriptionTierFromSignals } from '../../../src/services/pricing-service';
+import type { DetectedAccountTier, LiveQuotaSummary } from '../../../src/domain/pricing.types';
 
 const QUOTA_ENDPOINT = 'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary';
 const LOAD_CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist';

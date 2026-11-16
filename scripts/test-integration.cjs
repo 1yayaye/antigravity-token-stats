@@ -44,7 +44,12 @@ function verifyUpdateAssets(archive) {
   const prefix = path.join('dist', 'antigravity-stats');
   const metadata = JSON.parse(asar.extractFile(archive, path.join(prefix, 'contract.json')).toString('utf8'));
   assert(metadata.version === require('../package.json').version, 'Injected version must match the AntiToken package');
-  assert(Object.entries(contract).every(([key, value]) => metadata[key] === value), 'Injected contract metadata must match the shared contract');
+  // Feature objects (contract.FEATURES) are compared structurally; scalars by identity.
+  assert(Object.entries(contract).every(([key, value]) =>
+    typeof value === 'object' && value !== null
+      ? JSON.stringify(metadata[key]) === JSON.stringify(value)
+      : metadata[key] === value
+  ), 'Injected contract metadata must match the shared contract');
   const installed = asar.extractFile(archive, path.join(prefix, 'update-checker.cjs'));
   const source = fs.readFileSync(path.join(__dirname, '../hosts/antigravity/scripts/update-checker.cjs'));
   assert(installed.equals(source), 'Injected checker must match the current source');
@@ -215,6 +220,7 @@ test('Mock ASAR: full patch lifecycle, hooks injection, and unpack preservation'
     assert(fs.existsSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', 'injection-contract.cjs')), 'injection-contract.cjs must exist in dist/antigravity-stats/');
     assert(fs.existsSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', 'proxy-manager.cjs')), 'proxy-manager.cjs must exist in dist/antigravity-stats/');
     assert(fs.existsSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', 'antigravity-stats-bundle.js')), 'antigravity-stats-bundle.js must exist in dist/antigravity-stats/');
+    assert(fs.existsSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', contract.ZH_PACK_FILE)), 'zh-pack must exist in dist/antigravity-stats/ by default');
     verifyUpdateAssets(asarPath);
 
     // Unpack folder must remain intact
@@ -242,6 +248,26 @@ test('Mock ASAR: full patch lifecycle, hooks injection, and unpack preservation'
     const hookMatches = mainAfterSecondPatch.match(new RegExp(contract.MARKER_MAIN_HOOK, 'g')) || [];
     assert(hookMatches.length === 1, 'Hook must appear exactly once in dist/main.js');
     verifyUpdateAssets(asarPath);
+
+    // 2b. Conditional manifest: opting out removes the zh-pack and switches the
+    // status-bar feature off in the injected contract.json.
+    const patchResult3 = await patch({
+      resourcesDir,
+      silent: true,
+      skipProcessCheck: true,
+      withProxy: false,
+      withZhPack: false,
+      withStatusBar: false,
+      minAsarSize: 500,
+      devBundleFile: mockDevBundleFile
+    });
+    assert(patchResult3.patched === true, 'Patch with optional components excluded should succeed');
+    const verifyExtractDir3 = path.join(tmpRoot, 'verify-extracted-3');
+    asar.uncacheAll();
+    asar.extractAll(asarPath, verifyExtractDir3);
+    assert(!fs.existsSync(path.join(verifyExtractDir3, 'dist', 'antigravity-stats', contract.ZH_PACK_FILE)), 'Excluded zh-pack must not be present in dist/antigravity-stats/');
+    const excludedMetadata = JSON.parse(fs.readFileSync(path.join(verifyExtractDir3, 'dist', 'antigravity-stats', 'contract.json'), 'utf8'));
+    assert(excludedMetadata.features?.statusBar === false, 'Excluded status bar must set features.statusBar = false in contract.json');
 
     // 3. Rollback (unpatch)
     const unpatchResult = unpatch({
@@ -310,6 +336,8 @@ function resolveBuiltInstallerExe() {
     path.join(projectRoot, 'hosts', 'antigravity', 'installer', 'bin', 'Release', 'net48', 'AntiTokenSetup.exe'),
   ];
   const trackedInputs = [
+    path.join(projectRoot, 'src', 'injection-contract.cjs'),
+    path.join(projectRoot, 'package.json'),
     path.join(projectRoot, 'scripts', 'aggregate-stats.cjs'),
     path.join(projectRoot, 'dist-bundle', 'antigravity-stats-bundle.js'),
     path.join(projectRoot, 'hosts', 'antigravity', 'installer', 'EmbeddedAssets', 'aggregate-stats.cjs'),
@@ -420,9 +448,11 @@ test('Standalone C# .exe installer: mock ASAR patch, @electron/asar interop, pro
     assert(patchedPreload.includes(contract.MARKER_PRELOAD_BRIDGE), 'dist/preload.js must contain MARKER_PRELOAD_BRIDGE');
     assert(patchedPreload.includes(contract.WINDOW_SYNC_BRIDGE), 'dist/preload.js must expose WINDOW_SYNC_BRIDGE');
 
-    for (const file of ['loader.cjs', 'update-checker.cjs', 'contract.json', 'aggregate-stats.cjs', 'paths.cjs', 'injection-contract.cjs', 'proxy-manager.cjs', 'antigravity-stats-bundle.js']) {
+    for (const file of ['loader.cjs', 'update-checker.cjs', 'contract.json', 'aggregate-stats.cjs', 'paths.cjs', 'injection-contract.cjs', 'proxy-manager.cjs', 'antigravity-stats-bundle.js', contract.ZH_PACK_FILE]) {
       assert(fs.existsSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', file)), `Missing injected asset: ${file}`);
     }
+    const csContractMetadata = JSON.parse(fs.readFileSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', 'contract.json'), 'utf8'));
+    assert(csContractMetadata.features?.statusBar === true, 'C# CLI patch must default features.statusBar to true');
     verifyUpdateAssets(asarPath);
     assert(fs.readFileSync(path.join(verifyExtractDir, 'dist', 'empty.txt')).length === 0, 'Empty file must remain 0 bytes');
     assert(fs.readFileSync(path.join(verifyExtractDir, 'dist', 'dup-a.txt'), 'utf8') === dupContent, 'dup-a.txt must retain content');

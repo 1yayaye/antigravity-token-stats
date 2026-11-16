@@ -51,6 +51,11 @@ namespace AntiTokenSetup.UI
         private Button _btnTestProxy;
         private Label _lblProxyTestResult;
 
+        // Optional components group
+        private GroupBox _grpOptional;
+        private CheckBox _chkZhPack;
+        private CheckBox _chkStatusBar;
+
         // Actions & Log
         private Button _btnInstall;
         private Button _btnProxyOnly;
@@ -76,8 +81,8 @@ namespace AntiTokenSetup.UI
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             Font = new Font("Microsoft YaHei UI", 9.5f, FontStyle.Regular, GraphicsUnit.Point);
-            ClientSize = new Size(740, 580);
-            MinimumSize = new Size(700, 540);
+            ClientSize = new Size(740, 650);
+            MinimumSize = new Size(700, 610);
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -88,11 +93,12 @@ namespace AntiTokenSetup.UI
                 Dock = DockStyle.Fill,
                 Padding = new Padding(16),
                 ColumnCount = 1,
-                RowCount = 5
+                RowCount = 6
             };
             rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // Header
             rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // Path
             rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // Proxy
+            rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // Optional components
             rootLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize)); // Actions
             rootLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100f)); // Progress + Log
 
@@ -333,6 +339,42 @@ namespace AntiTokenSetup.UI
 
             _grpProxy.Controls.Add(proxyTable);
 
+            // 3b. Optional Components Group (both unchecked by default, mirroring the
+            // proxy opt-in pattern; CLI installs stay all-on unless --no-* is passed).
+            _grpOptional = new GroupBox
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(12, 8, 12, 10),
+                Margin = new Padding(0, 0, 0, 10)
+            };
+
+            var optionalTable = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                ColumnCount = 1,
+                RowCount = 2
+            };
+            optionalTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+
+            _chkZhPack = new CheckBox
+            {
+                AutoSize = true,
+                Checked = false,
+                Margin = new Padding(0, 2, 0, 4)
+            };
+            _chkStatusBar = new CheckBox
+            {
+                AutoSize = true,
+                Checked = false,
+                Margin = new Padding(0, 2, 0, 4)
+            };
+            optionalTable.Controls.Add(_chkZhPack, 0, 0);
+            optionalTable.Controls.Add(_chkStatusBar, 0, 1);
+
+            _grpOptional.Controls.Add(optionalTable);
+
             // 4. Actions Bar
             var actionsTable = new TableLayoutPanel
             {
@@ -434,8 +476,9 @@ namespace AntiTokenSetup.UI
             rootLayout.Controls.Add(headerPanel, 0, 0);
             rootLayout.Controls.Add(_grpPath, 0, 1);
             rootLayout.Controls.Add(_grpProxy, 0, 2);
-            rootLayout.Controls.Add(actionsTable, 0, 3);
-            rootLayout.Controls.Add(logLayout, 0, 4);
+            rootLayout.Controls.Add(_grpOptional, 0, 3);
+            rootLayout.Controls.Add(actionsTable, 0, 4);
+            rootLayout.Controls.Add(logLayout, 0, 5);
 
             Controls.Add(rootLayout);
             ResumeLayout(false);
@@ -469,6 +512,14 @@ namespace AntiTokenSetup.UI
             _lblProtocol.Text = T("协议与端口:", "Protocol / Port:");
             _lblPort.Text = T("端口:", "Port:");
             _btnTestProxy.Text = T("测试连通性", "Test Proxy");
+
+            _grpOptional.Text = T("可选组件（Optional）", "Optional Components");
+            _chkZhPack.Text = T(
+                "中文翻译包（界面汉化，含统计面板中文文案；不装则保持英文）",
+                "Chinese translation pack (localizes the host UI and stats panel; English without it)");
+            _chkStatusBar.Text = T(
+                "状态栏小部件（对话输入框旁的实时用量指示）",
+                "Status bar widget (live usage pill next to the chat input)");
 
             _btnInstall.Text = T("安装 / 更新补丁", "Install / Update Patch");
             _btnProxyOnly.Text = T("仅更新代理", "Update Proxy Only");
@@ -504,6 +555,8 @@ namespace AntiTokenSetup.UI
             _btnBrowse.Enabled = !busy;
             _btnRescan.Enabled = !busy;
             _chkEnableProxy.Enabled = !busy;
+            _chkZhPack.Enabled = !busy;
+            _chkStatusBar.Enabled = !busy;
             _btnInstall.Enabled = !busy;
             _btnProxyOnly.Enabled = !busy;
             _btnUninstall.Enabled = !busy;
@@ -676,11 +729,14 @@ namespace AntiTokenSetup.UI
                     $"已配置 ({_currentInstall.ExistingProxyType}://{existingHost}:{_currentInstall.ExistingProxyPort})",
                     $"Configured ({_currentInstall.ExistingProxyType}://{existingHost}:{_currentInstall.ExistingProxyPort})")
                 : T("未配置", "Not Configured");
+            string zhPackText = _currentInstall.ZhPackInstalled
+                ? T("已安装", "Installed")
+                : T("未安装", "Not Installed");
             string permText = _currentInstall.NeedsElevation ? T(" · 需要管理员权限", " · Needs Admin") : "";
 
             _lblInstallDetails.Text = T(
-                $"app.asar: 正常 | 补丁状态: {patchState} ({backupText}) | 透明代理: {proxyText}{permText}",
-                $"app.asar: Found | Patch: {patchState} ({backupText}) | Proxy: {proxyText}{permText}");
+                $"app.asar: 正常 | 补丁状态: {patchState} ({backupText}) | 透明代理: {proxyText} | 翻译包: {zhPackText}{permText}",
+                $"app.asar: Found | Patch: {patchState} ({backupText}) | Proxy: {proxyText} | Zh-pack: {zhPackText}{permText}");
         }
 
         private void RefreshProxyComboBox(bool preferCandidateProtocol = true)
@@ -944,6 +1000,8 @@ namespace AntiTokenSetup.UI
             string rootDir = _currentInstall.RootDir;
             string resourcesDir = _currentInstall.ResourcesDir;
             bool enableProxy = _chkEnableProxy.Checked;
+            bool includeZhPack = _chkZhPack.Checked;
+            bool statusBarEnabled = _chkStatusBar.Checked;
             string proxyHost = string.IsNullOrWhiteSpace(_selectedProxyHost) ? "127.0.0.1" : _selectedProxyHost;
             int proxyPort = (int)_numPort.Value;
             string proxyType = _rbHttp.Checked ? "http" : "socks5";
@@ -954,7 +1012,12 @@ namespace AntiTokenSetup.UI
                 AppendLog(T("开始安装 / 更新 Antigravity Token Stats 补丁...", "Starting patch installation..."));
                 var result = await Task.Run(() =>
                 {
-                    var patchRes = AsarPatcher.Patch(resourcesDir, _contract, log: AppendLog);
+                    var patchRes = AsarPatcher.Patch(
+                        resourcesDir,
+                        _contract,
+                        includeZhPack: includeZhPack,
+                        statusBarEnabled: statusBarEnabled,
+                        log: AppendLog);
                     if (enableProxy)
                     {
                         ProxyInstaller.Install(rootDir, proxyHost, proxyPort, proxyType, AppendLog);

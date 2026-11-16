@@ -75,7 +75,7 @@ namespace AntiTokenSetup
                 if (HasFlag(args, "--help") || HasFlag(args, "-h"))
                 {
                     Console.WriteLine("AntiTokenSetup CLI Usage:");
-                    Console.WriteLine("  --patch-dir <resourcesDir> [--no-proxy] [--proxy-port <port>] [--proxy-type <socks5|http>] [--kill] [--min-asar-size <bytes>] [--dev-bundle <path>] [--skip-dev-redirect] --no-gui");
+                    Console.WriteLine("  --patch-dir <resourcesDir> [--no-proxy] [--no-zh-pack] [--no-status-bar] [--proxy-port <port>] [--proxy-type <socks5|http>] [--kill] [--min-asar-size <bytes>] [--dev-bundle <path>] [--skip-dev-redirect] --no-gui");
                     Console.WriteLine("  --unpatch-dir <resourcesDir> [--no-proxy] [--kill] [--dev-bundle <path>] [--skip-dev-redirect] --no-gui");
                     Console.WriteLine("  --verify-asar <asarPath> [--require-patched]");
                     Console.WriteLine("  --detect-proxies");
@@ -131,7 +131,10 @@ namespace AntiTokenSetup
                 if (!string.IsNullOrEmpty(verifyAsar))
                 {
                     bool requirePatched = HasFlag(args, "--require-patched");
-                    AsarPatcher.VerifyAsar(verifyAsar, contract, requirePatched, verifyAllHashes: true);
+                    // The zh-pack is conditional (--no-zh-pack installs lack it), so the
+                    // standalone verifier does not require it; Patch enforces it against
+                    // the caller's own option.
+                    AsarPatcher.VerifyAsar(verifyAsar, contract, requirePatched, verifyAllHashes: true, requireZhPack: false);
                     Console.WriteLine($"OK: Verified ASAR integrity: {verifyAsar}");
                     return 0;
                 }
@@ -144,6 +147,10 @@ namespace AntiTokenSetup
                 }
 
                 bool noProxy = HasFlag(args, "--no-proxy");
+                // Optional components default to on for CLI installs (the GUI checkboxes
+                // default to unchecked), matching the proxy GUI/CLI asymmetry.
+                bool noZhPack = HasFlag(args, "--no-zh-pack");
+                bool noStatusBar = HasFlag(args, "--no-status-bar");
                 bool skipDevRedirect = HasFlag(args, "--skip-dev-redirect");
                 string devBundleOverride = GetArgValue(args, "--dev-bundle");
 
@@ -164,6 +171,8 @@ namespace AntiTokenSetup
                         minAsarSize: minSize,
                         skipDevRedirect: skipDevRedirect,
                         devBundleOverride: devBundleOverride,
+                        includeZhPack: !noZhPack,
+                        statusBarEnabled: !noStatusBar,
                         log: Console.WriteLine);
 
                     if (!noProxy)

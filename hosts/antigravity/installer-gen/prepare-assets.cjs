@@ -16,9 +16,10 @@ const { buildConfig } = require(path.join(projectRoot, 'scripts', 'proxy-manager
 
 const skipBundle = process.argv.includes('--skip-bundle');
 const bundlePath = path.join(projectRoot, 'dist-bundle', 'antigravity-stats-bundle.js');
+const zhPackPath = path.join(projectRoot, 'dist-bundle', contract.ZH_PACK_FILE);
 
 if (!skipBundle || !fs.existsSync(bundlePath)) {
-  console.log('[prepare-assets] Building antigravity-stats-bundle.js...');
+  console.log('[prepare-assets] Building antigravity-stats-bundle.js and zh-pack...');
   const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   execFileSync(npmCmd, ['run', 'build:bundle'], {
     cwd: projectRoot,
@@ -31,14 +32,20 @@ if (!fs.existsSync(bundlePath)) {
   throw new Error(`Expected bundle at ${bundlePath}`);
 }
 
+if (!fs.existsSync(zhPackPath)) {
+  throw new Error(`Expected zh-pack at ${zhPackPath} (run "npm run build:bundle" first)`);
+}
+
 const outDir = path.join(projectRoot, 'hosts', 'antigravity', 'installer', 'EmbeddedAssets');
 fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });
 
-// 1. Export contract + package version
+// 1. Export contract + package version + default feature flags (the installer GUI
+// and CLI may override features, but the baseline comes from the contract).
 const contractPayload = {
   version: pkg.version,
   ...contract,
+  features: contract.FEATURES,
 };
 fs.writeFileSync(
   path.join(outDir, 'contract.json'),
@@ -54,9 +61,10 @@ fs.writeFileSync(
   'utf8'
 );
 
-// 3. Copy runtime injection scripts, bundle, and proxy DLL
+// 3. Copy runtime injection scripts, bundles, and proxy DLL
 const filesToCopy = [
   { src: bundlePath, name: 'antigravity-stats-bundle.js' },
+  { src: zhPackPath, name: contract.ZH_PACK_FILE },
   { src: path.join(projectRoot, 'hosts', 'antigravity', 'scripts', 'loader.cjs'), name: 'loader.cjs' },
   { src: path.join(projectRoot, 'hosts', 'antigravity', 'scripts', 'update-checker.cjs'), name: 'update-checker.cjs' },
   { src: path.join(projectRoot, 'scripts', 'aggregate-stats.cjs'), name: 'aggregate-stats.cjs' },

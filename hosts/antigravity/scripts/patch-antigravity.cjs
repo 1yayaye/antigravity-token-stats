@@ -79,6 +79,22 @@ async function patch(options = {}) {
   ].filter(Boolean);
   const proxyManagerSource = proxyCandidates.find(p => fs.existsSync(p)) || proxyCandidates[0];
 
+  // Optional Chinese translation pack; copied only when requested so --no-zh-pack
+  // installs stay English-only.
+  const zhPackCandidates = [
+    options.zhPackSource,
+    path.join(projectRoot, 'dist-bundle', contract.ZH_PACK_FILE),
+    path.join(projectRoot, 'dist', contract.ZH_PACK_FILE)
+  ].filter(Boolean);
+  const zhPackSource = zhPackCandidates.find(p => fs.existsSync(p)) || zhPackCandidates[0];
+  // Options only: the CLI entry (require.main block) parses argv into these flags, so
+  // a programmatic caller's withZhPack/withStatusBar is never vetoed by host argv.
+  const includeZhPack = options.withZhPack !== false;
+  const includeStatusBar = options.withStatusBar !== false;
+  if (includeZhPack && !fs.existsSync(zhPackSource)) {
+    throw new Error(`Chinese translation pack not found at: ${zhPackSource}\nPlease run "npm run build:bundle" first.`);
+  }
+
   if (isAntigravityRunning()) {
     if (options.killRunning) {
       log('Closing running Antigravity process...');
@@ -201,9 +217,16 @@ try {
     fs.writeFileSync(path.join(statsDir, 'contract.json'), JSON.stringify({
       version: JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8')).version,
       ...contract,
+      features: { ...contract.FEATURES, statusBar: includeStatusBar },
     }, null, 2), 'utf8');
     fs.copyFileSync(proxyManagerSource, path.join(statsDir, 'proxy-manager.cjs'));
     fs.copyFileSync(bundlePath, path.join(statsDir, 'antigravity-stats-bundle.js'));
+    if (includeZhPack) {
+      fs.copyFileSync(zhPackSource, path.join(statsDir, contract.ZH_PACK_FILE));
+    } else {
+      // A previous install may have injected the zh-pack; opting out must remove it.
+      fs.rmSync(path.join(statsDir, contract.ZH_PACK_FILE), { force: true });
+    }
     log('   ✓ Copied loader, aggregate engine, proxy manager, and UI bundle into dist/antigravity-stats/');
 
     // Record DX redirect
@@ -312,6 +335,10 @@ if (require.main === module) {
     skipProcessCheck: process.argv.includes('--skip-process-check'),
     skipDevRedirect: process.argv.includes('--skip-dev-redirect'),
     withProxy: !process.argv.includes('--no-proxy'),
+    // GUI default is opt-in (installer checkboxes unchecked); CLI installs everything
+    // unless explicitly excluded, mirroring the --no-proxy asymmetry (CHANGELOG 1.7.0).
+    withZhPack: !process.argv.includes('--no-zh-pack'),
+    withStatusBar: !process.argv.includes('--no-status-bar'),
     proxyPort: (process.argv.find(a => a.startsWith('--proxy-port=')) || '').split('=')[1] || undefined,
     proxyType: (process.argv.find(a => a.startsWith('--proxy-type=')) || '').split('=')[1] || undefined,
   };

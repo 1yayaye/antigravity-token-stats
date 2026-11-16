@@ -627,7 +627,7 @@ function readSessionSnapshot(filePath) {
   const fingerprint = getFileFingerprint(filePath, true);
   const mtimeMs = fingerprint.db.mtimeMs;
   const cached = dbCache.get(filePath);
-  if (cached && fingerprintsEqual(cached.fingerprint, fingerprint)) {
+  if (cached && fingerprintsEqual(cached.fingerprint, fingerprint) && typeof cached.perf?.samplesCount === 'number') {
     return { metrics: cached, stale: false, mtimeMs };
   }
 
@@ -1256,6 +1256,8 @@ function extractSessionPerformanceMetrics(dbOrSteps) {
   let stepsCount = 0;
   let responseMs = 0;
   let responseTokens = 0;
+  let samplesCount = 0;
+  let lastRequestTps = null;
 
   let rows = [];
   if (Array.isArray(dbOrSteps)) {
@@ -1330,6 +1332,9 @@ function extractSessionPerformanceMetrics(dbOrSteps) {
           && stepDurationMs >= 50 && Number.isFinite(thinkingMs) && thinkingMs >= 0) {
           responseMs += stepDurationMs;
           responseTokens += stepResponseTokens;
+          samplesCount++;
+          const stepRate = stepResponseTokens / (stepDurationMs / 1000);
+          lastRequestTps = stepRate > 0 ? Number(stepRate.toFixed(stepRate < 10 ? 1 : 0)) || null : null;
         }
       } catch {}
       continue;
@@ -1362,10 +1367,42 @@ function extractSessionPerformanceMetrics(dbOrSteps) {
     rounds: Math.max(1, roundsCount),
     steps: stepsCount,
     tps,
+    samplesCount,
+    lastRequestTps,
     modelDurationSec: modelTimeMs / 1000,
     toolDurationSec: toolTimeMs / 1000,
     ttftSec: ttftStepsCount > 0 ? (ttftSumMs / ttftStepsCount / 1000) : null,
   };
+}
+
+const CONTEXT_LIMIT_TIERS = [256000, 512000, 1000000, 2000000];
+const DOUBLED_OFFICIAL_MODELS = new Set(['gemini-4-argon', 'gemini-4-carbon', 'gemini-4-hydrogen']);
+
+/**
+ * Resolves the effective context window limit and sniffs observed compaction peaks.
+ * Argon, Carbon, Hydrogen, and Orchestrator (Argon-backed) default to 512K; exceeding any tier steps up cleanly.
+ */
+function resolveContextLimit({ modelName = '', usages = [], promptTokens = 0 } = {}) {
+  const official = resolveOfficialModelId(modelName);
+  const baseLimit = official && DOUBLED_OFFICIAL_MODELS.has(official) ? 512000 : 256000;
+  let peakPrompt = promptTokens > 0 ? promptTokens : 0;
+  let observedCompactionTokens = null;
+  let prevPrompt = 0;
+
+  for (const u of usages) {
+    const p = (u.inputTokens || 0) + (u.cacheReadTokens || 0);
+    if (p > peakPrompt) peakPrompt = p;
+    if (prevPrompt >= 100000 && p > 0 && p < prevPrompt * 0.7) {
+      observedCompactionTokens = Math.max(observedCompactionTokens || 0, prevPrompt);
+    }
+    prevPrompt = p;
+  }
+
+  let limitTokens = baseLimit;
+  if (peakPrompt > limitTokens) {
+    limitTokens = CONTEXT_LIMIT_TIERS.find(t => peakPrompt <= t) || Math.ceil(peakPrompt / 100000) * 100000;
+  }
+  return { limitTokens, observedCompactionTokens };
 }
 
 function buildDshTelemetry({
@@ -1376,6 +1413,9 @@ function buildDshTelemetry({
   totalInput = 0,
   totalCache = 0,
   totalOutput = 0,
+  modelName = '',
+  usages = [],
+  limitTokens: explicitLimitTokens,
 }) {
   const SYSTEM_BASELINE = 8200;
   const TOOLS_BASELINE = 8300;
@@ -1410,7 +1450,9 @@ function buildDshTelemetry({
     }
   }
 
-  const limitTokens = 256000; // 256K
+  const limitTokens = (typeof explicitLimitTokens === 'number' && explicitLimitTokens > 0)
+    ? explicitLimitTokens
+    : resolveContextLimit({ modelName, usages, promptTokens }).limitTokens;
   const usedPct = promptTokens > 0 ? Math.min(100, Math.round((promptTokens / limitTokens) * 100)) : 0;
   const totalTokens = totalInput + totalCache + totalOutput;
 
@@ -1447,9 +1489,11 @@ function buildSessionSummary(sId, metrics, isRunning) {
   const usages = metrics.generationUsages;
   const lastUsage = usages.length > 0 ? usages[usages.length - 1] : null;
   const promptTokens = lastUsage ? (lastUsage.inputTokens + lastUsage.cacheReadTokens) : 0;
+  const modelName = lastUsage ? (lastUsage.modelName || '') : '';
+  const { limitTokens, observedCompactionTokens } = resolveContextLimit({ modelName, usages, promptTokens });
   const turnCalls = metrics.turnCalls || 0;
   const turnTokens = metrics.turnTokens;
-  const perf = metrics.perf || { rounds: 1, steps: 0, tps: null, modelDurationSec: 0, toolDurationSec: 0, ttftSec: null };
+  const perf = metrics.perf || { rounds: 1, steps: 0, tps: null, samplesCount: 0, lastRequestTps: null, modelDurationSec: 0, toolDurationSec: 0, ttftSec: null };
   const dshTelemetry = buildDshTelemetry({
     sessionId: sId,
     isStreaming: isRunning,
@@ -1458,6 +1502,8 @@ function buildSessionSummary(sId, metrics, isRunning) {
     totalInput: metrics.inputTokens || 0,
     totalCache: metrics.cacheReadTokens || 0,
     totalOutput: metrics.outputTokens || 0,
+    modelName,
+    limitTokens,
   });
   return {
     isRunning,
@@ -1470,16 +1516,21 @@ function buildSessionSummary(sId, metrics, isRunning) {
     latestOutput: lastUsage ? lastUsage.outputTokens : 0,
     latestThinking: lastUsage ? lastUsage.thinkingTokens : 0,
     latestResponse: lastUsage ? lastUsage.responseTokens : 0,
-    modelName: lastUsage ? (lastUsage.modelName || '') : '',
+    modelName,
     totalTokens: metrics.tokensFromDb || 0,
     totalInputTokens: metrics.inputTokens || 0,
     totalCacheReadTokens: metrics.cacheReadTokens || 0,
     totalOutputTokens: metrics.outputTokens || 0,
-    compactionLimit: 256000,
+    totalThinkingTokens: metrics.thinkingTokens || 0,
+    totalResponseTokens: metrics.responseTokens || 0,
+    compactionLimit: limitTokens,
+    observedCompactionTokens,
     turnsCount: usages.length,
     rounds: perf.rounds,
     steps: perf.steps,
+    samplesCount: perf.samplesCount ?? 0,
     tps: perf.tps,
+    lastRequestTps: perf.lastRequestTps ?? null,
     modelDurationSec: perf.modelDurationSec,
     toolDurationSec: perf.toolDurationSec,
     ttftSec: perf.ttftSec,
@@ -1512,6 +1563,7 @@ module.exports = {
   computeStats,
   readSingleSession,
   extractSessionPerformanceMetrics,
+  resolveContextLimit,
   buildDshTelemetry,
   pairGenerationDates,
   decodeVarint,

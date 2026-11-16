@@ -1,41 +1,32 @@
-/**
- * Launches the Antigravity IDE as an extension-development host pointed at
- * hosts/antigravity-ide/extension. Run the bundle and extension builds first
- * (`npm run dev:ide` chains them); the launch itself is fire-and-forget.
- *
- * The IDE install location is machine-specific and never hard-coded here: set
- * ANTIGRAVITY_IDE_CMD to the launcher (e.g. "D:/Programs/Antigravity IDE/bin/
- * antigravity-ide.cmd"), optionally in .zcode env or your shell profile.
- */
-const { spawn } = require('child_process');
-const path = require('path');
+/** Installs the built native host into a closed IDE, then launches its executable. */
+const { spawn } = require('node:child_process');
+const path = require('node:path');
+const { findIdeDir } = require('./proxy-manager.cjs');
+const { patchIde } = require('../hosts/antigravity-ide/scripts/patch-ide.cjs');
 
-const IDE_CMD = process.env.ANTIGRAVITY_IDE_CMD;
-const extensionDir = path.join(__dirname, '..', 'hosts', 'antigravity-ide', 'extension');
-
-if (!IDE_CMD) {
-  console.error(
-    '[TokenStats IDE] ANTIGRAVITY_IDE_CMD is not set. Point it at the Antigravity IDE launcher,\n' +
-    'e.g. set ANTIGRAVITY_IDE_CMD=D:/Programs/Antigravity IDE/bin/antigravity-ide.cmd'
-  );
-  process.exitCode = 1;
-} else if (!require('fs').existsSync(IDE_CMD)) {
-  console.error(`[TokenStats IDE] IDE launcher not found: ${IDE_CMD}`);
-  process.exitCode = 1;
-} else {
-  // No cmd `start` wrapper: detached:true already detaches, and `start`
-  // silently no-ops on forward-slash paths, hiding launcher failures.
-  // Args are quoted because the install path and the extension path may
-  // contain spaces.
-  // ANTIGRAVITY_IDE_CDP_PORT (optional): expose a CDP endpoint on the IDE so
-  // hosts/antigravity-ide/scripts can drive acceptance checks against it.
-  const cdpArgs = process.env.ANTIGRAVITY_IDE_CDP_PORT
-    ? ` --remote-debugging-port=${process.env.ANTIGRAVITY_IDE_CDP_PORT}`
-    : '';
-  spawn(`"${IDE_CMD}" --extensionDevelopmentPath="${extensionDir}"${cdpArgs}`, {
-    shell: true,
+try {
+  const port = process.env.ANTIGRAVITY_IDE_CDP_PORT;
+  if (port !== undefined && (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535)) {
+    throw new Error('ANTIGRAVITY_IDE_CDP_PORT must be a port number from 1 to 65535.');
+  }
+  const installDir = findIdeDir();
+  if (!installDir) throw new Error('Antigravity IDE was not found. Set ANTIGRAVITY_IDE_DIR to its installation directory.');
+  const result = patchIde({ installDir });
+  const executable = path.join(result.installDir, 'Antigravity IDE.exe');
+  const child = spawn(executable, port === undefined ? [] : [`--remote-debugging-port=${Number(port)}`], {
+    shell: false,
     detached: true,
     stdio: 'ignore',
-  }).unref();
-  console.log(`[TokenStats IDE] Launching extension dev host for ${extensionDir}${cdpArgs}`);
+  });
+  child.once('error', error => {
+    console.error(`[TokenStats IDE] Could not launch IDE: ${error.message}`);
+    process.exitCode = 1;
+  });
+  child.once('spawn', () => {
+    child.unref();
+    console.log(`[TokenStats IDE] Launched ${executable}`);
+  });
+} catch (error) {
+  console.error(`[TokenStats IDE] ${error.message}`);
+  process.exitCode = 1;
 }

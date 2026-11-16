@@ -1,9 +1,9 @@
 /**
- * Live-quota probe for the Antigravity IDE extension host service.
+ * Standalone live-quota probe for the Antigravity IDE service.
  *
- * Bundles hosts/antigravity-ide/extension/src/quota-service.ts with esbuild into
- * a temp file and drives fetchLiveQuota(true) from plain Node — the same code the
- * extension runs, without re-implementing the token/protobuf parsing here.
+ * Bundles hosts/antigravity-ide/src/quota-service.ts into a temp file and drives
+ * fetchLiveQuota(true) from plain Node. The installed host uses Electron net.fetch;
+ * this diagnostic uses Node fetch and does not verify the IDE's proxy path.
  *
  * Prints the weeklyGemini part of the parsed quota plus capturedAt to stdout.
  * Exit code 0 = quota data retrieved; non-zero = failure (no IDE token, or the
@@ -16,7 +16,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const serviceEntry = path.join(__dirname, '..', 'extension', 'src', 'quota-service.ts');
+const serviceEntry = path.join(__dirname, '..', 'src', 'quota-service.ts');
 
 async function main() {
   const outfile = path.join(os.tmpdir(), `antigravity-ide-quota-service-${process.pid}.cjs`);

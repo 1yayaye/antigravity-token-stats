@@ -45,13 +45,17 @@ namespace AntiTokenSetup.Services
         {
             string json = ReadText("contract.json");
             var dict = JsonHelper.DeserializeObject(json);
+            var features = JsonHelper.GetObject(dict, "features");
             return new ContractData
             {
                 Version = JsonHelper.GetString(dict, "version", "1.5.0"),
                 MarkerMainHook = JsonHelper.GetString(dict, "MARKER_MAIN_HOOK", "__ANTIGRAVITY_STATS_INJECTION__"),
                 MarkerPreloadBridge = JsonHelper.GetString(dict, "MARKER_PRELOAD_BRIDGE", "__ANTIGRAVITY_STATS_PRELOAD_BRIDGE__"),
                 WindowSyncBridge = JsonHelper.GetString(dict, "WINDOW_SYNC_BRIDGE", "__ANTIGRAVITY_SYNC_BRIDGE__"),
-                IpcRequestSync = JsonHelper.GetString(dict, "IPC_REQUEST_SYNC", "antigravity:request-sync")
+                IpcRequestSync = JsonHelper.GetString(dict, "IPC_REQUEST_SYNC", "antigravity:request-sync"),
+                ZhPackFileName = JsonHelper.GetString(dict, "ZH_PACK_FILE", "antigravity-stats-zh-pack.js"),
+                // Tolerate contract.json payloads from before the features block existed.
+                StatusBarEnabled = JsonHelper.GetBool(features, "statusBar", true)
             };
         }
 

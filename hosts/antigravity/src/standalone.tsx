@@ -9,11 +9,22 @@ import { startQuotaUpdates } from './quota';
 import { DshStatusBar } from '../../../src/components/dsh/DshStatusBar';
 import type { DshHostStyle } from '../../../src/components/dsh/DshStatusBar';
 import type { DshTelemetryData } from '../../../src/types/dsh-telemetry';
-import { CONTAINER_STATUSBAR_ID, EVENT_LANGUAGE_CHANGED, EVENT_REQUEST_SYNC, EVENT_STATS_UPDATED, IPC_REQUEST_SYNC, WINDOW_SYNC_BRIDGE } from '../../../src/injection-contract.cjs';
+import { resolveModelContextLimit } from '../../../src/utils/dsh-format';
+import { CONTAINER_STATUSBAR_ID, EVENT_LANGUAGE_CHANGED, EVENT_REQUEST_SYNC, EVENT_STATS_UPDATED, FEATURES, IPC_REQUEST_SYNC, WINDOW_LIVE_QUOTA, WINDOW_STATS_FEATURES, WINDOW_SYNC_BRIDGE } from '../../../src/injection-contract.cjs';
 import '../../../src/domain/stats.types';
 
 let activeContainer: HTMLElement | null = null;
 let isMounting = false;
+
+// Injectable features are switchable per install (contract.json features, relayed by
+// the loader through window[WINDOW_STATS_FEATURES]). A missing global means "all on",
+// so npm dev, IDE, and older patches are unaffected.
+export function isStatsFeatureEnabled(name: keyof typeof FEATURES): boolean {
+  const features = typeof window === 'undefined'
+    ? undefined
+    : (window as unknown as Record<string, Record<string, boolean> | undefined>)[WINDOW_STATS_FEATURES];
+  return features?.[name] ?? true;
+}
 
 // Standalone injector for Antigravity 2.0 with debouncing & error guards
 export function mountStats(container: HTMLElement) {
@@ -165,14 +176,51 @@ function probeHostPillStyle(): DshHostStyle {
   return probe;
 }
 
+const COMPOSER_MODEL_RE = /(?:^|[^a-z0-9])(gemini|claude|gpt|argon|carbon|hydrogen|orchestrator)(?:[^a-z0-9]|$)/i;
+
+// Reads the currently selected model pill in the composer footer so new conversations
+// and mid-session model switches update the context window limit before the first turn.
+function detectSelectedModelFromComposer(container: HTMLElement): string {
+  try {
+    let scope: HTMLElement | null = container.parentElement;
+    for (let depth = 0; depth < 4 && scope && scope !== document.body; depth++) {
+      const buttons = scope.querySelectorAll('button, [role="button"]');
+      for (const btn of Array.from(buttons)) {
+        if (!(btn instanceof HTMLElement)) continue;
+        if (container.contains(btn)) continue;
+        if (btn.getAttribute('data-testid') === 'permissions-selector-trigger') continue;
+        const rect = btn.getBoundingClientRect();
+        if (rect.height <= 0 || rect.height > 48) continue;
+        const text = (btn.textContent || '').trim();
+        if (text.length > 0 && text.length < 64 && COMPOSER_MODEL_RE.test(text)) {
+          return text;
+        }
+      }
+      scope = scope.parentElement;
+    }
+  } catch {
+    // Host DOM probing is best-effort.
+  }
+  return '';
+}
+
 export function mountDshStatusBar(container: HTMLElement) {
-  if (!container) return;
+  if (!container || !isStatsFeatureEnabled('statusBar')) return;
 
   const sessionId = getCurrentConversationId();
   const stats = window.__ANTIGRAVITY_STATS__;
   const session = sessionId && stats?.sessions ? stats.sessions[sessionId] : null;
   const isGenerating = Boolean(session?.isRunning) || (Boolean(sessionId) && checkGenerationState());
   const effectiveTps = session?.tps ?? null;
+
+  const selectedModel = detectSelectedModelFromComposer(container);
+  const effectiveModel = selectedModel || session?.modelName || '';
+  const liveLimits = (window as unknown as Record<string, { modelContextLimits?: Record<string, number> } | undefined>)[WINDOW_LIVE_QUOTA]?.modelContextLimits;
+  const baseUsedTokens = session?.dshTelemetry?.context?.usedTokens ?? 0;
+  const resolvedLimit = resolveModelContextLimit(effectiveModel, baseUsedTokens, liveLimits);
+  const resolvedUsedPct = baseUsedTokens > 0
+    ? Math.min(100, Math.round((baseUsedTokens / resolvedLimit) * 100))
+    : 0;
 
   // Server-side aggregate-stats always attaches `dshTelemetry` to every SessionSummary;
   // fall back to a zero-baseline only when no session data has arrived yet.
@@ -182,6 +230,11 @@ export function mountDshStatusBar(container: HTMLElement) {
     session: {
       ...session.dshTelemetry.session,
       tps: effectiveTps,
+    },
+    context: {
+      ...session.dshTelemetry.context,
+      limitTokens: resolvedLimit,
+      usedPct: resolvedUsedPct,
     },
   } : {
     sessionId: sessionId || '',
@@ -203,7 +256,7 @@ export function mountDshStatusBar(container: HTMLElement) {
     },
     context: {
       usedTokens: 0,
-      limitTokens: 256000,
+      limitTokens: resolvedLimit,
       usedPct: 0,
       systemPromptTokens: 0,
       toolDefinitionTokens: 0,
@@ -503,7 +556,9 @@ export function initAntigravitySettingsInjector() {
       existingSidebarBtn.remove();
     }
 
-    // 2. Hook into Turbo button in the chat input footer (DSH Status Bar)
+    // 2. Hook into Turbo button in the chat input footer (DSH Status Bar); skipped
+    // entirely (no container, no heartbeat) when the feature is switched off.
+    if (!isStatsFeatureEnabled('statusBar')) return;
     const turboBtn = document.querySelector('button[data-testid="permissions-selector-trigger"]') as HTMLElement | null;
     if (turboBtn && turboBtn.parentElement) {
       const parent = turboBtn.parentElement;

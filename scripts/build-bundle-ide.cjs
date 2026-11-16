@@ -1,6 +1,6 @@
 /**
- * Runs the shared bundle build with HOST_TARGET=antigravity-ide so the webview
- * bundle lands in hosts/antigravity-ide/extension/media/. Exists because npm
+ * Runs the bundle build with HOST_TARGET=antigravity-ide so the native workbench
+ * bundle lands alongside the host in hosts/antigravity-ide/dist/. Exists because npm
  * scripts go through cmd.exe on Windows, where `ENV=x command` is not valid
  * shell syntax.
  */

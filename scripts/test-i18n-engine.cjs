@@ -9,21 +9,30 @@ const fs = require('node:fs');
 
 console.log('--- Testing Antigravity 2.0 UI Localization (i18n) Engine ---');
 
-// 1. Verify bundle contains i18n symbols (auto-build bundle if missing)
+// 1. Verify bundle split: main bundle is English-only and reads the optional zh-pack
+// (auto-build both if missing)
 const bundlePath = path.join(__dirname, '..', 'dist-bundle', 'antigravity-stats-bundle.js');
 if (!fs.existsSync(bundlePath)) {
   const { execFileSync } = require('node:child_process');
   const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   execFileSync(npmCmd, ['run', 'build:bundle'], { cwd: path.join(__dirname, '..'), stdio: 'inherit', shell: true });
 }
+const contract = require('../src/injection-contract.cjs');
+const zhPackPath = path.join(__dirname, '..', 'dist-bundle', contract.ZH_PACK_FILE);
 assert(fs.existsSync(bundlePath), 'Bundle file should exist');
+assert(fs.existsSync(zhPackPath), 'Zh-pack file should exist (npm run build:bundle builds both)');
 const bundleContent = fs.readFileSync(bundlePath, 'utf8');
+const zhPackContent = fs.readFileSync(zhPackPath, 'utf8');
 
 assert(bundleContent.includes('AntigravityI18n') || bundleContent.includes('antigravityI18n'), 'Bundle must expose AntigravityI18n');
-assert(bundleContent.includes('新建对话'), 'Bundle must contain Chinese translation dictionary');
-assert(bundleContent.includes('深度思考中'), 'Bundle must contain tool status translations');
-assert(bundleContent.includes('系统设置') || bundleContent.includes('自定义配置'), 'Bundle must contain settings translations');
-console.log('PASS: Bundle includes i18n symbols and dictionary');
+assert(bundleContent.includes(contract.WINDOW_ZH_PACK), 'Main bundle must read the zh-pack global');
+assert(!bundleContent.includes('新建对话'), 'Main bundle must not inline the UI dictionary');
+assert(!bundleContent.includes('切换语言'), 'Main bundle must not inline the stats zh translations');
+assert(zhPackContent.includes('新建对话'), 'Zh-pack must contain the UI dictionary');
+assert(zhPackContent.includes('深度思考中'), 'Zh-pack must contain tool status translations');
+assert(zhPackContent.includes('系统设置') || zhPackContent.includes('自定义配置'), 'Zh-pack must contain settings translations');
+assert(zhPackContent.includes('切换语言'), 'Zh-pack must contain the stats zh translations');
+console.log('PASS: Main bundle is English-only and zh-pack carries both dictionaries');
 
 // 2. Load dictionary definitions directly from TypeScript source for validation
 const dictPath = path.join(__dirname, '..', 'hosts', 'antigravity', 'src', 'i18n', 'antigravity-ui-dict.ts');
@@ -97,6 +106,20 @@ require.extensions['.ts'] = function (module, filename) {
 
 const dict = require(dictPath);
 const { AntigravityUITranslator } = require(path.join(__dirname, '..', 'hosts', 'antigravity', 'src', 'i18n', 'antigravity-ui-i18n.ts'));
+
+// The engine reads its dictionary from the zh-pack global (as the injected runtime
+// does), so simulate an installed pack for the exercises below.
+global.window = {};
+global.localStorage = { getItem: () => null, setItem() {} };
+global.window[contract.WINDOW_ZH_PACK] = {
+  statsTranslations: {},
+  uiDict: {
+    exactMap: dict.UI_EXACT_MAP,
+    dynamicRules: dict.UI_DYNAMIC_RULES,
+    exclusionSelectors: dict.EXCLUSION_SELECTORS,
+  },
+};
+
 const engine = new AntigravityUITranslator();
 
 function testTranslate(trimmed) {
@@ -178,6 +201,18 @@ global.MutationObserver = class { observe() {} disconnect() {} };
 global.document = {
   body: { nodeType: 1, matches: () => false, closest: () => null },
   createTreeWalker: () => ({ nextNode: () => walkNodes.shift() || null }),
+};
+
+// Engine dictionaries come from the zh-pack global, as in the injected runtime.
+const contract = require(${JSON.stringify(path.join(repoRoot, 'src', 'injection-contract.cjs'))});
+const dict = require(${JSON.stringify(path.join(repoRoot, 'hosts', 'antigravity', 'src', 'i18n', 'antigravity-ui-dict.ts'))});
+global.window[contract.WINDOW_ZH_PACK] = {
+  statsTranslations: {},
+  uiDict: {
+    exactMap: dict.UI_EXACT_MAP,
+    dynamicRules: dict.UI_DYNAMIC_RULES,
+    exclusionSelectors: dict.EXCLUSION_SELECTORS,
+  },
 };
 
 const { AntigravityUITranslator } = require(${JSON.stringify(path.join(repoRoot, 'hosts', 'antigravity', 'src', 'i18n', 'antigravity-ui-i18n.ts'))});

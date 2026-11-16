@@ -144,7 +144,7 @@ export const ContextUsagePopover: React.FC<ContextUsagePopoverProps> = ({ metric
           color: 'var(--muted-foreground, var(--dsh-text-muted, #71717a))',
         }}
       >
-        <span>{isZh ? '256K 自动压缩阈值 · 缓存命中支持' : '256K Compaction Threshold · Prompt Cache'}</span>
+        <span>{isZh ? `${formatCompactTokens(limitTokens)} 自动压缩阈值 · 缓存命中支持` : `${formatCompactTokens(limitTokens)} Compaction Threshold · Prompt Cache`}</span>
         <span
           className="font-mono text-[10px] px-1.5 py-0.5 rounded border"
           style={{

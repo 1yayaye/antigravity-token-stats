@@ -1,7 +1,8 @@
 import { defineConfig, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import postcss, { AtRule, Root, Rule } from 'postcss';
-import { STYLE_ELEMENT_ID, WINDOW_API } from './src/injection-contract.cjs';
+import { resolve } from 'node:path';
+import { STYLE_ELEMENT_ID, WINDOW_API, ZH_PACK_FILE } from './src/injection-contract.cjs';
 
 const CONTAINER_SCOPES = [
   '.antigravity-stats-container',
@@ -192,25 +193,52 @@ function inlineCssPlugin(isolateForHost: boolean): Plugin {
   };
 }
 
-// One injectable UI bundle, one entry/output per host target. Selected by
-// HOST_TARGET (default "antigravity", the desktop client); "antigravity-ide"
-// builds the IDE webview extension bundle.
+// Injectable UI bundles, one entry/output per host target. Selected by HOST_TARGET
+// (default "antigravity", the desktop client); "antigravity-ide" builds the IDE
+// native workbench bundle and "antigravity-zh-pack" the optional Chinese
+// translation pack. Desktop builds both via scripts/build-bundle.cjs because Vite
+// supports a single lib entry per invocation. The desktop main bundle swaps the
+// zh dictionary for an empty stub (real Chinese ships in the zh-pack instead);
+// the IDE and zh-pack builds keep the real module inlined.
 const HOST_TARGETS = {
   antigravity: {
     entry: 'hosts/antigravity/src/standalone.tsx',
     outDir: 'dist-bundle',
     fileName: 'antigravity-stats-bundle.js',
-    // dist-bundle holds only build output; the IDE media dir also carries
-    // checked-in extension assets, so it must not be emptied.
     emptyOutDir: true,
+    zhStub: true,
   },
   'antigravity-ide': {
     entry: 'hosts/antigravity-ide/src/webview/standalone.tsx',
-    outDir: 'hosts/antigravity-ide/extension/media',
+    outDir: 'hosts/antigravity-ide/dist',
     fileName: 'antigravity-stats-ide-bundle.js',
+    // Preserve the separately built main-process host in the same output directory.
     emptyOutDir: false,
+    zhStub: false,
+  },
+  'antigravity-zh-pack': {
+    entry: 'hosts/antigravity/src/i18n/zh-pack.ts',
+    outDir: 'dist-bundle',
+    fileName: ZH_PACK_FILE,
+    emptyOutDir: false,
+    zhStub: false,
   },
 } as const;
+
+// Swaps the zh dictionary module for the empty stub so the desktop main bundle
+// stays English-only (resolve.alias cannot match relative importees reliably).
+function zhStubPlugin(): Plugin {
+  const stubPath = resolve(__dirname, 'src/i18n/translations-zh-stub.ts');
+  return {
+    name: 'zh-stub-alias',
+    enforce: 'pre',
+    resolveId(source) {
+      if (source.endsWith('translations-zh')) {
+        return stubPath;
+      }
+    },
+  };
+}
 
 const hostTarget = process.env.HOST_TARGET ?? 'antigravity';
 const target = HOST_TARGETS[hostTarget as keyof typeof HOST_TARGETS];
@@ -221,7 +249,7 @@ if (!target) {
 }
 
 export default defineConfig({
-  plugins: [react(), inlineCssPlugin(hostTarget === 'antigravity')],
+  plugins: [react(), target.zhStub ? zhStubPlugin() : null, inlineCssPlugin(hostTarget === 'antigravity')].filter(Boolean),
   define: {
     'process.env.NODE_ENV': JSON.stringify('production'),
   },

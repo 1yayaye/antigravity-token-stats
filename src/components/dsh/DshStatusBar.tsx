@@ -226,7 +226,7 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
         onMouseLeave={scheduleHide}
         onClick={() => handlePillClick('session')}
         className="dsh-pill flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
-        aria-label={`性能统计: ${perfText}`}
+        aria-label={`${isZh ? '性能统计' : 'Session stats'}: ${perfText}`}
       >
         <svg
           width="13"
@@ -255,7 +255,7 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
         onMouseLeave={scheduleHide}
         onClick={() => handlePillClick('token')}
         className="dsh-pill flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
-        aria-label={`用量统计: ${usageText}`}
+        aria-label={`${isZh ? '用量统计' : 'Token usage'}: ${usageText}`}
       >
         <svg
           width="13"
@@ -291,7 +291,7 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
           onMouseLeave={scheduleHide}
           onClick={() => handlePillClick('context')}
           className="dsh-pill flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
-          aria-label={`上下文已用: ${context.usedPct}%`}
+          aria-label={`${isZh ? '上下文已用' : 'Context used'}: ${context.usedPct}%`}
         >
           <div className="relative w-[13px] h-[13px] flex items-center justify-center shrink-0">
             <svg width="13" height="13" viewBox="0 0 16 16" style={{ transform: 'rotate(-90deg)', transformOrigin: 'center' }}>

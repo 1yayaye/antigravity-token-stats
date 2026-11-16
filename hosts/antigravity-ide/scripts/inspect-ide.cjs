@@ -1,183 +1,148 @@
 #!/usr/bin/env node
-/**
- * Live inspection for the Antigravity IDE workbench via CDP, the IDE sibling of
- * hosts/antigravity/scripts/verify-real-device.cjs. Requires the IDE to be
- * started with --remote-debugging-port (e.g. via `npm run inspect:ide`).
- *
- * Usage:
- *   node inspect-ide.cjs                 overview: targets, activity bar, frames
- *   node inspect-ide.cjs --webview       open the Token Stats view and dump its DOM state
- *   node inspect-ide.cjs --eval "expr"   evaluate JS in the workbench main context
- */
-
-const PORT = process.env.ANTIGRAVITY_IDE_CDP_PORT || '9222';
-
-async function listTargets() {
-  const res = await fetch(`http://127.0.0.1:${PORT}/json`, { signal: AbortSignal.timeout(2000) });
-  if (!res.ok) throw new Error(`CDP /json returned ${res.status}`);
-  return res.json();
-}
-
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const contract = require('../../../src/injection-contract.cjs');
+// Bounded native CDP acceptance; Browser plugin is unavailable.
 class Cdp {
-  constructor(wsUrl) {
-    this.ws = new WebSocket(wsUrl);
-    this.nextId = 1;
-    this.contexts = new Map(); // executionContextId -> description
-    this.pending = new Map();
-    this.ws.addEventListener('message', (evt) => {
-      const msg = JSON.parse(evt.data);
-      if (msg.id && this.pending.has(msg.id)) {
-        const { res, rej } = this.pending.get(msg.id);
-        this.pending.delete(msg.id);
-        if (msg.error) rej(new Error(msg.error.message));
-        else res(msg.result);
-      } else if (msg.method === 'Runtime.executionContextCreated') {
-        const c = msg.params.context;
-        this.contexts.set(c.id, c);
-      }
+  constructor(url) {
+    this.ws = new WebSocket(url); this.id = 0; this.pending = new Map();
+    this.opened = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('CDP connect timed out')), 5000);
+      this.ws.onopen = () => { clearTimeout(timer); resolve(); };
+      this.ws.onerror = () => { clearTimeout(timer); reject(new Error('CDP connection failed')); };
     });
-    this.opened = new Promise((res, rej) => {
-      this.ws.onopen = res;
-      this.ws.onerror = () => rej(new Error('CDP WebSocket connection failed'));
-    });
+    this.ws.onmessage = event => {
+      const message = JSON.parse(event.data), request = this.pending.get(message.id);
+      if (!request) return;
+      clearTimeout(request.timer); this.pending.delete(message.id);
+      if (message.error) request.reject(new Error(message.error.message)); else request.resolve(message.result);
+    };
   }
-
   send(method, params = {}) {
-    const id = this.nextId++;
-    const p = new Promise((res, rej) => this.pending.set(id, { res, rej }));
-    this.ws.send(JSON.stringify({ id, method, params }));
-    return p;
-  }
-
-  async evaluate(expr, contextId) {
-    const result = await this.send('Runtime.evaluate', {
-      expression: expr,
-      contextId,
-      returnByValue: true,
-      awaitPromise: true,
+    const id = ++this.id;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(method + ' timed out')); }, 12000);
+      this.pending.set(id, { resolve, reject, timer });
+      this.ws.send(JSON.stringify({ id, method, params }));
     });
-    if (result.exceptionDetails) {
-      throw new Error(result.exceptionDetails.exception?.description || 'evaluate failed');
-    }
+  }
+  async evaluate(expression) {
+    const result = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+    if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || 'Evaluation failed');
     return result.result?.value;
   }
-
   close() {
-    try { this.ws.close(); } catch { /* already closed */ }
+    for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('CDP closed')); }
+    this.pending.clear(); this.ws.close();
   }
 }
-
-async function withWorkbench(fn) {
-  const targets = await listTargets();
-  const pages = targets.filter((t) => t.type === 'page' && !t.url.startsWith('devtools://'));
-  const workbench = pages.find((t) => t.url.includes('workbench')) || pages[0];
-  if (!workbench) throw new Error('No workbench page target found — is the IDE running with the debug port?');
-  console.log(`[CDP] port ${PORT}, targets: ${targets.length} (pages: ${pages.length})`);
-  for (const t of targets) {
-    console.log(`  - [${t.type}] ${t.title || '(untitled)'} :: ${t.url.slice(0, 90)}`);
-  }
-  const cdp = new Cdp(workbench.webSocketDebuggerUrl);
-  try {
-    await cdp.opened;
-    await cdp.send('Runtime.enable');
-    await new Promise((r) => setTimeout(r, 500)); // let context events arrive
-    return await fn(cdp);
-  } finally {
-    cdp.close();
-  }
+async function withTarget(run, match = t => t.type === 'page' && t.url.includes('/workbench.html')) {
+  const port = process.env.ANTIGRAVITY_IDE_CDP_PORT || '9222';
+  if (!/^\d{1,5}$/.test(port)) throw new Error('Invalid CDP port');
+  const response = await fetch('http://127.0.0.1:' + port + '/json', { signal: AbortSignal.timeout(3000) });
+  if (!response.ok) throw new Error('CDP list failed: ' + response.status);
+  const target = (await response.json()).find(match);
+  if (!target) throw new Error('Native IDE target unavailable');
+  const cdp = new Cdp(target.webSocketDebuggerUrl);
+  try { await cdp.opened; return await run(cdp); } finally { cdp.close(); }
 }
-
-const OVERVIEW_PROBE = `(() => {
-  const bar = [...document.querySelectorAll('.activitybar .monaco-action-bar .action-item .action-label')]
-    .map((el) => el.getAttribute('aria-label') || el.title || '');
-  const badge = document.querySelector('.badge-content')?.textContent;
-  return { title: document.title, theme: document.body.classList.contains('vscode-dark') ? 'dark' : 'light',
-           activityBar: bar, badge };
-})()`;
-
-const WEBVIEW_PROBE = `(() => {
-  // The webview CDP target's document is only the outer webview shell; the extension
-  // content renders inside the nested active-frame iframe (class on older shells,
-  // id on VSCode 1.10x+). The shell and the frame are same-origin, so reach the
-  // inner document through frame.contentDocument and probe there (fall back to the
-  // shell document when running directly inside the frame).
-  const innerDoc = document.querySelector('iframe.active-frame, iframe#active-frame')?.contentDocument || document;
-  const root = innerDoc.querySelector('#root');
-  const style = innerDoc.getElementById('antigravity-stats-styles');
-  return {
-    hasRoot: !!root,
-    childCount: root ? root.childElementCount : 0,
-    hasStyles: !!style,
-    textSample: root ? root.innerText.replace(/\\s+/g, ' ').slice(0, 300) : null,
-    canvases: innerDoc.querySelectorAll('canvas').length,
-  };
-})()`;
-
-async function main() {
-  const mode = process.argv[2];
-
-  if (mode === '--eval') {
-    const expr = process.argv[3];
-    if (!expr) throw new Error('--eval needs an expression');
-    const value = await withWorkbench((cdp) => cdp.evaluate(expr));
-    console.log(JSON.stringify(value, null, 2));
-    return;
+async function verify(cdp) {
+  const status = JSON.stringify(contract.CONTAINER_IDE_STATUSBAR_ID), popup = JSON.stringify(contract.CONTAINER_IDE_POPOVER_ID);
+  const buttons = await cdp.evaluate('Array.from(document.getElementById(' + status + ')?.querySelectorAll("button[data-widget]") || [], e=>e.dataset.widget)');
+  assert.deepEqual(buttons, ['session', 'tokens', 'context'], 'Three status widgets must render in order');
+  const samples = {};
+  const popupState = '(()=>{const p=document.getElementById(' + popup + ');if(!p)return null;const b=p.getBoundingClientRect(),t=document.getElementById(' + status + ').getBoundingClientRect();return {widget:p.dataset.widget,fits:b.left>=0&&b.right<=innerWidth&&b.top>=0&&b.bottom<=t.top,rows:p.querySelectorAll("tbody tr").length};})()';
+  const clickWidget = widget => cdp.evaluate('document.getElementById(' + status + ').querySelector("[data-widget=' + widget + ']").click()');
+  for (const widget of buttons) {
+    await clickWidget(widget);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    if (widget === 'tokens') {
+      await cdp.evaluate('document.getElementById(' + popup + ')?.querySelector(\'[data-action="toggle-token-drawer"]\')?.click()');
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    const result = await cdp.evaluate(popupState);
+    assert.equal(result?.widget, widget); assert.ok(result.fits, widget + ' must fit above status bar');
+    if (widget === 'tokens') assert.equal(result.rows, 3);
+    samples[widget] = result;
   }
-
-  await withWorkbench(async (cdp) => {
-    const overview = await cdp.evaluate(OVERVIEW_PROBE);
-    console.log('\n[Workbench]', JSON.stringify(overview, null, 2));
-
-    const statsEntry = overview.activityBar.find((label) => /token stats/i.test(label));
-    if (!statsEntry) {
-      console.log('\n[!] Token Stats container not in the activity bar yet. It may need the icon clicked once to activate.');
-    }
-
-    if (mode !== '--webview') {
-      const frames = [...cdp.contexts.values()].map((c) => ({ id: c.id, name: c.name, origin: c.origin }));
-      console.log('\n[Frames/contexts]', JSON.stringify(frames, null, 2));
-      return;
-    }
-
-    // Open the Token Stats view by clicking its activity bar icon, then attach
-    // to the webview iframe target (it is exposed as its own CDP target).
-    await cdp.evaluate(`(() => {
-      const el = [...document.querySelectorAll('.activitybar .monaco-action-bar .action-item .action-label')]
-        .find((n) => /token stats/i.test(n.getAttribute('aria-label') || n.title || ''));
-      if (el) {
-        const r = el.getBoundingClientRect();
-        const opts = { bubbles: true, cancelable: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, button: 0 };
-        el.dispatchEvent(new PointerEvent('pointerdown', opts));
-        el.dispatchEvent(new MouseEvent('mousedown', opts));
-        el.dispatchEvent(new PointerEvent('pointerup', opts));
-        el.dispatchEvent(new MouseEvent('mouseup', opts));
-        el.dispatchEvent(new MouseEvent('click', opts));
-      }
-      return !!el;
+  // Same-entry click closes; the popover stays closed until the entry is clicked again.
+  const lastWidget = buttons[buttons.length - 1];
+  await clickWidget(lastWidget);
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(await cdp.evaluate('!!document.getElementById(' + popup + ')'), false, 'same-entry click must close');
+  await clickWidget(lastWidget);
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal((await cdp.evaluate(popupState))?.widget, lastWidget, 'same-entry reopen must work');
+  // A click far outside the popover closes it like an outside interaction.
+  const viewport = await cdp.evaluate('({w:innerWidth,h:innerHeight})');
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: Math.round(viewport.w / 2), y: Math.round(viewport.h / 3), button: 'left', clickCount: 1 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: Math.round(viewport.w / 2), y: Math.round(viewport.h / 3), button: 'left', clickCount: 1 });
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(await cdp.evaluate('!!document.getElementById(' + popup + ')'), false, 'outside click must close');
+  // Shrinking the layout viewport must keep the popover inside the window;
+  // real OS-level window resizing stays a manual acceptance step.
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 640, height: 520, deviceScaleFactor: 0, mobile: false });
+  await new Promise(resolve => setTimeout(resolve, 300));
+  await clickWidget('context');
+  await new Promise(resolve => setTimeout(resolve, 100));
+  const smallResult = await cdp.evaluate(popupState);
+  assert.equal(smallResult?.widget, 'context');
+  assert.ok(smallResult.fits, 'popover must fit in a small viewport');
+  await cdp.send('Emulation.clearDeviceMetricsOverride');
+  await new Promise(resolve => setTimeout(resolve, 300));
+  await cdp.send('Input.dispatchKeyEvent', {type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+  await cdp.send('Input.dispatchKeyEvent', {type:'keyUp',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
+  await new Promise(resolve => setTimeout(resolve,100));
+  assert.equal(await cdp.evaluate('!!document.getElementById(' + popup + ')'),false);
+  assert.equal(await cdp.evaluate('document.activeElement?.dataset.widget'),'context');
+  return {passed:true,widgets:samples,smallWindow:smallResult.fits};
+}
+if (require.main === module) withTarget(async cdp => {
+  if (process.argv[2] === '--eval') {
+    if (!process.argv[3]) throw new Error('--eval needs expression');
+    return cdp.evaluate(process.argv[3]);
+  }
+  if (process.argv[2] === '--screenshot') {
+    if (!process.argv[3]) throw new Error('--screenshot needs PNG path');
+    const result = await cdp.send('Page.captureScreenshot',{format:'png'});
+    fs.writeFileSync(process.argv[3],Buffer.from(result.data,'base64'));
+    return {screenshot:process.argv[3]};
+  }
+  if (process.argv[2] === '--state') {
+    return cdp.evaluate(`(() => {
+      const state = window[${JSON.stringify(contract.WINDOW_IDE_STATE)}];
+      return { received: !!state, hasActiveChat: !!state?.activeSessionId,
+        hasSession: !!state?.session, promptTokens: state?.session?.promptTokens,
+        contextLimit: state?.contextLimit, hasStats: !!state?.stats,
+        sessionCount: Object.keys(state?.stats?.sessions || {}).length,
+        hasQuota: !!state?.quota, error: state?.error,
+        widgets: Array.from(document.querySelectorAll('.anti-ide-widget-trigger'), e => e.textContent) };
     })()`);
-    await new Promise((r) => setTimeout(r, 3000));
-
-    const targets = await listTargets();
-    const frame = targets.find(
-      (t) => t.type === 'iframe' && t.url.includes('extensionId=antigravity-local.antigravity-ide-token-stats'),
-    );
-    if (!frame) {
-      console.log('\n[!] Token Stats webview iframe target not found — the view may not have opened.');
-      return;
+  }
+  if (process.argv[2] === '--models' || process.argv[2] === '--open-models') {
+    if (process.argv[2] === '--open-models') {
+      const opened = await cdp.evaluate(`(() => {
+        const item = [...document.querySelectorAll('span,button,div')]
+          .find(e => e.textContent.trim() === 'No Model Selected' && e.children.length === 0);
+        if (!item) return null;
+        item.click();
+        return true;
+      })()`);
+      if (opened) {
+        await new Promise(resolve=>setTimeout(resolve,1200));
+      }
     }
-    console.log(`\n[Webview target] ${frame.title || '(untitled)'}`);
-    const frameCdp = new Cdp(frame.webSocketDebuggerUrl);
-    try {
-      await frameCdp.opened;
-      const probe = await frameCdp.evaluate(WEBVIEW_PROBE);
-      console.log(JSON.stringify(probe, null, 2));
-    } finally {
-      frameCdp.close();
-    }
-  });
-}
-
-main().catch((e) => {
-  console.error(`[inspect-ide] ${e.message}`);
-  process.exitCode = 1;
-});
+    return cdp.evaluate(`(() => ({
+      modelsError:document.body.innerText.includes('Error Loading Models'),
+      timeout:document.body.innerText.includes('connectex'),
+      oauth:document.body.innerText.includes('oauth2.googleapis.com'),
+      noModelSelected:document.body.innerText.includes('No Model Selected'),
+      hasModelChoice:[...document.querySelectorAll('[role=option],button')].some(e=>/Gemini|Claude/.test(e.textContent)),
+      route:location.pathname, ready:document.readyState
+    }))()`);
+  }
+  return verify(cdp);
+}, ['--models','--open-models'].includes(process.argv[2])
+  ? target=>target.type==='iframe' && target.url.startsWith('http://127.0.0.1:')
+  : undefined).then(result=>console.log(JSON.stringify(result,null,2))).catch(error=>{console.error('[inspect-ide] '+error.message);process.exitCode=1;});
+module.exports={Cdp,withTarget,verify};

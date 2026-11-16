@@ -24,7 +24,7 @@ require.extensions['.tsx'] = function (module, filename) {
 console.log('=== DeepSeek Harness UI Components Test Suite ===');
 
 // 1. Format Utilities Tests
-const { formatDuration, formatCompactTokens } = require('../src/utils/dsh-format.ts');
+const { formatDuration, formatCompactTokens, resolveModelContextLimit } = require('../src/utils/dsh-format.ts');
 
 console.log('\n--- Test 1: formatDuration & formatCompactTokens ---');
 // Duration
@@ -51,6 +51,21 @@ assert.strictEqual(formatCompactTokens(100000), '100K');
 assert.strictEqual(formatCompactTokens(256000), '256K');
 assert.strictEqual(formatCompactTokens(3762690), '3.8M');
 console.log('PASS: formatCompactTokens correctly scales <1K, <100K, >=100K, >=1M');
+
+assert.strictEqual(resolveModelContextLimit('Gemini 4 Hydrogen Medium'), 512000);
+assert.strictEqual(resolveModelContextLimit('Orchestrator (Argon)'), 512000);
+assert.strictEqual(resolveModelContextLimit('Orchestrator (Carbon)'), 512000);
+assert.strictEqual(resolveModelContextLimit('orchestrator-carbon'), 512000);
+assert.strictEqual(resolveModelContextLimit('gemini-pro-orchestrator-g1-pro'), 512000);
+assert.strictEqual(resolveModelContextLimit('gemini-4-high'), 512000);
+assert.strictEqual(resolveModelContextLimit('orchestrator-worker'), 512000);
+assert.strictEqual(resolveModelContextLimit('Gemini 4 Carbon'), 512000);
+assert.strictEqual(resolveModelContextLimit('Claude Sonnet 5.5 (High)'), 256000);
+assert.strictEqual(resolveModelContextLimit('', 0), 256000);
+assert.strictEqual(resolveModelContextLimit('Gemini 4 Hydrogen Medium', 600000), 1000000);
+assert.strictEqual(resolveModelContextLimit('Gemini 4 Hydrogen Medium', 0, { 'gemini-4-hydrogen-medium': 768000 }), 768000);
+assert.strictEqual(resolveModelContextLimit('Gemini 4 Hydrogen', 0, { 'gemini-4': 256000, 'gemini-4-hydrogen': 512000 }), 512000);
+console.log('PASS: resolveModelContextLimit maps UI model labels, live limits, and overflow tiers');
 
 // 2. React Component Server-Side Rendering Tests
 const { SessionStatsPopover } = require('../src/components/dsh/SessionStatsPopover.tsx');

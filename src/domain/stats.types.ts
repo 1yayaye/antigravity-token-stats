@@ -65,11 +65,15 @@ export interface SessionSummary {
   totalInputTokens: number;
   totalCacheReadTokens: number;
   totalOutputTokens: number;
+  totalThinkingTokens?: number;
+  totalResponseTokens?: number;
   compactionLimit: number;
   turnsCount: number;
   rounds?: number;
   steps?: number;
+  samplesCount?: number;
   tps?: number | null;
+  lastRequestTps?: number | null;
   modelDurationSec?: number;
   toolDurationSec?: number;
   ttftSec?: number | null;
@@ -146,8 +150,24 @@ export interface AntigravityStatsApi {
   init: () => void;
 }
 
+/**
+ * Payload of the optional Chinese translation pack (injection-contract.cjs
+ * WINDOW_ZH_PACK). Set by the zh-pack file before the main bundle runs; absent
+ * means English-only UI.
+ */
+export interface ZhLanguagePack {
+  statsTranslations: Record<string, string>;
+  uiDict: {
+    exactMap: Record<string, string>;
+    dynamicRules: Array<{ pattern: RegExp; replace: string | ((substring: string, ...args: string[]) => string) }>;
+    exclusionSelectors: string[];
+  };
+}
+
 declare global {
   interface Window {
+    __ANTIGRAVITY_ZH_PACK__?: ZhLanguagePack;
+    __ANTIGRAVITY_STATS_FEATURES__?: Record<string, boolean>;
     __ANTIGRAVITY_STATS__?: AggregatedStats;
     __ANTIGRAVITY_STATS_ROOT__?: import('react-dom/client').Root | null;
     __ANTIGRAVITY_STATUSBAR_ROOT__?: import('react-dom/client').Root | null;

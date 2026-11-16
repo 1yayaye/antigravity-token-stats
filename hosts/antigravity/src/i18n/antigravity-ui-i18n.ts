@@ -3,12 +3,45 @@
  * Non-invasive, high-performance, real-time DOM localization observer.
  */
 
-import { lookupTranslation, UI_DYNAMIC_RULES, EXCLUSION_SELECTORS } from './antigravity-ui-dict';
-import { EVENT_LANGUAGE_CHANGED } from '../../../../src/injection-contract.cjs';
+import { EVENT_LANGUAGE_CHANGED, WINDOW_ZH_PACK } from '../../../../src/injection-contract.cjs';
+import type { ZhLanguagePack } from '../../../../src/domain/stats.types';
 
 export type UILanguage = 'en' | 'zh';
 
 const STORAGE_KEY = 'antigravity-stats-lang';
+
+// The bilingual dictionary lives in the optional zh-pack (window[WINDOW_ZH_PACK].uiDict,
+// injected before this bundle), never inside the main bundle. Without the pack the UI
+// stays English. The lowercase exact-match view is rebuilt only when the pack instance
+// changes, keeping lookups allocation-free.
+let cachedDict: ZhLanguagePack['uiDict'] | null = null;
+let cachedExactLower: Record<string, string> | null = null;
+
+function getUiDict(): ZhLanguagePack['uiDict'] | null {
+  const pack = typeof window === 'undefined'
+    ? undefined
+    : (window as unknown as Record<string, ZhLanguagePack | undefined>)[WINDOW_ZH_PACK];
+  if (!pack?.uiDict) return null;
+  if (cachedDict !== pack.uiDict) {
+    cachedDict = pack.uiDict;
+    cachedExactLower = null;
+  }
+  return pack.uiDict;
+}
+
+function lookupTranslation(trimmed: string): string | undefined {
+  const dict = getUiDict();
+  if (!dict) return undefined;
+  // Object.hasOwn avoids returning inherited members (constructor, toString, __proto__, ...).
+  if (Object.hasOwn(dict.exactMap, trimmed)) return dict.exactMap[trimmed];
+  if (!cachedExactLower) {
+    cachedExactLower = Object.fromEntries(
+      Object.entries(dict.exactMap).map(([en, zh]) => [en.toLowerCase(), zh])
+    );
+  }
+  const lower = trimmed.toLowerCase();
+  return Object.hasOwn(cachedExactLower, lower) ? cachedExactLower[lower] : undefined;
+}
 
 export class AntigravityUITranslator {
   private observer: MutationObserver | null = null;
@@ -16,14 +49,17 @@ export class AntigravityUITranslator {
   private currentLang: UILanguage = 'en';
   private originalTextStore = new WeakMap<Node, { original: string; translated: string }>();
   private originalAttrStore = new WeakMap<Element, Record<string, { original: string; translated: string }>>();
-  private excludedSelectorCombined = EXCLUSION_SELECTORS.join(', ');
+
+  private get excludedSelectorCombined(): string {
+    return getUiDict()?.exclusionSelectors.join(', ') ?? '';
+  }
 
   constructor() {
     this.currentLang = this.detectSavedLanguage();
   }
 
   public detectSavedLanguage(): UILanguage {
-    if (typeof window === 'undefined') return 'en';
+    if (typeof window === 'undefined' || !getUiDict()) return 'en';
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved === 'zh' || saved === 'en') return saved;
     const navLang = navigator.language?.toLowerCase();
@@ -36,19 +72,20 @@ export class AntigravityUITranslator {
   }
 
   public setLanguage(lang: UILanguage): void {
-    if (this.currentLang === lang && this.observer) return;
-    this.currentLang = lang;
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY, lang);
+    const effectiveLang: UILanguage = lang === 'zh' && !getUiDict() ? 'en' : lang;
+    if (this.currentLang === effectiveLang && (effectiveLang === 'en' || this.observer)) return;
+    this.currentLang = effectiveLang;
+    if (typeof window !== 'undefined' && getUiDict()) {
+      localStorage.setItem(STORAGE_KEY, effectiveLang);
     }
-    if (lang === 'zh') {
+    if (effectiveLang === 'zh') {
       this.start();
     } else {
       this.stop();
     }
     // Dispatch synchronization event for any listening UI components
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent(EVENT_LANGUAGE_CHANGED, { detail: { lang } }));
+      window.dispatchEvent(new CustomEvent(EVENT_LANGUAGE_CHANGED, { detail: { lang: effectiveLang } }));
     }
   }
 
@@ -57,6 +94,9 @@ export class AntigravityUITranslator {
   }
 
   public start(): void {
+    // No zh-pack installed: the host UI stays English and observing DOM mutations
+    // would only waste cycles.
+    if (!getUiDict()) return;
     if (typeof document === 'undefined') return;
 
     if (!this.observer) {
@@ -89,9 +129,11 @@ export class AntigravityUITranslator {
     if (!node) return true;
     const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
     if (!el) return false;
+    const excluded = this.excludedSelectorCombined;
+    if (!excluded) return false;
     try {
-      if (el.matches(this.excludedSelectorCombined)) return true;
-      if (el.closest(this.excludedSelectorCombined)) return true;
+      if (el.matches(excluded)) return true;
+      if (el.closest(excluded)) return true;
     } catch {
       // Ignore selector errors
     }
@@ -113,7 +155,7 @@ export class AntigravityUITranslator {
     }
 
     // 2. Dynamic pattern matching
-    for (const rule of UI_DYNAMIC_RULES) {
+    for (const rule of getUiDict()?.dynamicRules ?? []) {
       if (rule.pattern.test(trimmed)) {
         // @ts-expect-error String replace signature
         const replaced = trimmed.replace(rule.pattern, rule.replace);
