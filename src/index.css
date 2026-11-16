@@ -125,6 +125,59 @@
   box-shadow: none !important;
 }
 
+.antigravity-dsh-statusbar .dsh-pill-secondary {
+  max-width: 340px;
+  opacity: 1;
+  transform: scale(1);
+  overflow: hidden;
+  transition:
+    max-width 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding-left 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding-right 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    margin-right 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-width 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 220ms linear,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+/* Host composer footer defines container: input-footer / inline-size; in split-pane
+   widths drop redundant round/step/token prefixes so pills never crush the model picker. */
+@container input-footer (max-width: 680px) {
+  .antigravity-dsh-statusbar {
+    gap: 2px;
+  }
+  .antigravity-dsh-statusbar .dsh-pill {
+    padding-left: 6px;
+    padding-right: 6px;
+    gap: 4px;
+  }
+  .antigravity-dsh-statusbar .dsh-pill-secondary {
+    max-width: 96px;
+  }
+  .antigravity-dsh-statusbar .dsh-pill-full-only {
+    display: none;
+  }
+}
+
+/* Narrow split panes: smoothly collapse session & token pills so only the context ring stays visible. */
+@container input-footer (max-width: 560px) {
+  .antigravity-dsh-statusbar .dsh-pill-secondary {
+    max-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    margin-right: -2px;
+    border-width: 0;
+    opacity: 0;
+    transform: scale(0.92);
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
 /* DSH Status Bar Micro-Interactions (2.5s calm breathing, settle ticker & physics damping) */
 @keyframes dsh-breathe {
   0%, 100% { opacity: 1; }

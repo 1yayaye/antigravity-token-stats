@@ -315,6 +315,7 @@ namespace AntiTokenSetup.Services
             // byte scan: unconditionally injected assets also contain the file name.
             bool zhPackInstalled = hasAsar && AsarPatcher.ContainsFileEntry(
                 asarPath, $"dist/antigravity-stats/{contract.ZhPackFileName}");
+            bool statusBarInstalled = isPatched && AsarPatcher.ReadStatusBarEnabled(asarPath);
             bool running = isRunningOverride ?? IsAntigravityRunning();
             bool isAdmin = isAdminOverride ?? IsAdministrator();
 
@@ -363,6 +364,7 @@ namespace AntiTokenSetup.Services
                 NeedsElevation = needsElevation,
                 ProxyInstalled = dllExists && configExists,
                 ZhPackInstalled = zhPackInstalled,
+                StatusBarInstalled = statusBarInstalled,
                 ExistingProxyType = existingType,
                 ExistingProxyHost = existingHost,
                 ExistingProxyPort = existingPort

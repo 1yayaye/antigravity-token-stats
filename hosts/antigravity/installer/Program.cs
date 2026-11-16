@@ -60,6 +60,7 @@ namespace AntiTokenSetup
                     a == "--detect-proxies" || a == "--test-proxy" ||
                     a == "--patch-dir" || a.StartsWith("--patch-dir=", StringComparison.Ordinal) ||
                     a == "--unpatch-dir" || a.StartsWith("--unpatch-dir=", StringComparison.Ordinal) ||
+                    a == "--inspect-dir" || a.StartsWith("--inspect-dir=", StringComparison.Ordinal) ||
                     a == "--verify-asar" || a.StartsWith("--verify-asar=", StringComparison.Ordinal))
                 {
                     return true;
@@ -77,6 +78,7 @@ namespace AntiTokenSetup
                     Console.WriteLine("AntiTokenSetup CLI Usage:");
                     Console.WriteLine("  --patch-dir <resourcesDir> [--no-proxy] [--no-zh-pack] [--no-status-bar] [--proxy-port <port>] [--proxy-type <socks5|http>] [--kill] [--min-asar-size <bytes>] [--dev-bundle <path>] [--skip-dev-redirect] --no-gui");
                     Console.WriteLine("  --unpatch-dir <resourcesDir> [--no-proxy] [--kill] [--dev-bundle <path>] [--skip-dev-redirect] --no-gui");
+                    Console.WriteLine("  --inspect-dir <appOrResourcesDir>");
                     Console.WriteLine("  --verify-asar <asarPath> [--require-patched]");
                     Console.WriteLine("  --detect-proxies");
                     Console.WriteLine("  --test-proxy [--proxy-host <host>] --proxy-port <port> [--proxy-type <socks5|http>]");
@@ -123,6 +125,24 @@ namespace AntiTokenSetup
                             ["isExistingConfig"] = p.IsExistingConfig
                         });
                     }
+                    Console.WriteLine(JsonHelper.SerializeCompact(payload));
+                    return 0;
+                }
+
+                string inspectDir = GetArgValue(args, "--inspect-dir");
+                if (!string.IsNullOrEmpty(inspectDir))
+                {
+                    var info = EnvironmentDetector.InspectDesktopDirectory(inspectDir, "CLI", contract);
+                    var payload = new System.Collections.Generic.Dictionary<string, object>
+                    {
+                        ["rootDir"] = info.RootDir,
+                        ["hasAsar"] = info.HasAsar,
+                        ["isPatched"] = info.IsPatched,
+                        ["hasBackup"] = info.HasBackup,
+                        ["proxyInstalled"] = info.ProxyInstalled,
+                        ["zhPackInstalled"] = info.ZhPackInstalled,
+                        ["statusBarInstalled"] = info.StatusBarInstalled
+                    };
                     Console.WriteLine(JsonHelper.SerializeCompact(payload));
                     return 0;
                 }

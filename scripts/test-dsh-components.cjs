@@ -214,14 +214,20 @@ console.log('\n--- Test 3: DshStatusBar Component Rendering ---');
   const htmlBar = ReactDOMServer.renderToString(
     React.createElement(DshStatusBar, { telemetry, lang: 'zh' })
   );
+  const textBar = htmlBar.replace(/<[^>]+>/g, '');
   assert(htmlBar.includes('dsh-pill-performance'), 'Must contain performance pill');
-  assert(htmlBar.includes('2 轮 78 步 · 190 tok/s'), 'Must contain performance text');
+  assert(textBar.includes('2 轮 78 步 · 190 tok/s'), 'Must contain full performance text across spans');
+  assert(htmlBar.includes('dsh-pill-full-only">2 轮 78 步 · </span><span class="dsh-pill-compact-keep">190 tok/s</span>'), 'Must split performance pill for compact split-pane display');
   assert(htmlBar.includes('dsh-pill-usage'), 'Must contain usage pill');
-  assert(htmlBar.includes('3.8M tok · 缓存命中 99%'), 'Must contain usage text');
+  assert(textBar.includes('3.8M tok · 缓存命中 99%'), 'Must contain full usage text across spans');
+  assert(htmlBar.includes('dsh-pill-full-only">3.8M tok · 缓存命中 </span><span class="dsh-pill-compact-keep">99%</span>'), 'Must split usage pill to keep cache percentage in compact mode');
   assert(htmlBar.includes('dsh-pill-context'), 'Must contain context pill');
+  assert(/id="dsh-pill-performance"[^>]*class="dsh-pill dsh-pill-secondary\b/.test(htmlBar), 'Performance pill must carry dsh-pill-secondary for narrow hiding');
+  assert(/id="dsh-pill-usage"[^>]*class="dsh-pill dsh-pill-secondary\b/.test(htmlBar), 'Usage pill must carry dsh-pill-secondary for narrow hiding');
+  assert(!/id="dsh-pill-context"[^>]*class="[^"]*\bdsh-pill-secondary\b/.test(htmlBar), 'Context pill must stay visible in narrow split panes');
   assert(htmlBar.includes('antigravity-context-usage-pill'), 'Must contain backward-compatible container ID');
   assert(htmlBar.includes('28%'), 'Must contain 28% context donut text');
-  console.log('PASS: DshStatusBar renders all 3 pills with correct text');
+  console.log('PASS: DshStatusBar renders all 3 pills with responsive split-pane spans');
 
   // Null degradation test for status bar
   const telemetryNull = {
@@ -234,7 +240,10 @@ console.log('\n--- Test 3: DshStatusBar Component Rendering ---');
   );
   assert(!htmlBarNull.includes('NaN'), 'Must not render NaN');
   assert(!htmlBarNull.includes('0 tok/s'), 'Must not fake 0 tok/s');
+  assert(!htmlBarNull.includes('dsh-pill-compact-keep'), 'Must omit compact-keep spans when tps and cacheHitRatePct are null');
+  assert(htmlBarNull.includes('dsh-pill-full-only'), 'Must keep full-only text when tps and cacheHitRatePct are null');
   assert(htmlBarNull.includes('2 轮 78 步'), 'Should render rounds and steps without TPS');
+  assert(htmlBarNull.includes('3.8M tok'), 'Should render compact total tokens without cache hit rate');
   console.log('PASS: DshStatusBar null degradation operates cleanly');
 }
 

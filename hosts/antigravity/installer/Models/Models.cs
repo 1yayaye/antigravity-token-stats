@@ -34,6 +34,7 @@ namespace AntiTokenSetup.Models
 
         public bool ProxyInstalled { get; set; }
         public bool ZhPackInstalled { get; set; }
+        public bool StatusBarInstalled { get; set; }
         public string ExistingProxyType { get; set; }
         public string ExistingProxyHost { get; set; }
         public int ExistingProxyPort { get; set; }

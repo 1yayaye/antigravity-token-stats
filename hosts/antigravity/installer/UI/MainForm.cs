@@ -21,6 +21,7 @@ namespace AntiTokenSetup.UI
         private bool _isBusy;
         private bool _suppressProxySelectionEvent;
         private string _selectedProxyHost = "127.0.0.1";
+        private string _syncedInstallPath = "";
 
         private DesktopInstallInfo _currentInstall;
         private List<ProxyCandidate> _proxyCandidates = new List<ProxyCandidate>();
@@ -612,6 +613,7 @@ namespace AntiTokenSetup.UI
                 }
 
                 RefreshInstallStatusLabels();
+                SyncOptionalCheckboxesFromInstall();
 
                 int existingPort = _currentInstall?.ExistingProxyPort ?? 0;
                 _proxyCandidates = await EnvironmentDetector.DetectLocalProxiesAsync(existingPort);
@@ -669,7 +671,15 @@ namespace AntiTokenSetup.UI
             }
         }
 
-        private void InspectCurrentPathFromUi()
+        private void SyncOptionalCheckboxesFromInstall()
+        {
+            bool isPatched = _currentInstall != null && _currentInstall.IsPatched;
+            _chkZhPack.Checked = isPatched && _currentInstall.ZhPackInstalled;
+            _chkStatusBar.Checked = isPatched && _currentInstall.StatusBarInstalled;
+            _syncedInstallPath = _currentInstall?.RootDir ?? "";
+        }
+
+        private void InspectCurrentPathFromUi(bool forceSyncCheckboxes = false)
         {
             string pathText = _cmbPath.Text?.Trim();
             if (string.IsNullOrEmpty(pathText))
@@ -688,6 +698,14 @@ namespace AntiTokenSetup.UI
                 }
             }
             RefreshInstallStatusLabels();
+
+            // Sync optional checkboxes when switching target directories or after an install/uninstall,
+            // without overwriting user edits during pre-flight checks on the same directory.
+            string currentRoot = _currentInstall?.RootDir ?? "";
+            if (forceSyncCheckboxes || !string.Equals(currentRoot, _syncedInstallPath, StringComparison.OrdinalIgnoreCase))
+            {
+                SyncOptionalCheckboxesFromInstall();
+            }
         }
 
         private void RefreshInstallStatusLabels()
@@ -732,11 +750,14 @@ namespace AntiTokenSetup.UI
             string zhPackText = _currentInstall.ZhPackInstalled
                 ? T("已安装", "Installed")
                 : T("未安装", "Not Installed");
+            string statusBarText = _currentInstall.StatusBarInstalled
+                ? T("已启用", "On")
+                : T("未启用", "Off");
             string permText = _currentInstall.NeedsElevation ? T(" · 需要管理员权限", " · Needs Admin") : "";
 
             _lblInstallDetails.Text = T(
-                $"app.asar: 正常 | 补丁状态: {patchState} ({backupText}) | 透明代理: {proxyText} | 翻译包: {zhPackText}{permText}",
-                $"app.asar: Found | Patch: {patchState} ({backupText}) | Proxy: {proxyText} | Zh-pack: {zhPackText}{permText}");
+                $"app.asar: 正常 | 补丁状态: {patchState} ({backupText}) | 透明代理: {proxyText} | 翻译包: {zhPackText} | 小部件: {statusBarText}{permText}",
+                $"app.asar: Found | Patch: {patchState} ({backupText}) | Proxy: {proxyText} | Zh-pack: {zhPackText} | Widget: {statusBarText}{permText}");
         }
 
         private void RefreshProxyComboBox(bool preferCandidateProtocol = true)
@@ -1026,7 +1047,7 @@ namespace AntiTokenSetup.UI
                 });
                 if (IsDisposed || Disposing) return;
 
-                InspectCurrentPathFromUi();
+                InspectCurrentPathFromUi(forceSyncCheckboxes: true);
                 AppendLog(T(
                     "✓ 安装完成！请在 Antigravity 中点击 Settings -> Usage Stats。",
                     "✓ Installation complete! Open Settings -> Usage Stats inside Antigravity."));
@@ -1130,7 +1151,7 @@ namespace AntiTokenSetup.UI
                 AppendLog(T("正在卸载并还原出厂状态...", "Uninstalling and restoring factory state..."));
                 var result = await Task.Run(() => AsarPatcher.Unpatch(resourcesDir, _contract, removeProxy: true, log: AppendLog));
                 if (IsDisposed || Disposing) return;
-                InspectCurrentPathFromUi();
+                InspectCurrentPathFromUi(forceSyncCheckboxes: true);
 
                 if (result.Pristine)
                 {

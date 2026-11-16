@@ -2,6 +2,26 @@
 
 All notable changes to Antigravity Token Stats will be documented in this file.
 
+## [1.8.2] - 2026-11-17
+
+### Added
+- **Split-Pane DSH Status Bar & Responsive Narrow-Pane Layout (`hosts/antigravity/src/standalone.tsx`, `hosts/antigravity/scripts/loader.cjs`, `src/components/dsh/DshStatusBar.tsx`, `src/index.css`)**:
+  - Upgraded `standalone.tsx` from a single status-bar root to a per-container `statusbarRoots` registry (`data-dsh-statusbar="true"`), mounting independent `DshStatusBar` pills in every split-pane composer footer, pruning detached roots when panes close, throttling `requestDataSync` per session (`lastSyncRequestBySession`), and probing host pill styles per container.
+  - Added `resolveSessionIdForContainer` to bind each split pane to its own `[data-cascade-id]` (avoiding inheriting the route URL session in empty `[data-pane-id]` panes when another pane already owns it), and scoped `checkGenerationState(container)` (including `button[data-testid="input-cancel-button"]`) to each pane/composer so streaming in one pane does not mark sibling panes as streaming.
+  - Updated `loader.cjs` (`broadcastStats`) to retain session entries for every `[data-testid="conversation-view"][data-cascade-id]` visible in the renderer DOM across full-scan broadcasts.
+  - Added `@container input-footer` responsive rules in `DshStatusBar.tsx` and `src/index.css`: at `max-width: 680px`, `.dsh-pill-full-only` labels collapse to compact `tok/s` and cache `%` readouts; at `max-width: 560px`, secondary pills smoothly collapse so only the context ring remains visible without crowding the model picker.
+- **Installer Upgrade State Sync & `--inspect-dir` CLI (`hosts/antigravity/installer/`)**:
+  - Added `AsarPatcher.ReadStatusBarEnabled` (reading `dist/antigravity-stats/contract.json` `features.statusBar`, defaulting to `true` on legacy patches without `features`), `DesktopInstallInfo.StatusBarInstalled`, `EnvironmentDetector` population, and the `--inspect-dir <appOrResourcesDir>` CLI command outputting JSON component status.
+  - Updated `MainForm.cs` with `SyncOptionalCheckboxesFromInstall()` to sync the **中文翻译包** and **状态栏小部件** checkboxes when selecting a patched directory or after install/uninstall (without overwriting user edits during pre-flight checks on the same directory), and added `小部件: 已启用/未启用` (`Widget: On/Off`) to `_lblInstallDetails`.
+
+### Improved & Fixed
+- **Regression & Integration Coverage (`scripts/test-audit-fixes.cjs`, `scripts/test-dsh-components.cjs`, `scripts/test-optional-components.cjs`, `scripts/test-integration.cjs`)**:
+  - Added split-pane status-bar isolation/pruning and `broadcastStats` multi-pane retention tests (`test-audit-fixes.cjs`), responsive compact/full pill span checks (`test-dsh-components.cjs`), `ReadStatusBarEnabled`/`--inspect-dir`/`SyncOptionalCheckboxesFromInstall` assertions (`test-optional-components.cjs`), and end-to-end `--inspect-dir` lifecycle checks across unpatched, full-patch, opt-out re-patch, legacy `contract.json`, and unpatched states (`test-integration.cjs`).
+
+### Release Notes (补充说明)
+- **Scope**: Release asset `antigravity-token-stats-v1.8.2-setup.exe` targets **Antigravity Desktop only** (does not package or patch Antigravity IDE; IDE users continue using `npm run build:bundle:ide && npm run build:host:ide && npm run patch:ide`).
+- **GUI Installer Behavior**: Fresh/unpatched installs still leave **透明代理**, **中文翻译包**, and **状态栏小部件** unchecked by default; when inspecting an already-patched directory, the GUI now syncs **中文翻译包** and **状态栏小部件** to reflect the currently installed state.
+
 ## [1.8.1] - 2026-11-16
 
 ### Added

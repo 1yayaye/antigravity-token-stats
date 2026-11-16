@@ -114,28 +114,61 @@ namespace AntiTokenSetup.Services
                 using (var fs = new FileStream(asarPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                 {
                     var (root, _) = ReadArchiveHeader(fs);
-                    var files = JsonHelper.GetObject(root, "files");
-                    if (files == null) return false;
-
-                    string[] segments = relativePath.Replace('\\', '/').Split('/');
-                    for (int i = 0; i < segments.Length; i++)
-                    {
-                        var node = JsonHelper.GetObject(files, segments[i]);
-                        if (node == null) return false;
-                        if (i == segments.Length - 1)
-                        {
-                            return !node.ContainsKey("files") && !node.ContainsKey("link");
-                        }
-                        files = JsonHelper.GetObject(node, "files");
-                        if (files == null) return false;
-                    }
-                    return false;
+                    return FindFileEntry(root, relativePath) != null;
                 }
             }
             catch
             {
                 return false;
             }
+        }
+
+        // Reads dist/antigravity-stats/contract.json from a patched app.asar to inspect
+        // features.statusBar. Older patches lacked features and always enabled the
+        // widget, so missing entries or fields fall back to true (matching standalone.tsx).
+        public static bool ReadStatusBarEnabled(string asarPath)
+        {
+            if (!File.Exists(asarPath)) return true;
+            try
+            {
+                using (var fs = new FileStream(asarPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    var (root, dataBaseOffset) = ReadArchiveHeader(fs);
+                    var entry = FindFileEntry(root, "dist/antigravity-stats/contract.json");
+                    if (entry == null || JsonHelper.GetBool(entry, "unpacked"))
+                    {
+                        return true;
+                    }
+                    byte[] bytes = ReadFileBytesFromArchive(fs, dataBaseOffset, entry, "dist/antigravity-stats/contract.json");
+                    var dict = JsonHelper.DeserializeObject(Utf8NoBom.GetString(bytes));
+                    var features = JsonHelper.GetObject(dict, "features");
+                    return features == null || JsonHelper.GetBool(features, "statusBar", fallback: true);
+                }
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        private static Dictionary<string, object> FindFileEntry(Dictionary<string, object> root, string relativePath)
+        {
+            var files = JsonHelper.GetObject(root, "files");
+            if (files == null) return null;
+
+            string[] segments = relativePath.Replace('\\', '/').Split('/');
+            for (int i = 0; i < segments.Length; i++)
+            {
+                var node = JsonHelper.GetObject(files, segments[i]);
+                if (node == null) return null;
+                if (i == segments.Length - 1)
+                {
+                    return (!node.ContainsKey("files") && !node.ContainsKey("link")) ? node : null;
+                }
+                files = JsonHelper.GetObject(node, "files");
+                if (files == null) return null;
+            }
+            return null;
         }
 
         public static PatchResult Patch(

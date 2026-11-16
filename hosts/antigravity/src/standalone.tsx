@@ -95,17 +95,47 @@ export function removeContextPopover() {
 }
 
 export function getCurrentConversationId(): string | null {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === 'undefined' || !window.location?.pathname) return null;
   const match = window.location.pathname.match(/\/c\/([a-zA-Z0-9_-]+)/);
   return match ? match[1] : null;
 }
 
-let lastSyncRequestTime = 0;
+/**
+ * Resolves the session ID owned by a given statusbar slot so split panes show
+ * their own conversation instead of mirroring the active route's session.
+ */
+export function resolveSessionIdForContainer(container?: HTMLElement | null): string | null {
+  if (container && typeof container.closest === 'function') {
+    const cascadeEl = container.closest('[data-cascade-id]');
+    const cascadeId = cascadeEl?.getAttribute('data-cascade-id')?.trim();
+    if (cascadeId) return cascadeId;
+
+    // A newly split empty pane lives inside [data-pane-id] without [data-cascade-id] yet;
+    // avoid inheriting the URL route's session when another pane already renders it.
+    const paneEl = container.closest('[data-pane-id]');
+    if (paneEl && typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
+      const urlSessionId = getCurrentConversationId();
+      if (urlSessionId) {
+        const activeViews = Array.from(document.querySelectorAll('[data-cascade-id]'));
+        const claimedElsewhere = activeViews.some(
+          (el) => el.getAttribute('data-cascade-id') === urlSessionId && !paneEl.contains(el)
+        );
+        if (claimedElsewhere) return null;
+      }
+    }
+  }
+  return getCurrentConversationId();
+}
+
+const lastSyncRequestBySession = new Map<string, number>();
 export function requestDataSync(sessionId?: string | null) {
   const targetSessionId = sessionId ?? null;
-  const now = Date.now();
-  if (targetSessionId && now - lastSyncRequestTime < 100) return; // 100ms heartbeat throttle
-  lastSyncRequestTime = now;
+  if (targetSessionId) {
+    const now = Date.now();
+    const lastTime = lastSyncRequestBySession.get(targetSessionId) ?? 0;
+    if (now - lastTime < 100) return; // 100ms per-session heartbeat throttle
+    lastSyncRequestBySession.set(targetSessionId, now);
+  }
 
   // Tier 1: ContextBridge Preload bridge
   const syncBridge = typeof window !== 'undefined'
@@ -135,16 +165,51 @@ if (typeof window !== 'undefined') {
 
 // The stop button is the only instant "generating" hint. Our own i18n rewrites aria-labels,
 // hence both languages. It never feeds token numbers; those come from SQLite only.
-export function checkGenerationState(): boolean {
+export function checkGenerationState(container?: HTMLElement | null): boolean {
   if (typeof document === 'undefined') return false;
-  return Boolean(document.querySelector(
-    'button[aria-label*="Cancel"], button[aria-label*="Stop"], button[aria-label="取消"], button[aria-label="停止"]'
+  const scope: ParentNode = (container && typeof container.closest === 'function'
+    ? container.closest('[data-testid="conversation-view"], [data-pane-id], [data-testid="agent-input-box"], [data-agent-composer-root]')
+    : null) || document;
+  if (typeof scope.querySelector !== 'function') return false;
+  return Boolean(scope.querySelector(
+    'button[data-testid="input-cancel-button"], button[aria-label*="Cancel"], button[aria-label*="Stop"], button[aria-label="取消"], button[aria-label="停止"]'
   ));
 }
 
 // A new conversation has no stats entry, and the host pushes nothing until its first model call
-// lands. This heartbeat re-reads the active session once per second, independent of any event.
+// lands. This heartbeat re-reads active sessions once per second, independent of any event.
 const PILL_HEARTBEAT_MS = 1000;
+const statusbarRoots = new Map<HTMLElement, { root: ReactDOM.Root; signature: string }>();
+
+function isElementConnected(el: HTMLElement | null | undefined): el is HTMLElement {
+  return Boolean(el) && el!.isConnected !== false;
+}
+
+function pruneDisconnectedStatusBars() {
+  for (const container of Array.from(statusbarRoots.keys())) {
+    if (!isElementConnected(container)) {
+      unmountDshStatusBar(container);
+    }
+  }
+}
+
+function getAllStatusBarContainers(): HTMLElement[] {
+  if (typeof document === 'undefined') return [];
+  const seen = new Set<HTMLElement>();
+  const add = (el: Element | null | undefined) => {
+    if (el && isElementConnected(el as HTMLElement)) {
+      seen.add(el as HTMLElement);
+    }
+  };
+  for (const container of statusbarRoots.keys()) add(container);
+  if (typeof document.querySelectorAll === 'function') {
+    document.querySelectorAll(`#${CONTAINER_STATUSBAR_ID}, [data-dsh-statusbar="true"]`).forEach(add);
+  }
+  if (typeof document.getElementById === 'function') {
+    add(document.getElementById(CONTAINER_STATUSBAR_ID));
+  }
+  return Array.from(seen);
+}
 
 function stopContextPillHeartbeat() {
   if (typeof window !== 'undefined' && window.__ANTIGRAVITY_PILL_HEARTBEAT__) {
@@ -157,10 +222,11 @@ function stopContextPillHeartbeat() {
 // color, size and weight as native Antigravity controls (e.g. the Turbo dropdown).
 // Every field is optional — when the host DOM isn't ready the pills fall back to
 // their own --dsh-* tokens.
-function probeHostPillStyle(): DshHostStyle {
+function probeHostPillStyle(container?: HTMLElement | null): DshHostStyle {
   const probe: DshHostStyle = {};
   try {
-    const anchor = document.querySelector('button[data-testid="permissions-selector-trigger"]');
+    const anchor = container?.parentElement?.querySelector?.('button[data-testid="permissions-selector-trigger"]')
+      || document.querySelector('button[data-testid="permissions-selector-trigger"]');
     if (anchor instanceof HTMLElement && anchor.isConnected) {
       const cs = getComputedStyle(anchor);
       if (cs.color) probe.textColor = cs.color;
@@ -207,10 +273,12 @@ function detectSelectedModelFromComposer(container: HTMLElement): string {
 export function mountDshStatusBar(container: HTMLElement) {
   if (!container || !isStatsFeatureEnabled('statusBar')) return;
 
-  const sessionId = getCurrentConversationId();
+  pruneDisconnectedStatusBars();
+
+  const sessionId = resolveSessionIdForContainer(container);
   const stats = window.__ANTIGRAVITY_STATS__;
   const session = sessionId && stats?.sessions ? stats.sessions[sessionId] : null;
-  const isGenerating = Boolean(session?.isRunning) || (Boolean(sessionId) && checkGenerationState());
+  const isGenerating = Boolean(session?.isRunning) || (Boolean(sessionId) && checkGenerationState(container));
   const effectiveTps = session?.tps ?? null;
 
   const selectedModel = detectSelectedModelFromComposer(container);
@@ -266,17 +334,21 @@ export function mountDshStatusBar(container: HTMLElement) {
 
   const theme = detectAntigravityTheme();
   const lang = antigravityI18n.getLanguage();
-  const hostStyle = probeHostPillStyle();
+  const hostStyle = probeHostPillStyle(container);
 
   // The heartbeat, mutation scans and sync events all funnel through here every
   // second; skipping no-op renders keeps the host's event loop free enough that
   // popover dismissal stays instant.
   const renderSignature = JSON.stringify([telemetry, theme, lang, hostStyle]);
 
-  if (window.__ANTIGRAVITY_STATUSBAR_ROOT__ && window.__ANTIGRAVITY_STATUSBAR_CONTAINER__ === container && container.isConnected) {
-    if (window.__ANTIGRAVITY_STATUSBAR_SIGNATURE__ === renderSignature) return;
+  const existing = statusbarRoots.get(container);
+  if (existing && isElementConnected(container)) {
+    window.__ANTIGRAVITY_STATUSBAR_ROOT__ = existing.root;
+    window.__ANTIGRAVITY_STATUSBAR_CONTAINER__ = container;
+    if (existing.signature === renderSignature) return;
+    existing.signature = renderSignature;
     window.__ANTIGRAVITY_STATUSBAR_SIGNATURE__ = renderSignature;
-    window.__ANTIGRAVITY_STATUSBAR_ROOT__.render(
+    existing.root.render(
       <React.StrictMode>
         <div className={`antigravity-dsh-container ${theme}`}>
           <DshStatusBar
@@ -291,10 +363,13 @@ export function mountDshStatusBar(container: HTMLElement) {
     return;
   }
 
-  unmountDshStatusBar();
+  if (existing) {
+    unmountDshStatusBar(container);
+  }
 
   container.innerHTML = '';
   const root = ReactDOM.createRoot(container);
+  statusbarRoots.set(container, { root, signature: renderSignature });
   window.__ANTIGRAVITY_STATUSBAR_ROOT__ = root;
   window.__ANTIGRAVITY_STATUSBAR_CONTAINER__ = container;
   window.__ANTIGRAVITY_STATUSBAR_SIGNATURE__ = renderSignature;
@@ -313,34 +388,81 @@ export function mountDshStatusBar(container: HTMLElement) {
   );
 }
 
-export function unmountDshStatusBar() {
+export function unmountDshStatusBar(targetContainer?: HTMLElement) {
+  if (targetContainer) {
+    const entry = statusbarRoots.get(targetContainer);
+    if (entry) {
+      try {
+        entry.root.unmount();
+      } catch (e) {
+        console.warn('[TokenStats] Error unmounting status bar root:', e);
+      }
+      statusbarRoots.delete(targetContainer);
+      if (window.__ANTIGRAVITY_STATUSBAR_CONTAINER__ === targetContainer) {
+        const nextEntry = statusbarRoots.entries().next().value;
+        window.__ANTIGRAVITY_STATUSBAR_CONTAINER__ = nextEntry ? nextEntry[0] : null;
+        window.__ANTIGRAVITY_STATUSBAR_ROOT__ = nextEntry ? nextEntry[1].root : null;
+        window.__ANTIGRAVITY_STATUSBAR_SIGNATURE__ = nextEntry ? nextEntry[1].signature : undefined;
+      }
+    }
+    return;
+  }
+
   stopContextPillHeartbeat();
-  if (window.__ANTIGRAVITY_STATUSBAR_ROOT__) {
+  const unmountedRoots = new Set<ReactDOM.Root>();
+  for (const entry of statusbarRoots.values()) {
+    try {
+      entry.root.unmount();
+    } catch (e) {
+      console.warn('[TokenStats] Error unmounting status bar root:', e);
+    }
+    unmountedRoots.add(entry.root);
+  }
+  statusbarRoots.clear();
+
+  if (window.__ANTIGRAVITY_STATUSBAR_ROOT__ && !unmountedRoots.has(window.__ANTIGRAVITY_STATUSBAR_ROOT__)) {
     try {
       window.__ANTIGRAVITY_STATUSBAR_ROOT__.unmount();
     } catch (e) {
       console.warn('[TokenStats] Error unmounting status bar root:', e);
     }
-    window.__ANTIGRAVITY_STATUSBAR_ROOT__ = null;
   }
+  window.__ANTIGRAVITY_STATUSBAR_ROOT__ = null;
   window.__ANTIGRAVITY_STATUSBAR_CONTAINER__ = null;
+  window.__ANTIGRAVITY_STATUSBAR_SIGNATURE__ = undefined;
+}
+
+function getActiveSessionIds(containers: HTMLElement[]): string[] {
+  const ids = new Set<string>();
+  for (const container of containers) {
+    const sessionId = resolveSessionIdForContainer(container);
+    if (sessionId) ids.add(sessionId);
+  }
+  const routeId = getCurrentConversationId();
+  if (routeId && ids.size === 0) {
+    ids.add(routeId);
+  }
+  return Array.from(ids);
 }
 
 export function refreshStatusBar() {
-  const container = document.getElementById(CONTAINER_STATUSBAR_ID);
-  if (container) {
+  pruneDisconnectedStatusBars();
+  const containers = getAllStatusBarContainers();
+  for (const container of containers) {
     mountDshStatusBar(container);
   }
 }
 
 function refreshContextPill() {
-  const container = document.getElementById(CONTAINER_STATUSBAR_ID) || document.getElementById('antigravity-context-usage-pill');
-  if (!container) {
+  pruneDisconnectedStatusBars();
+  const containers = getAllStatusBarContainers();
+  if (containers.length === 0 && !document.getElementById('antigravity-context-usage-pill')) {
     stopContextPillHeartbeat();
     return;
   }
-  const sessionId = getCurrentConversationId();
-  if (sessionId) requestDataSync(sessionId);
+  for (const sessionId of getActiveSessionIds(containers)) {
+    requestDataSync(sessionId);
+  }
   refreshStatusBar();
 }
 
@@ -349,12 +471,19 @@ export function startContextPillHeartbeat() {
   window.__ANTIGRAVITY_PILL_HEARTBEAT__ = setInterval(refreshContextPill, PILL_HEARTBEAT_MS);
 }
 
-let lastKnownConversationId: string | null = null;
+let lastKnownConversationSignature = '';
 export function checkConversationRoute() {
-  const current = getCurrentConversationId();
-  if (current !== lastKnownConversationId) {
-    lastKnownConversationId = current;
-    requestDataSync(current);
+  const containers = getAllStatusBarContainers();
+  const routeId = getCurrentConversationId();
+  const activeIds = getActiveSessionIds(containers);
+  const signature = `${routeId ?? ''}|${activeIds.join(',')}`;
+  if (signature !== lastKnownConversationSignature) {
+    lastKnownConversationSignature = signature;
+    if (activeIds.length > 0) {
+      for (const sessionId of activeIds) requestDataSync(sessionId);
+    } else {
+      requestDataSync(routeId);
+    }
     refreshStatusBar();
   }
 }
@@ -380,9 +509,10 @@ export function initAntigravitySettingsInjector() {
 
   // Clean up any stale misplaced containers, buttons, toasts and modal overlays
   // from prior injections (older bundles exposed a floating dashboard + toast).
-  document.querySelectorAll('#antigravity-stats-nav-btn, #antigravity-stats-sidebar-btn, #antigravity-stats-content, #antigravity-stats-settings-content, #antigravity-stats-modal-overlay, #antigravity-stats-toast, #antigravity-context-usage-pill, #antigravity-dsh-statusbar-container, #antigravity-dsh-popover-container').forEach(el => el.remove());
+  document.querySelectorAll('#antigravity-stats-nav-btn, #antigravity-stats-sidebar-btn, #antigravity-stats-content, #antigravity-stats-settings-content, #antigravity-stats-modal-overlay, #antigravity-stats-toast, #antigravity-context-usage-pill, #antigravity-dsh-statusbar-container, [data-dsh-statusbar="true"], #antigravity-dsh-popover-container').forEach(el => el.remove());
 
   const scanAndInject = () => {
+    pruneDisconnectedStatusBars();
     for (const btn of navRestoreListeners.keys()) {
       if (!btn.isConnected) navRestoreListeners.delete(btn);
     }
@@ -556,22 +686,34 @@ export function initAntigravitySettingsInjector() {
       existingSidebarBtn.remove();
     }
 
-    // 2. Hook into Turbo button in the chat input footer (DSH Status Bar); skipped
+    // 2. Hook into Turbo button in every chat input footer (DSH Status Bar); skipped
     // entirely (no container, no heartbeat) when the feature is switched off.
     if (!isStatsFeatureEnabled('statusBar')) return;
-    const turboBtn = document.querySelector('button[data-testid="permissions-selector-trigger"]') as HTMLElement | null;
-    if (turboBtn && turboBtn.parentElement) {
-      const parent = turboBtn.parentElement;
-      if (parent.contains(turboBtn)) {
-        let container = parent.querySelector(`#${CONTAINER_STATUSBAR_ID}`) as HTMLElement | null;
-        if (!container) {
-          container = document.createElement('div');
-          container.id = CONTAINER_STATUSBAR_ID;
-          container.className = 'relative inline-flex items-center';
-          turboBtn.before(container);
+    const turboButtons: HTMLElement[] = typeof document.querySelectorAll === 'function'
+      ? Array.from(document.querySelectorAll('button[data-testid="permissions-selector-trigger"]')) as HTMLElement[]
+      : [document.querySelector('button[data-testid="permissions-selector-trigger"]') as HTMLElement | null].filter(
+          (el): el is HTMLElement => Boolean(el)
+        );
+
+    for (const turboBtn of turboButtons) {
+      if (turboBtn && turboBtn.parentElement) {
+        const parent = turboBtn.parentElement;
+        if (parent.contains(turboBtn)) {
+          let container = parent.querySelector(`#${CONTAINER_STATUSBAR_ID}, [data-dsh-statusbar="true"]`) as HTMLElement | null;
+          if (!container) {
+            container = document.createElement('div');
+            container.id = CONTAINER_STATUSBAR_ID;
+            container.setAttribute('data-dsh-statusbar', 'true');
+            container.className = 'antigravity-dsh-statusbar-slot relative inline-flex items-center';
+            turboBtn.before(container);
+          }
+          const sessionId = resolveSessionIdForContainer(container);
+          if (sessionId && !window.__ANTIGRAVITY_STATS__?.sessions?.[sessionId]) {
+            requestDataSync(sessionId);
+          }
+          mountDshStatusBar(container);
+          startContextPillHeartbeat();
         }
-        mountDshStatusBar(container);
-        startContextPillHeartbeat();
       }
     }
   };
@@ -608,7 +750,12 @@ export function initAntigravitySettingsInjector() {
     }
   };
   const onFocus: EventListener = () => {
-    requestDataSync(getCurrentConversationId());
+    const activeIds = getActiveSessionIds(getAllStatusBarContainers());
+    if (activeIds.length > 0) {
+      for (const sessionId of activeIds) requestDataSync(sessionId);
+    } else {
+      requestDataSync(getCurrentConversationId());
+    }
   };
 
   window.addEventListener(EVENT_STATS_UPDATED, onStatsUpdated);

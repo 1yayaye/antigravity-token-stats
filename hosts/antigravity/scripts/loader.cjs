@@ -301,10 +301,21 @@ function broadcastStats(stats) {
       const match = typeof window !== 'undefined' && window.location && window.location.pathname
         ? window.location.pathname.match(/\\/c\\/([a-zA-Z0-9_-]+)/)
         : null;
-      const activeId = match ? match[1] : null;
-      if (activeId && prevSessions && prevSessions[activeId] && (!nextStats.sessions || !nextStats.sessions[activeId])) {
-        if (!nextStats.sessions) nextStats.sessions = {};
-        nextStats.sessions[activeId] = prevSessions[activeId];
+      const activeIds = new Set();
+      if (match && match[1]) activeIds.add(match[1]);
+      if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
+        document.querySelectorAll('[data-testid="conversation-view"][data-cascade-id]').forEach((el) => {
+          const cid = el.getAttribute('data-cascade-id');
+          if (cid) activeIds.add(cid);
+        });
+      }
+      if (prevSessions) {
+        for (const activeId of activeIds) {
+          if (prevSessions[activeId] && (!nextStats.sessions || !nextStats.sessions[activeId])) {
+            if (!nextStats.sessions) nextStats.sessions = {};
+            nextStats.sessions[activeId] = prevSessions[activeId];
+          }
+        }
       }
       window.${contract.WINDOW_STATS} = nextStats;
       window.dispatchEvent(new CustomEvent('${contract.EVENT_STATS_UPDATED}', { detail: window.${contract.WINDOW_STATS} }));

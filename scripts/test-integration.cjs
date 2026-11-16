@@ -405,6 +405,13 @@ test('Standalone C# .exe installer: mock ASAR patch, @electron/asar interop, pro
     // Pre-create stale dev-bundle redirect to verify C# installer cleans it up
     fs.writeFileSync(mockDevBundleFile, 'C:\\stale\\bundle.js', 'utf8');
 
+    const inspectDirJson = () => JSON.parse(execFileSync(isolatedExe, ['--inspect-dir', resourcesDir], { encoding: 'utf8' }).trim());
+
+    // 0. Unpatched state detection
+    const preInspect = inspectDirJson();
+    assert(preInspect.hasAsar === true && preInspect.isPatched === false, 'Inspect before patch must report unpatched');
+    assert(preInspect.zhPackInstalled === false && preInspect.statusBarInstalled === false, 'Inspect before patch must report optional components disabled');
+
     // 1. Patch + Proxy install via standalone C# .exe (with trailing backslash to guard path normalization)
     execFileSync(isolatedExe, [
       '--patch-dir', resourcesDir + '\\',
@@ -453,6 +460,9 @@ test('Standalone C# .exe installer: mock ASAR patch, @electron/asar interop, pro
     }
     const csContractMetadata = JSON.parse(fs.readFileSync(path.join(verifyExtractDir, 'dist', 'antigravity-stats', 'contract.json'), 'utf8'));
     assert(csContractMetadata.features?.statusBar === true, 'C# CLI patch must default features.statusBar to true');
+    const postFullInspect = inspectDirJson();
+    assert(postFullInspect.isPatched === true && postFullInspect.zhPackInstalled === true && postFullInspect.statusBarInstalled === true && postFullInspect.proxyInstalled === true,
+      'Inspect after full patch must report zhPackInstalled and statusBarInstalled as true');
     verifyUpdateAssets(asarPath);
     assert(fs.readFileSync(path.join(verifyExtractDir, 'dist', 'empty.txt')).length === 0, 'Empty file must remain 0 bytes');
     assert(fs.readFileSync(path.join(verifyExtractDir, 'dist', 'dup-a.txt'), 'utf8') === dupContent, 'dup-a.txt must retain content');
@@ -477,6 +487,33 @@ test('Standalone C# .exe installer: mock ASAR patch, @electron/asar interop, pro
     assert(fs.readFileSync(backupPath).equals(pristineAsarBuf), 'Repeated C# patch must preserve original backup');
     verifyUpdateAssets(asarPath);
 
+    // 2b. Re-patch with --no-zh-pack --no-status-bar and verify --inspect-dir reflects opted-out state
+    execFileSync(isolatedExe, [
+      '--patch-dir', resourcesDir,
+      '--no-proxy',
+      '--no-zh-pack',
+      '--no-status-bar',
+      '--min-asar-size', '500',
+      '--dev-bundle', mockDevBundleFile,
+      '--no-gui'
+    ], { encoding: 'utf8' });
+    const postOptOutInspect = inspectDirJson();
+    assert(postOptOutInspect.isPatched === true && postOptOutInspect.zhPackInstalled === false && postOptOutInspect.statusBarInstalled === false,
+      'Inspect after opting out must report zhPackInstalled=false and statusBarInstalled=false');
+
+    // 2c. Legacy patch compatibility: contract.json without features object must default statusBarInstalled to true
+    const legacyExtractDir = path.join(tmpRoot, 'legacy-extract');
+    asar.uncacheAll();
+    asar.extractAll(asarPath, legacyExtractDir);
+    const legacyContractPath = path.join(legacyExtractDir, 'dist', 'antigravity-stats', 'contract.json');
+    const legacyContract = JSON.parse(fs.readFileSync(legacyContractPath, 'utf8'));
+    delete legacyContract.features;
+    fs.writeFileSync(legacyContractPath, JSON.stringify(legacyContract, null, 2), 'utf8');
+    await asar.createPackage(legacyExtractDir, asarPath);
+    const legacyInspect = inspectDirJson();
+    assert(legacyInspect.isPatched === true && legacyInspect.statusBarInstalled === true,
+      'Inspect on legacy patch lacking features block must default statusBarInstalled to true');
+
     // 3. Unpatch + proxy removal
     execFileSync(isolatedExe, [
       '--unpatch-dir', resourcesDir,
@@ -486,6 +523,9 @@ test('Standalone C# .exe installer: mock ASAR patch, @electron/asar interop, pro
     assert(fs.readFileSync(asarPath).equals(pristineAsarBuf), 'Unpatched app.asar must be bitwise identical to pristine');
     assert(!fs.existsSync(deployedDll), 'Unpatch must remove version.dll');
     assert(!fs.existsSync(deployedConfig), 'Unpatch must remove config.json');
+    const postUnpatchInspect = inspectDirJson();
+    assert(postUnpatchInspect.isPatched === false && postUnpatchInspect.zhPackInstalled === false && postUnpatchInspect.statusBarInstalled === false && postUnpatchInspect.proxyInstalled === false,
+      'Inspect after unpatch must reset all installed component flags to false');
 
     // 4. Unpatch idempotency
     execFileSync(isolatedExe, [

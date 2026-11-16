@@ -109,11 +109,16 @@ const patcherCs = fs.readFileSync(path.join(repoRoot, 'hosts', 'antigravity', 'i
 assert(patcherCs.includes('bool includeZhPack = true'), 'C# Patch must take includeZhPack');
 assert(patcherCs.includes('bool statusBarEnabled = true'), 'C# Patch must take statusBarEnabled');
 assert(patcherCs.includes('SerializeContractWithFeatures'), 'C# Patch must rewrite contract.json features');
+assert(patcherCs.includes('ReadStatusBarEnabled'), 'C# AsarPatcher must expose ReadStatusBarEnabled for upgrade state detection');
+const envDetectorCs = fs.readFileSync(path.join(repoRoot, 'hosts', 'antigravity', 'installer', 'Services', 'EnvironmentDetector.cs'), 'utf8');
+assert(envDetectorCs.includes('StatusBarInstalled = statusBarInstalled'), 'EnvironmentDetector must populate StatusBarInstalled');
 const programCs = fs.readFileSync(path.join(repoRoot, 'hosts', 'antigravity', 'installer', 'Program.cs'), 'utf8');
 assert(programCs.includes('--no-zh-pack') && programCs.includes('--no-status-bar'), 'C# CLI must accept --no-zh-pack / --no-status-bar');
+assert(programCs.includes('--inspect-dir'), 'C# CLI must accept --inspect-dir');
 const mainFormCs = fs.readFileSync(path.join(repoRoot, 'hosts', 'antigravity', 'installer', 'UI', 'MainForm.cs'), 'utf8');
 assert(mainFormCs.includes('_chkZhPack = new CheckBox') && mainFormCs.includes('Checked = false'), 'installer GUI must offer the zh-pack checkbox unchecked by default');
 assert(mainFormCs.includes('_chkStatusBar = new CheckBox'), 'installer GUI must offer the status-bar checkbox');
+assert(mainFormCs.includes('SyncOptionalCheckboxesFromInstall'), 'installer GUI must sync optional checkboxes from existing patched installs');
 
 // 7. Installer assets include the zh-pack and the default features payload
 const prepareAssets = fs.readFileSync(path.join(repoRoot, 'hosts', 'antigravity', 'installer-gen', 'prepare-assets.cjs'), 'utf8');

@@ -157,10 +157,11 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
   }, []);
 
   // Performance Text
+  const roundsStepsText = `${session.rounds} ${isZh ? '轮' : 'rounds'} ${session.steps} ${isZh ? '步' : 'steps'}`;
   const currentTps = liveTps !== null ? liveTps : session.tps;
   const perfText = currentTps !== null
-    ? `${session.rounds} ${isZh ? '轮' : 'rounds'} ${session.steps} ${isZh ? '步' : 'steps'} · ${currentTps} tok/s`
-    : `${session.rounds} ${isZh ? '轮' : 'rounds'} ${session.steps} ${isZh ? '步' : 'steps'}`;
+    ? `${roundsStepsText} · ${currentTps} tok/s`
+    : roundsStepsText;
 
   // Usage Text
   const compactTotal = formatCompactTokens(token.totalTokens);
@@ -225,7 +226,7 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
         onMouseEnter={() => handlePillEnter('session', perfBtnRef.current)}
         onMouseLeave={scheduleHide}
         onClick={() => handlePillClick('session')}
-        className="dsh-pill flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
+        className="dsh-pill dsh-pill-secondary flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
         aria-label={`${isZh ? '性能统计' : 'Session stats'}: ${perfText}`}
       >
         <svg
@@ -243,7 +244,16 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
           <path d="m12 14 4-4" />
           <path d="M3.34 19a10 10 0 1 1 17.32 0" />
         </svg>
-        <span className="font-medium whitespace-nowrap text-xs" style={pillTextStyle}>{perfText}</span>
+        {currentTps !== null ? (
+          <span className="font-medium whitespace-nowrap text-xs" style={pillTextStyle}>
+            <span className="dsh-pill-full-only">{`${roundsStepsText} · `}</span>
+            <span className="dsh-pill-compact-keep">{`${currentTps} tok/s`}</span>
+          </span>
+        ) : (
+          <span className="dsh-pill-full-only font-medium whitespace-nowrap text-xs" style={pillTextStyle}>
+            {roundsStepsText}
+          </span>
+        )}
       </button>
 
       {/* 2. Usage Pill */}
@@ -254,7 +264,7 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
         onMouseEnter={() => handlePillEnter('token', usageBtnRef.current)}
         onMouseLeave={scheduleHide}
         onClick={() => handlePillClick('token')}
-        className="dsh-pill flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
+        className="dsh-pill dsh-pill-secondary flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
         aria-label={`${isZh ? '用量统计' : 'Token usage'}: ${usageText}`}
       >
         <svg
@@ -273,12 +283,22 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
           <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
           <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
         </svg>
-        <span
-          className={`font-medium whitespace-nowrap text-xs ${isTokenSettling ? 'dsh-token-settle' : ''}`}
-          style={pillTextStyle}
-        >
-          {usageText}
-        </span>
+        {token.cacheHitRatePct !== null ? (
+          <span
+            className={`font-medium whitespace-nowrap text-xs ${isTokenSettling ? 'dsh-token-settle' : ''}`}
+            style={pillTextStyle}
+          >
+            <span className="dsh-pill-full-only">{`${compactTotal} tok · ${isZh ? '缓存命中 ' : 'Cache '}`}</span>
+            <span className="dsh-pill-compact-keep">{`${token.cacheHitRatePct}%`}</span>
+          </span>
+        ) : (
+          <span
+            className={`dsh-pill-full-only font-medium whitespace-nowrap text-xs ${isTokenSettling ? 'dsh-token-settle' : ''}`}
+            style={pillTextStyle}
+          >
+            {`${compactTotal} tok`}
+          </span>
+        )}
       </button>
 
       {/* 3. Context Donut Pill (with backward-compatible id antigravity-context-usage-pill) */}

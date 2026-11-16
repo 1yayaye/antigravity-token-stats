@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const Module = require('node:module');
 const os = require('node:os');
 const path = require('node:path');
+const vm = require('node:vm');
 const ts = require('typescript');
 
 const repoRoot = path.join(__dirname, '..');
@@ -471,5 +472,364 @@ function encodeFieldVarint(fieldNum, value) {
     if (savedLocalStorage === undefined) delete global.localStorage; else global.localStorage = savedLocalStorage;
     if (savedNavigator === undefined) delete global.navigator; else global.navigator = savedNavigator;
     if (savedCssHook === undefined) delete require.extensions['.css']; else require.extensions['.css'] = savedCssHook;
+  }
+}
+
+// 9. standalone.tsx injects independent DshStatusBar widgets into every split pane with per-pane session resolution
+{
+  const savedWindow = global.window;
+  const savedDocument = global.document;
+  const savedMutationObserver = global.MutationObserver;
+  const savedLocalStorage = global.localStorage;
+  const savedNavigator = global.navigator;
+  const savedCssHook = require.extensions['.css'];
+
+  const matchSelector = (el, part) => {
+    const p = part.trim();
+    if (!p) return false;
+    if (p.startsWith('#')) return el.id === p.slice(1);
+    const bracketIdx = p.indexOf('[');
+    let tagPart = bracketIdx >= 0 ? p.slice(0, bracketIdx) : p;
+    if (tagPart && el.tagName !== tagPart.toUpperCase()) return false;
+    const attrMatches = [...p.matchAll(/\[([^=\]]+)(?:="([^"]*)")?\]/g)];
+    return attrMatches.every(([, attr, val]) => {
+      const actual = el.getAttribute(attr);
+      return val === undefined ? actual !== null : actual === val;
+    });
+  };
+
+  const matchesAnySelector = (el, sel) => sel.split(',').some((s) => matchSelector(el, s));
+
+  const createPaneNode = (tagName = 'div') => {
+    const attrs = {};
+    const classSet = new Set();
+    const el = {
+      tagName: tagName.toUpperCase(),
+      id: '',
+      className: '',
+      innerHTML: '',
+      style: {},
+      children: [],
+      parentElement: null,
+      get isConnected() {
+        return el.tagName === 'BODY' || (el.parentElement ? el.parentElement.isConnected : false);
+      },
+      classList: {
+        add: (...names) => names.forEach((n) => classSet.add(n)),
+        remove: (...names) => names.forEach((n) => classSet.delete(n)),
+        contains: (n) => classSet.has(n),
+      },
+      setAttribute: (k, v) => {
+        attrs[k] = String(v);
+        if (k === 'id') el.id = String(v);
+      },
+      getAttribute: (k) => (k === 'id' ? el.id || null : (k in attrs ? attrs[k] : null)),
+      appendChild: (child) => {
+        child.parentElement = el;
+        el.children.push(child);
+        return child;
+      },
+      before: (sibling) => {
+        if (!el.parentElement) return;
+        const siblings = el.parentElement.children;
+        const idx = siblings.indexOf(el);
+        sibling.parentElement = el.parentElement;
+        if (idx >= 0) siblings.splice(idx, 0, sibling);
+        else siblings.push(sibling);
+      },
+      remove: () => {
+        if (!el.parentElement) return;
+        el.parentElement.children = el.parentElement.children.filter((c) => c !== el);
+        el.parentElement = null;
+      },
+      contains: (target) => target === el || el.children.some((c) => c.contains(target)),
+      closest: (sel) => {
+        let cur = el;
+        while (cur) {
+          if (matchesAnySelector(cur, sel)) return cur;
+          cur = cur.parentElement;
+        }
+        return null;
+      },
+      querySelectorAll: (sel) => {
+        const out = [];
+        const walk = (node) => {
+          for (const child of node.children) {
+            if (matchesAnySelector(child, sel)) out.push(child);
+            walk(child);
+          }
+        };
+        walk(el);
+        return out;
+      },
+      querySelector: (sel) => el.querySelectorAll(sel)[0] || null,
+    };
+    return el;
+  };
+
+  try {
+    delete global.window;
+    require.extensions['.css'] = () => {};
+
+    const body = createPaneNode('body');
+
+    const buildSplitPane = (paneId, cascadeId) => {
+      const pane = createPaneNode('div');
+      pane.setAttribute('data-pane-id', paneId);
+      let host = pane;
+      if (cascadeId) {
+        const conv = createPaneNode('div');
+        conv.setAttribute('data-testid', 'conversation-view');
+        conv.setAttribute('data-cascade-id', cascadeId);
+        pane.appendChild(conv);
+        host = conv;
+      }
+      const footerActions = createPaneNode('div');
+      const turboBtn = createPaneNode('button');
+      turboBtn.setAttribute('data-testid', 'permissions-selector-trigger');
+      footerActions.appendChild(turboBtn);
+      host.appendChild(footerActions);
+      body.appendChild(pane);
+      return { pane, footerActions, turboBtn };
+    };
+
+    const leftPane = buildSplitPane('pane-1', 'session-left');
+    const rightPane = buildSplitPane('pane-2', 'session-right');
+    const emptyPane = buildSplitPane('pane-3', null);
+
+    global.document = {
+      head: createPaneNode('head'),
+      body,
+      documentElement: createPaneNode('html'),
+      createElement: (tag) => createPaneNode(tag),
+      getElementById: (id) => body.querySelector(`#${id}`) || global.document.head.querySelector(`#${id}`),
+      querySelector: (sel) => body.querySelector(sel),
+      querySelectorAll: (sel) => body.querySelectorAll(sel),
+    };
+    global.MutationObserver = class {
+      observe() {}
+      disconnect() {}
+      takeRecords() { return []; }
+    };
+    global.localStorage = { getItem: () => null, setItem: () => {} };
+    global.navigator = { language: 'en-US' };
+
+    const renderedProps = new Map();
+    const unmountedContainers = [];
+    const makeTelemetry = (sessionId, usedTokens, tps) => ({
+      sessionId,
+      isStreaming: false,
+      session: { rounds: 3, steps: 10, tps, modelDurationSec: 5, toolDurationSec: 1, ttftSec: 0.4 },
+      token: { totalTokens: 5000, cacheHitRatePct: 80, uncachedInputTokens: 1000, cacheReadTokens: 4000, outputTokens: 200 },
+      context: { usedTokens, limitTokens: 256000, usedPct: Math.round((usedTokens / 256000) * 100), systemPromptTokens: 0, toolDefinitionTokens: 0, chatMessageTokens: usedTokens },
+    });
+
+    const standaloneMod = loadTsModule(path.join(repoRoot, 'hosts', 'antigravity', 'src', 'standalone.tsx'), {
+      '../../../src/index.css': {},
+      './i18n/antigravity-ui-i18n': {
+        antigravityI18n: {
+          start: () => {},
+          getLanguage: () => 'en',
+          setLanguage: () => {},
+        },
+      },
+      './quota': { startQuotaUpdates: () => () => {} },
+      '../../../src/components/stats/StatsView': { StatsView: () => null },
+      '../../../src/components/dsh/DshStatusBar': { DshStatusBar: (props) => props },
+      '../../../src/services/stats-service': {
+        detectAntigravityTheme: () => 'dark',
+        syncThemeToElement: () => {},
+      },
+      'react': {
+        StrictMode: 'StrictMode',
+        createElement: (type, props, ...children) => ({ type, props: { ...(props || {}), children } }),
+      },
+      'react-dom/client': {
+        createRoot: (container) => ({
+          render: (node) => {
+            const findDsh = (vnode) => {
+              if (!vnode || typeof vnode !== 'object') return null;
+              if (typeof vnode.type === 'function' && vnode.type.name === 'DshStatusBar') return vnode.props;
+              const kids = vnode.props?.children || [];
+              for (const k of Array.isArray(kids) ? kids : [kids]) {
+                const hit = findDsh(k);
+                if (hit) return hit;
+              }
+              return null;
+            };
+            renderedProps.set(container, findDsh(node));
+          },
+          unmount: () => {
+            unmountedContainers.push(container);
+          },
+        }),
+      },
+    });
+
+    const syncRequests = [];
+    global.window = {
+      location: { pathname: '/c/session-left' },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => {},
+      getComputedStyle: () => ({ getPropertyValue: () => '' }),
+      __ANTIGRAVITY_SYNC_BRIDGE__: {
+        requestSync: async (payload) => {
+          syncRequests.push(payload?.sessionId ?? null);
+          return { success: true };
+        },
+      },
+      __ANTIGRAVITY_STATS__: {
+        sessions: {
+          'session-left': {
+            modelName: 'gemini-3.8-flash',
+            tps: 111,
+            dshTelemetry: makeTelemetry('session-left', 64000, 111),
+          },
+          'session-right': {
+            modelName: 'gemini-3.8-flash',
+            tps: 222,
+            dshTelemetry: makeTelemetry('session-right', 128000, 222),
+          },
+        },
+      },
+    };
+
+    try {
+      standaloneMod.initAntigravitySettingsInjector();
+      assert.strictEqual(renderedProps.size, 3, `Expected 3 split panes to render statusbar widgets, got ${renderedProps.size}`);
+
+      const leftSlot = leftPane.footerActions.children[0];
+      const rightSlot = rightPane.footerActions.children[0];
+      const emptySlot = emptyPane.footerActions.children[0];
+      assert.strictEqual(leftSlot.getAttribute('data-dsh-statusbar'), 'true');
+      assert.strictEqual(rightSlot.getAttribute('data-dsh-statusbar'), 'true');
+      assert.strictEqual(emptySlot.getAttribute('data-dsh-statusbar'), 'true');
+      assert.strictEqual(leftPane.footerActions.children[1], leftPane.turboBtn, 'Slot must be inserted before turboBtn in left pane');
+      assert.strictEqual(rightPane.footerActions.children[1], rightPane.turboBtn, 'Slot must be inserted before turboBtn in right pane');
+      assert.strictEqual(emptyPane.footerActions.children[1], emptyPane.turboBtn, 'Slot must be inserted before turboBtn in empty pane');
+
+      assert.strictEqual(renderedProps.get(leftSlot).telemetry.sessionId, 'session-left');
+      assert.strictEqual(renderedProps.get(leftSlot).telemetry.session.tps, 111);
+      assert.strictEqual(renderedProps.get(leftSlot).telemetry.context.usedPct, 25);
+
+      assert.strictEqual(renderedProps.get(rightSlot).telemetry.sessionId, 'session-right');
+      assert.strictEqual(renderedProps.get(rightSlot).telemetry.session.tps, 222);
+      assert.strictEqual(renderedProps.get(rightSlot).telemetry.context.usedPct, 50);
+
+      assert.strictEqual(renderedProps.get(emptySlot).telemetry.sessionId, '', 'New empty split pane must not inherit session-left');
+      assert.strictEqual(renderedProps.get(emptySlot).telemetry.context.usedPct, 0, 'New empty split pane must render 0%');
+
+      // Per-pane streaming state isolation: cancel button in leftPane must not mark rightPane streaming
+      const cancelBtn = createPaneNode('button');
+      cancelBtn.setAttribute('data-testid', 'input-cancel-button');
+      leftPane.footerActions.appendChild(cancelBtn);
+      standaloneMod.refreshStatusBar();
+      assert.strictEqual(renderedProps.get(leftSlot).telemetry.isStreaming, true, 'Pane with cancel button must be marked streaming');
+      assert.strictEqual(renderedProps.get(rightSlot).telemetry.isStreaming, false, 'Sibling pane without cancel button must stay idle');
+      assert.strictEqual(renderedProps.get(emptySlot).telemetry.isStreaming, false, 'Empty pane must stay idle');
+
+      // Route/pane change syncs every active split-pane session
+      standaloneMod.checkConversationRoute();
+      assert.deepStrictEqual(syncRequests, ['session-left', 'session-right']);
+
+      // Closing the last-mounted pane prunes its root and clears the detached container reference
+      assert.strictEqual(global.window.__ANTIGRAVITY_STATUSBAR_CONTAINER__, emptySlot);
+      emptyPane.pane.remove();
+      standaloneMod.refreshStatusBar();
+      assert.deepStrictEqual(unmountedContainers, [emptySlot], 'Closed split pane root must be unmounted on prune');
+      assert.notStrictEqual(global.window.__ANTIGRAVITY_STATUSBAR_CONTAINER__, emptySlot, 'Detached container must not stay pinned on window');
+      assert.strictEqual(global.window.__ANTIGRAVITY_STATUSBAR_CONTAINER__.isConnected, true);
+
+      console.log('PASS: standalone.tsx injects independent split-pane status bars, isolates streaming, and prunes closed panes');
+    } finally {
+      standaloneMod.unmountDshStatusBar();
+    }
+  } finally {
+    if (savedWindow === undefined) delete global.window; else global.window = savedWindow;
+    if (savedDocument === undefined) delete global.document; else global.document = savedDocument;
+    if (savedMutationObserver === undefined) delete global.MutationObserver; else global.MutationObserver = savedMutationObserver;
+    if (savedLocalStorage === undefined) delete global.localStorage; else global.localStorage = savedLocalStorage;
+    if (savedNavigator === undefined) delete global.navigator; else global.navigator = savedNavigator;
+    if (savedCssHook === undefined) delete require.extensions['.css']; else require.extensions['.css'] = savedCssHook;
+  }
+}
+
+// 10. loader.cjs broadcastStats retains all active split-pane sessions visible in the renderer DOM
+{
+  const loaderPath = path.join(repoRoot, 'hosts', 'antigravity', 'scripts', 'loader.cjs');
+  const contract = require(path.join(repoRoot, 'src', 'injection-contract.cjs'));
+  const originalLoad = Module._load;
+  const executedScripts = [];
+  const fakeWc = {
+    isDestroyed: () => false,
+    getType: () => 'window',
+    getURL: () => 'http://127.0.0.1:3000/c/pane-left',
+    executeJavaScript: async (code) => {
+      executedScripts.push(code);
+      return true;
+    },
+  };
+
+  Module._load = function (request, parent, isMain) {
+    if (request === 'electron') {
+      return {
+        webContents: { getAllWebContents: () => [fakeWc] },
+        BrowserWindow: { getAllWindows: () => [] },
+      };
+    }
+    return originalLoad.call(this, request, parent, isMain);
+  };
+
+  try {
+    delete require.cache[require.resolve(loaderPath)];
+    const loaderMod = require(loaderPath);
+    loaderMod.broadcastStats({ kpis: {}, sessions: {} });
+    assert.strictEqual(executedScripts.length, 1, 'broadcastStats must evaluate update script on main renderer');
+
+    const dispatched = [];
+    const context = vm.createContext({
+      CustomEvent: class CustomEvent {
+        constructor(type, init) {
+          this.type = type;
+          this.detail = init?.detail;
+        }
+      },
+      document: {
+        querySelectorAll: (sel) => {
+          if (sel === '[data-testid="conversation-view"][data-cascade-id]') {
+            return [
+              { getAttribute: (k) => (k === 'data-cascade-id' ? 'pane-left' : null) },
+              { getAttribute: (k) => (k === 'data-cascade-id' ? 'pane-right' : null) },
+            ];
+          }
+          return [];
+        },
+      },
+      window: {
+        location: { pathname: '/c/pane-left' },
+        [contract.WINDOW_STATS]: {
+          kpis: {},
+          sessions: {
+            'pane-left': { totalTokens: 100 },
+            'pane-right': { totalTokens: 200 },
+            'unrelated-stale': { totalTokens: 300 },
+          },
+        },
+        dispatchEvent: (evt) => dispatched.push(evt),
+      },
+    });
+
+    vm.runInContext(executedScripts[0], context, { timeout: 200 });
+    const nextSessions = context.window[contract.WINDOW_STATS].sessions;
+    assert.deepStrictEqual(nextSessions['pane-left'], { totalTokens: 100 });
+    assert.deepStrictEqual(nextSessions['pane-right'], { totalTokens: 200 });
+    assert.strictEqual(nextSessions['unrelated-stale'], undefined, 'Unrendered stale session must not be retained by DOM fallback');
+    assert.strictEqual(dispatched.length, 1);
+    assert.strictEqual(dispatched[0].type, contract.EVENT_STATS_UPDATED);
+    console.log('PASS: loader.cjs broadcastStats retains every split-pane conversation across full broadcasts');
+  } finally {
+    Module._load = originalLoad;
+    delete require.cache[require.resolve(loaderPath)];
   }
 }
