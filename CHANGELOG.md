@@ -2,6 +2,30 @@
 
 All notable changes to Antigravity Token Stats will be documented in this file.
 
+## [1.8.3] - 2026-11-21
+
+### Added
+- **Status Bar Display Modes (`src/components/statusbar/StatusBar.tsx`, `ContextUsagePopover.tsx`, `StatsHeader.tsx`, `src/index.css`)**:
+  - Added three persisted display modes (`detailed`, `standard`, `compact`) stored in `localStorage` (`antigravity-statusbar-display-mode`), synced live across all split-pane status bars and toggleable from both `StatsHeader` and the `ContextUsagePopover` footer.
+- **Local Process Proxy Upgrade, Runtime DLL Verification & Log Actions (`vendor/proxy/`, `scripts/proxy-manager.cjs`, `hosts/antigravity/installer/`, `ProxyStatusCard.tsx`, `loader.cjs`)**:
+  - Upgraded the bundled local process proxy (`version.dll`) and `config.template.json` (static-runtime build without tray load popup, FakeIP direct-target/port=0 fixes, 60s SOCKS5 UDP ASSOCIATE backoff, `ui.load_notify: "none"`, and `language_server_windows_x64.exe` target coverage).
+  - Upgraded DLL and `config.json` deployment in both Node (`proxy-manager.cjs`) and C# (`ProxyInstaller.cs`) to SHA256-verified atomic replacement while merging and preserving existing user `config.json` routing rules and settings (JSONC-tolerant in Node).
+  - Added accurate runtime DLL load detection (`isDllLoadedInProcess` / `inspectLoadedProxyModules`, excluding `System32\version.dll`), proxy log directory resolution (`resolveProxyLogDir`), one-click log path copy and folder open (`open-proxy-logs` IPC), and plugin version display in `ProxyStatusCard`.
+  - Added SOCKS5/HTTP protocol mismatch and auth detection to both Node `testProxy` and C# `EnvironmentDetector` `--test-proxy`, and updated location-error log scanning to ignore historical errors superseded by newer successful logins.
+- **Gemini 4 Neon Pricing & 512K Context Defaults (`scripts/aggregate-stats.cjs`, `src/i18n/translations*.ts`)**:
+  - Added `gemini-4-neon` pricing (`$3.00` / `$0.15` / `$15.00` per 1M tokens, `gemini` pool), adjusted `orchestrator` fallback precedence so `orchestrator-claude-opus-5-5` resolves to `claude-opus-5-5`, added `gemini-4-neon` and `claude-opus-5-5` to the 512K default context tier, and bumped `PERSIST_CACHE_VERSION` to `12`.
+
+### Improved & Fixed
+- **Quota Cycle Boundary Alignment (`src/services/pricing-service.ts`)**:
+  - Aligned `computePoolCycleMetrics` weekly cycle boundaries to 1-minute `costTimeline` buckets with 1-minute completion-skew tolerance so cycle-opening turns are consistently counted toward weekly spend and cap back-calculation.
+- **Internal Naming Refactor & Regression Coverage (`src/components/statusbar/`, `src/injection-contract.cjs`, `scripts/test-*.cjs`)**:
+  - Completed internal naming refactor across status bar and telemetry modules, styling tokens, docs, and tests (synced across Desktop and IDE hosts), and unified user-facing proxy wording to **Local Process Proxy** (`本地进程代理`).
+  - Expanded unit and integration tests (`test-statusbar-components.cjs`, `test-proxy-manager.cjs`, `test-subscription-pricing.cjs`, `test-context-widget.cjs`, `test-integration.cjs`) covering display modes, proxy config preservation, protocol mismatch detection, DLL path verification, Neon pricing, 512K context limits, and cycle-opening skew.
+
+### Release Notes (补充说明)
+- **Scope**: Release asset `antigravity-token-stats-v1.8.3-setup.exe` targets **Antigravity Desktop only** (does not package or patch Antigravity IDE; IDE users continue using `npm run build:bundle:ide && npm run build:host:ide && npm run patch:ide`).
+- **Installer & Proxy Config Preservation**: Fresh/unpatched installs keep **本地进程代理**, **中文翻译包**, and **状态栏小部件** unchecked by default; re-patching an existing proxy installation now preserves custom `config.json` rules and logs the active proxy log directory.
+
 ## [1.8.2] - 2026-11-17
 
 ### Added
