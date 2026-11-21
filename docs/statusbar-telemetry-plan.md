@@ -1,4 +1,4 @@
-# AntiToken 深度对齐 DeepSeek Harness：性能与用量统计架构与工程落地实施方案
+# AntiToken 状态栏与会话遥测：性能与用量统计架构与工程落地实施方案
 
 > **文件版本**：v1.0.0 (Master Engineering Specification)  
 > **制定日期**：2026-10-30  
@@ -11,10 +11,10 @@
 ## 目录 (Table of Contents)
 
 - [1. 执行摘要与设计哲学 (Executive Summary & Design Philosophy)](#1-执行摘要与设计哲学-executive-summary--design-philosophy)
-  - [1.1 项目使命与对齐目标](#11-项目使命与对齐目标)
+  - [1.1 项目使命与架构目标](#11-项目使命与架构目标)
   - [1.2 软件设计哲学 (OBEY A Philosophy of Software Design)](#12-软件设计哲学-obey-a-philosophy-of-software-design)
   - [1.3 核心交付收益与价值闭环](#13-核心交付收益与价值闭环)
-- [2. DeepSeek Harness 核心机制深度逆向分析 (R1)](#2-deepseek-harness-核心机制深度逆向分析-r1)
+- [2. 会话遥测核心机制与统计模型 (R1)](#2-会话遥测核心机制与统计模型-r1)
   - [2.1 事件驱动流转与分层生命周期 (Session -> Turn -> Step)](#21-事件驱动流转与分层生命周期-session---turn---step)
   - [2.2 性能指标统计模型 (TTFT, TPS, Model Time, Tool Time)](#22-性能指标统计模型-ttft-tps-model-time-tool-time)
   - [2.3 Token 分类统计与启发式模型 (4 字符估算、账单锚点、缓存命中率)](#23-token-分类统计与启发式模型-4-字符估算账单锚点缓存命中率)
@@ -23,12 +23,12 @@
   - [3.1 宿主架构与注入机制剖析 (Electron Main, Preload IPC, standalone.tsx)](#31-宿主架构与注入机制剖析-electron-main-preload-ipc-standalonetsx)
   - [3.2 真实遥测数据源深度评测 (SQLite gen_metadata, steps Tag 1/6/8, transcripts)](#32-真实遥测数据源深度评测-sqlite-gen_metadata-steps-tag-168-transcripts)
   - [3.3 13 项核心指标全面映射对比表 (Ground Truth vs Derived)](#33-13-项核心指标全面映射对比表-ground-truth-vs-derived)
-  - [3.4 差异与鸿沟对齐方案：双引擎混合架构 (Dual-Engine Stream Architecture)](#34-差异与鸿沟对齐方案双引擎混合架构-dual-engine-stream-architecture)
+  - [3.4 差异与鸿沟解决方案：双引擎混合架构 (Dual-Engine Stream Architecture)](#34-差异与鸿沟解决方案双引擎混合架构-dual-engine-stream-architecture)
   - [3.5 Windows 平台特性与 Electron 技术风险防控 (EBUSY, CSP, React 19)](#35-windows-平台特性与-electron-技术风险防控-ebusy-csp-react-19)
-- [4. 端到端对齐架构与模块设计规范 (R3)](#4-端到端对齐架构与模块设计规范-r3)
+- [4. 端到端遥测架构与模块设计规范 (R3)](#4-端到端遥测架构与模块设计规范-r3)
   - [4.1 数据流架构图与分层设计 (采集层 -> 聚合层 -> 渲染层)](#41-数据流架构图与分层设计-采集层---聚合层---渲染层)
   - [4.2 模块设计与 TypeScript 接口契约](#42-模块设计与-typescript-接口契约)
-  - [4.3 4 大展示维度 1:1 对齐 UI 详细设计规范](#43-4-大展示维度-11-对齐-ui-详细设计规范)
+  - [4.3 4 大展示维度 UI 详细设计规范](#43-4-大展示维度-ui-详细设计规范)
   - [4.4 数据管道实现规范 (SQLite 增量解析、IPC 广播、DOM 挂载)](#44-数据管道实现规范-sqlite-增量解析ipc-广播dom-挂载)
 - [5. 分阶段工程落地实施路线图 (Milestones & Roadmap)](#5-分阶段工程落地实施路线图-milestones--roadmap)
   - [5.1 里程碑规划 (M1 ~ M4)](#51-里程碑规划-m1--m4)
@@ -39,17 +39,15 @@
 
 ## 1. 执行摘要与设计哲学 (Executive Summary & Design Philosophy)
 
-### 1.1 项目使命与对齐目标
+### 1.1 项目使命与架构目标
 
 AntiToken 作为专为 Antigravity 桌面客户端（基于 Electron 的 AI 辅助编程与自动化执行环境）打造的轻量级无侵入监控与 Token 统计系统，致力于为开发者提供实时、真实、精准的模型资源消耗视图。
 
-开源项目 **DeepSeek Harness (DSH)** 凭借极简现代的底部常驻状态栏设计、微交互悬浮卡片（Popover Dialogs）以及严密科学的四维性能/用量统计模型，在开源开发者社区中树立了 AI 编程助手前端遥测交互的标杆。
-
-本工程实施方案的核心宗旨是：**在维持 AntiToken 现有 Windows 原生无侵入注入架构与轻量级特性的前提下，对齐 DeepSeek Harness 的遥测统计模型与 UI 呈现标准，实现从视觉设计、交互流转、指标数学公式到底层数据源的 1:1 无损落地。**
+本工程实施方案的核心宗旨是：**在维持 AntiToken 现有 Windows 原生无侵入注入架构与轻量级特性的前提下，构建极简现代的底部常驻状态栏、微交互悬浮卡片（Popover Dialogs）以及严密科学的四维性能/用量统计模型，实现从视觉设计、交互流转、指标数学公式到底层数据源的端到端落地。**
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                   DeepSeek Harness 4 大视觉呈现维度                     │
+│                    状态栏遥测 4 大视觉呈现维度                          │
 ├────────────────────────────────────────────────────────────────────────┤
 │ 1. 底部常驻状态栏   : [仪 2 轮 78 步 · 190 tok/s] [库 3.8M tok · 缓存命中 99%] [环 7%] │
 │ 2. 上下文已用卡片   : ~72.4K / 1M [灰:系统提示词 紫:工具定义 蓝:对话消息]      │
@@ -60,11 +58,11 @@ AntiToken 作为专为 Antigravity 桌面客户端（基于 Electron 的 AI 辅�
 
 ### 1.2 软件设计哲学 (OBEY A Philosophy of Software Design)
 
-遵循 John Ousterhout 教授在《软件设计哲学》(A Philosophy of Software Design) 中提出的核心准则，本对齐方案严守以下架构底线：
+遵循 John Ousterhout 教授在《软件设计哲学》(A Philosophy of Software Design) 中提出的核心准则，本方案严守以下架构底线：
 
 1. **深层模块与信息隐藏 (Deep Modules & Information Hiding)**：
    - 遥测采集层（SQLite 解析与 Protobuf 解包）、指标聚合层（会话投影计算器）、渲染呈现层（React 19 组件）保持极简且高内聚的接口。
-   - 上层 UI 组件仅依赖纯数据类型 `DshTelemetryData`，完全无需知晓数据来自于底层 SQLite WAL、Protobuf 二进制 Tag 还是 Renderer 的 DOM 差分估算。底层数据源变动绝不向上传导。
+   - 上层 UI 组件仅依赖纯数据类型 `SessionTelemetry`，完全无需知晓数据来自于底层 SQLite WAL、Protobuf 二进制 Tag 还是 Renderer 的 DOM 差分估算。底层数据源变动绝不向上传导。
 2. **将复杂度向下推 (Pull Complexity Downward)**：
    - 各种时序补偿（如处理网络抖动的 TTFT 修正、未结工具调用的超时清理、中文字符与 JSON Schema 启发式分词的基准归一化）全部由聚合层单向吸收，调用方组件保持零状态逻辑与纯函数渲染。
 3. **真实性第一与防欺骗原则 (Integrity Mandate)**：
@@ -76,7 +74,7 @@ AntiToken 作为专为 Antigravity 桌面客户端（基于 Electron 的 AI 辅�
 
 ### 1.3 核心交付收益与价值闭环
 
-| 维度 | 原 AntiToken 状态 | 对齐 DeepSeek Harness 后 | 工程与用户价值 |
+| 维度 | 原 AntiToken 状态 | 状态栏遥测升级后 | 工程与用户价值 |
 |---|---|---|---|
 | **常驻形态** | 仅输入框旁单枚圆环百分比 Pill | 三段式常驻状态栏：轮步/速度 + 用量/缓存 + 上下文圆环 | 完整掌握宏观性能、总体吞吐与上下文压力 |
 | **性能度量** | 仅显示静态总 Token 数，无耗时度量 | 完整覆盖：模型用时、工具调用用时、首包延迟 (TTFT)、纯解码速度 (TPS) | 毫秒级洞察模型思考开销与本地/网络工具执行瓶颈 |
@@ -85,13 +83,13 @@ AntiToken 作为专为 Antigravity 桌面客户端（基于 Electron 的 AI 辅�
 
 ---
 
-## 2. DeepSeek Harness 核心机制深度逆向分析 (R1)
+## 2. 会话遥测核心机制与统计模型 (R1)
 
-基于对 DeepSeek Harness (`deepseek-ai/deepseek-harness`) 官方仓库代码库的全面静态与动态逆向工程，系统剖析其性能测量、用量统计与分层流转机制。
+系统采用基于事件时序投影的统计架构，将性能测量、用量统计与分层流转解耦。
 
 ### 2.1 事件驱动流转与分层生命周期 (Session -> Turn -> Step)
 
-DSH 整体采用基于不可变追加日志（Append-only Event Sourcing）的事件驱动架构。会话生命周期自上而下严格划分为四层模型：
+遥测模型采用基于不可变追加日志（Append-only Event Sourcing）的事件驱动语义，会话生命周期自上而下严格划分为四层：
 
 ```
  会话 (Session): 全局唯一的上下文生命周期，持久化于追加事件流
@@ -108,35 +106,34 @@ DSH 整体采用基于不可变追加日志（Append-only Event Sourcing）的�
                      └── tool/result : 工具返回 [callId, content, isError, timestamp]
 ```
 
-#### DSH 核心包架构拓扑
-- `packages/core/agent-loop`: 状态机核心，负责 `turn/start`、`step/start`、循环触发 LLM、执行工具并派发 `step/end`、`turn/end`。
-- `packages/session/session-stats`: 性能指标投影折叠器 (`projection.ts`)，纯函数响应事件流，生成 `SessionStatsState`。
-- `packages/llm/token-meter`: 负责上下文 Token 启发式估算 (`estimate.ts`)、账单拆解 (`usage-projection.ts`) 及上下文构成 (`breakdown-projection.ts`)。
-- `packages/client/ui-chat` & `ui-conversation`: 渲染层，包含 `StatsPills.tsx`、`ContextMeter.tsx` 及本地化模块 `locale.ts`。
+#### 遥测逻辑分层拓扑
+- **状态机调度层**：负责轮次与步骤的时序编排、流式接收与工具批处理派发。
+- **性能投影层**：纯函数响应步骤事件流，计算 TTFT、纯解码 TPS、模型用时与工具用时。
+- **用量计量层**：负责上下文 Token 启发式估算、账单拆解及上下文构成拆解。
+- **渲染呈现层**：包含状态栏胶囊与悬浮明细卡片及本地化模块。
 
-#### 关键时序流转机制 (`agent.ts` 源码分析)
-1. **轮次初始化**：用户发送输入，派发 `turn/start { turn: 1 }`。
+#### 关键时序流转机制
+1. **轮次初始化**：用户发送输入，开启新轮次。
 2. **步骤循环推进**：
-   - 派发 `step/start { turn: 1, step: 1, time }`，记录 `openStep.startTime`。
+   - 记录模型步骤开始时间戳 `startTime`。
    - 启动流式请求，收到第一个有效增量时，更新 `firstTokenTime`。
-   - 流式结束，生成 `assistant/message { usage, stream }`。
+   - 流式结束，生成模型消息与用量记录。
    - 若模型产生工具调用：
-     - 为每个工具派发 `tool/call { callId, name, arguments }`，在状态机内暂存 `pendingCalls[callId] = event.time`。
-     - 本地执行完成后派发 `tool/result`，通过 `callId` 配对计算单次工具用时并累加至 `toolMs`。
-   - 在 `finally` 块中派发 `step/end { turn: 1, step: 1 }`，无论成功或失败保证闭环。
-3. **轮次收尾**：工具调用结束或无需继续执行，派发 `turn/end { turn: 1, reason }`。
+     - 为每个工具暂存 `pendingCalls[callId] = event.time`。
+     - 本地执行完成后，通过 `callId` 配对计算单次工具用时并累加至 `toolMs`。
+   - 无论成功或失败，在结束时保证步骤闭环。
+3. **轮次收尾**：工具调用结束或无需继续执行，结束当前轮次。
 
 ---
 
 ### 2.2 性能指标统计模型 (TTFT, TPS, Model Time, Tool Time)
 
-DSH 在 `packages/session/session-stats/src/projection.ts` 中实现了一套极其严格的性能统计投影模型。
+系统实现了严格的性能统计投影模型。
 
 #### A. 首 Token 到达判定与延迟 (TTFT) 计算
-何为“First Token”？DSH 在 `packages/llm/llm/src/assistant-stream.ts` 中给出了严谨判定：
+当流中收到首个非空有效输出片段时判定为“First Token”：
 
 ```typescript
-// packages/llm/llm/src/assistant-stream.ts
 export function isTokenDelta(chunk: StreamChunk): boolean {
   switch (chunk.type) {
     case 'text-delta':
@@ -156,10 +153,9 @@ export function isTokenDelta(chunk: StreamChunk): boolean {
   $$\text{TTFT}_{\text{avg}} = \frac{\sum_{i=1}^{N} \text{TTFT}_i}{N} \quad (N = \text{ttftSteps})$$
 
 #### B. 纯解码吞吐速度 (TPS) 计算
-不同于粗糙地将“总输出 Token 除以整个请求耗时”，DSH 将网络首包/排队时间与模型自回归解码时间做了物理隔离：
+不同于粗糙地将“总输出 Token 除以整个请求耗时”，方案将网络首包/排队时间与模型自回归解码时间做了物理隔离：
 
 ```typescript
-// packages/session/session-stats/src/projection.ts (lines 148-155)
 if (firstToken !== null) {
   next.ttftMs += Math.max(0, firstToken - open.startTime);
   next.ttftSteps += 1;
@@ -197,17 +193,16 @@ if (firstToken !== null) {
     };
   }
   ```
-  在 `turn/end` 时，DSH 会自动扫描并丢弃未能返回的孤立调用，保证统计数据不泄露。
+  在 `turn/end` 时自动扫描并丢弃未能返回的孤立调用，保证统计数据不泄露。
 
 ---
 
 ### 2.3 Token 分类统计与启发式模型 (4 字符估算、账单锚点、缓存命中率)
 
-#### A. 启发式 Token 估算器 (`estimate.ts`)
-为了极致的客户端响应性能与轻量化，DSH 在渲染与流式推进期间**未集成庞大复杂的 BPE Tokenizer (如 tiktoken WASM)**，而是制定了统一的字符启发式规则：
+#### A. 启发式 Token 估算器
+为了极致的客户端响应性能与轻量化，渲染与流式推进期间**未集成庞大复杂的 BPE Tokenizer (如 tiktoken WASM)**，而是制定了统一的字符启发式规则：
 
 ```typescript
-// packages/llm/token-meter/src/estimate.ts
 const CHARS_PER_TOKEN = 4;
 const BLOCK_OVERHEAD = 4;
 export const ROLE_OVERHEAD = 4;
@@ -239,19 +234,10 @@ export function estimateContent(blocks: readonly ContentBlock[]): number {
 - **字符比率**：设定 $1 \text{ Token} \approx 4 \text{ Characters}$。
 - **结构开销**：每个 Content Block 补加 4 Token 开销，每条角色消息补加 4 Token 标记开销。
 
-#### B. 为什么明细相加不等于总数？（账单锚点与表层字符差分）
-用户截图 2 中出现了一个非常耐人寻味的现象：
-- 卡片顶部显示：`~72.4K / 1M`
-- 明细行显示：系统提示词 `~8.2K` + 工具定义 `~8.3K` + 对话消息 `~29.4K` = `45.9K`
-- **差额分析**：$72.4\text{K} - 45.9\text{K} = 26.5\text{K}$ 去了哪里？
-- **深度代码证据**：
-  在 `packages/llm/token-meter/src/usage-projection.ts` 中，DSH 引入了 `projectedTokens` 机制：
-  $$\text{projectedTokens} = \max(0, \text{pressureTokens} + \text{surfaceTokens} - \text{sampledSurfaceTokens})$$
-  其中 `pressureTokens` 是服务端在网络响应中报告的真实权威 Prompt Token 数（包含了模型真实 BPE 分词、多轮对话上下文以及思维链沉淀）。明细行的 3 项是纯静态字符启发式估算（仅反映静态构成比例）。
-  官方设计准则明确指出：**明细行用于呈现“相对构成百分比”，而顶部标题与圆环使用服务端权威数据推演的绝对上下文用量。**
+#### B. 明细比例与真实总量的锚定关系
+- 顶部标题与圆环展示服务端权威数据推演的绝对上下文用量，明细行用于呈现**相对构成比例**，通过基准锚定与残差归一化确保各子项之和与 `promptTokens` 一致。
 
 #### C. 缓存命中率 (Cache Hit Rate) 严谨算法
-在 `packages/client/ui-chat/src/client/chat/token-format.ts` 中：
 $$\text{Billed Input} = \text{uncachedInputTokens} + \text{cacheReadTokens} + \text{cacheWriteTokens}$$
 $$\text{Cache Hit Rate} = \frac{\text{cacheReadTokens}}{\text{uncachedInputTokens} + \text{cacheReadTokens}}$$
 - **诚实原则**：当未缓存输入大于 0 时，即使计算出的比例达到 99.99%，也绝不允许四舍五入为 `100%`，防止用户误以为完全没有网络或计费开销。
@@ -260,7 +246,7 @@ $$\text{Cache Hit Rate} = \frac{\text{cacheReadTokens}}{\text{uncachedInputToken
 
 ### 2.4 UI 交互与数据呈现机制 (常驻状态栏与 3 种悬浮卡片)
 
-基于对前端组件树的逆向，DSH 构建了高度精简的状态栏与 Popover 联动层：
+状态栏与 Popover 联动层采用精简三胶囊结构：
 
 ```
  底部状态栏容器 (StatsPills + ContextMeter)
@@ -356,7 +342,7 @@ AntiToken 运行于宿主应用 Antigravity 的 Windows Electron 容器内，架
 
 ### 3.3 13 项核心指标全面映射对比表 (Ground Truth vs Derived)
 
-| # | 目标展示维度 | 指标名称 (Metric Name) | DSH 参考值 | Antigravity 宿主数据源 | 可用性判定 | 精度标准 | 采集方式与接入点 |
+| # | 目标展示维度 | 指标名称 (Metric Name) | 示例参考值 | Antigravity 宿主数据源 | 可用性判定 | 精度标准 | 采集方式与接入点 |
 |---|---|---|---|---|---|---|---|
 | 1 | **状态栏** | **会话轮次 (Rounds)** | `2 轮` | SQLite `steps` (`step_type == 14`) 计数 | **直接获取 (Ground Truth)** | 100% 精确 | `readSingleSession()` 中执行计数统计 |
 | 2 | **状态栏** | **会话步骤 (Steps)** | `78 步` | SQLite `steps` (`step_type in (15, 132)`) 计数 | **直接获取 (Ground Truth)** | 100% 精确 | `readSingleSession()` 中按步骤聚合 |
@@ -377,10 +363,10 @@ AntiToken 运行于宿主应用 Antigravity 的 Windows Electron 容器内，架
 
 ---
 
-### 3.4 差异与鸿沟对齐方案：双引擎混合架构 (Dual-Engine Stream Architecture)
+### 3.4 差异与鸿沟解决方案：双引擎混合架构 (Dual-Engine Stream Architecture)
 
 #### 核心鸿沟分析
-- **原生环境 (DSH)**：拥有对网络流（SSE Client）和工具调用运行时（Runtime）的 100% 控制权，每收到一个 Token 事件均可在内存中触发状态机累加。
+- **原生客户端环境**：拥有对网络流（SSE Client）和工具调用运行时（Runtime）的 100% 控制权，每收到一个 Token 事件均可在内存中触发状态机累加。
 - **宿主注入环境 (AntiToken)**：运行在 Antigravity 宿主外围。Antigravity 的网络流式过程发生在私有 C++ / Node 模块内，仅在单步执行完毕并向 SQLite WAL 写入事务时才产生落盘记录。如果在流式期间不做处理，状态栏在生成过程中将保持静态，体验大打折扣。
 
 #### 双引擎混合架构解决方案
@@ -487,7 +473,7 @@ AntiToken 创新提出并实现“**流式实时 Ticker + 提交时 SQLite 权�
  ┌────────────────────────────────────────────────────────────────────────┐
  │ 3. UI 呈现与微交互层 (UI Presentation Layer - React 19)                │
  │    - hosts/antigravity/src/standalone.tsx                             │
- │    - 常驻状态栏 (DshStatusBar.tsx)                                     │
+ │    - 常驻状态栏 (StatusBar.tsx)                                        │
  │    - 会话统计悬浮卡片 (SessionStatsPopover.tsx)                       │
  │    - Token 用量悬浮卡片 (TokenUsagePopover.tsx)                        │
  │    - 上下文已用悬浮卡片 (ContextUsagePopover.tsx)                     │
@@ -501,9 +487,9 @@ AntiToken 创新提出并实现“**流式实时 Ticker + 提交时 SQLite 权�
 为了彻底解耦底层采集与前端渲染，确立强类型的统一契约接口。
 
 ```typescript
-// src/types/dsh-telemetry.ts
+// src/types/telemetry.ts
 
-/** 会话级宏观性能统计指标 (对应截图 1 速度 & 截图 4 会话统计) */
+/** 会话级宏观性能统计指标 */
 export interface SessionMetrics {
   /** 当前会话总交互轮次 (User Prompts) */
   rounds: number;
@@ -519,7 +505,7 @@ export interface SessionMetrics {
   ttftSec: number | null;
 }
 
-/** Token 权威计费与用量明细指标 (对应截图 1 用量 & 截图 3 Token 用量卡片) */
+/** Token 权威计费与用量明细指标 */
 export interface TokenMetrics {
   /** 计费总用量 (未缓存输入 + 缓存读取 + 输出) */
   totalTokens: number;
@@ -533,7 +519,7 @@ export interface TokenMetrics {
   outputTokens: number;
 }
 
-/** 上下文窗口容量与构成拆解指标 (对应截图 1 圆环 & 截图 2 上下文卡片) */
+/** 上下文窗口容量与构成拆解指标 */
 export interface ContextMetrics {
   /** 当前上下文总占用 Token */
   usedTokens: number;
@@ -549,8 +535,8 @@ export interface ContextMetrics {
   chatMessageTokens: number;
 }
 
-/** 统一遥测传输根对象 (DshTelemetryData) */
-export interface DshTelemetryData {
+/** 统一遥测传输根对象 (SessionTelemetry) */
+export interface SessionTelemetry {
   /** 会话全局唯一标识符 */
   sessionId: string;
   /** 是否处于实时流式生成中 (用于激活状态栏实时动画) */
@@ -565,7 +551,7 @@ export interface DshTelemetryData {
 ```
 
 #### UI 展示降级与容错规范 (Degradation Rules for Nullable Fields)
-为保障各种边缘时序（冷启动零输入、立即取消未出首 Token、零输出拦截、无有效耗时等）下的界面稳定性，UI 渲染层执行严格对齐 DSH 上游设计（`StatsPills.tsx` / `token-format.ts`）的降级策略：
+为保障各种边缘时序（冷启动零输入、立即取消未出首 Token、零输出拦截、无有效耗时等）下的界面稳定性，UI 渲染层执行严格的降级策略（`StatusBar.tsx` / `telemetry-format.ts`）：
 1. **状态栏性能 Pill**：
    - 当 `session.tps === null` 时，仅渲染 `{rounds} 轮 {steps} 步`，隐藏后置的 `· {tps} tok/s`，严禁渲染为欺骗性的 `0 tok/s` 或异常的 `NaN tok/s`。
 2. **状态栏用量 Pill**：
@@ -576,68 +562,66 @@ export interface DshTelemetryData {
 4. **Token 用量悬浮卡片 (`TokenUsagePopover`)**：
    - 当 `token.cacheHitRatePct === null` 时，`缓存命中` 行数值展示为 `--`。
 5. **上下文卡片与分段进度条**：
-   - 当 `context.usedTokens === 0` 或 `promptTokens === 0` 时，进度条子段宽度置 0，呈现全底色轨道 (`--dsh-seg-track`)，杜绝除以零产生的 `Infinity%` 样式破损。
+   - 当 `context.usedTokens === 0` 或 `promptTokens === 0` 时，进度条子段宽度置 0，呈现全底色轨道 (`--ag-sb-seg-track`)，杜绝除以零产生的 `Infinity%` 样式破损。
 
 ---
 
-### 4.3 4 大展示维度 1:1 对齐 UI 详细设计规范
-
-严格比对用户提供的 4 张实机截图与 DSH 官方 CSS，提取完整的设计系统规范（Design Tokens）。
+### 4.3 4 大展示维度 UI 详细设计规范
 
 #### A. 视觉设计系统与配色规范 (Design Tokens)
 ```css
-/* DeepSeek Harness 对齐专用色彩体系 (深色主题 - 默认) */
+/* 状态栏与悬浮卡片专用色彩体系 (深色主题 - 默认) */
 :root {
   /* 常驻状态栏 (Status Bar) */
-  --dsh-statusbar-bg: #161618;
-  --dsh-statusbar-border: rgba(255, 255, 255, 0.08);
-  --dsh-statusbar-hover: rgba(255, 255, 255, 0.08);
-  --dsh-statusbar-height: 30px;
+  --ag-sb-bg: #161618;
+  --ag-sb-border: rgba(255, 255, 255, 0.08);
+  --ag-sb-hover: rgba(255, 255, 255, 0.08);
+  --ag-sb-height: 30px;
 
   /* 悬浮卡片 (Popover Card) */
-  --dsh-card-bg: #25262b;
-  --dsh-card-border: rgba(255, 255, 255, 0.08);
-  --dsh-card-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
-  --dsh-card-radius: 14px;
-  --dsh-card-width: 320px;
+  --ag-sb-card-bg: #25262b;
+  --ag-sb-card-border: rgba(255, 255, 255, 0.08);
+  --ag-sb-card-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+  --ag-sb-card-radius: 14px;
+  --ag-sb-card-width: 320px;
 
   /* 排版字体与文字颜色 */
-  --dsh-text-primary: #ffffff;
-  --dsh-text-secondary: #d1d5db;
-  --dsh-text-muted: #9ca3af;
-  --dsh-divider: rgba(255, 255, 255, 0.08);
+  --ag-sb-text-primary: #ffffff;
+  --ag-sb-text-secondary: #d1d5db;
+  --ag-sb-text-muted: #9ca3af;
+  --ag-sb-divider: rgba(255, 255, 255, 0.08);
 
   /* 分段彩色进度条色块 (Segment Colors) */
-  --dsh-seg-system-prompt: #9ca3af;    /* 系统提示词: 银灰 */
-  --dsh-seg-tool-definitions: #a855f7; /* 工具定义: 紫色 */
-  --dsh-seg-chat-messages: #3b82f6;    /* 对话消息: 天蓝 */
-  --dsh-seg-track: #38393e;            /* 进度条轨道底色: 深暗灰 */
+  --ag-sb-seg-system-prompt: #9ca3af;    /* 系统提示词: 银灰 */
+  --ag-sb-seg-tool-definitions: #a855f7; /* 工具定义: 紫色 */
+  --ag-sb-seg-chat-messages: #3b82f6;    /* 对话消息: 天蓝 */
+  --ag-sb-seg-track: #38393e;            /* 进度条轨道底色: 深暗灰 */
 }
 
 /* 浅色主题回退规范 (Light Theme Fallback) */
 [data-theme="light"],
 .theme-light {
-  --dsh-statusbar-bg: #f4f4f5;
-  --dsh-statusbar-border: rgba(0, 0, 0, 0.08);
-  --dsh-statusbar-hover: rgba(0, 0, 0, 0.06);
+  --ag-sb-bg: #f4f4f5;
+  --ag-sb-border: rgba(0, 0, 0, 0.08);
+  --ag-sb-hover: rgba(0, 0, 0, 0.06);
 
-  --dsh-card-bg: #ffffff;
-  --dsh-card-border: rgba(0, 0, 0, 0.1);
-  --dsh-card-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --ag-sb-card-bg: #ffffff;
+  --ag-sb-card-border: rgba(0, 0, 0, 0.1);
+  --ag-sb-card-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
 
-  --dsh-text-primary: #18181b;
-  --dsh-text-secondary: #3f3f46;
-  --dsh-text-muted: #71717a;
-  --dsh-divider: rgba(0, 0, 0, 0.08);
+  --ag-sb-text-primary: #18181b;
+  --ag-sb-text-secondary: #3f3f46;
+  --ag-sb-text-muted: #71717a;
+  --ag-sb-divider: rgba(0, 0, 0, 0.08);
 
-  --dsh-seg-system-prompt: #9ca3af;
-  --dsh-seg-tool-definitions: #a855f7;
-  --dsh-seg-chat-messages: #3b82f6;
-  --dsh-seg-track: #e4e4e7;
+  --ag-sb-seg-system-prompt: #9ca3af;
+  --ag-sb-seg-tool-definitions: #a855f7;
+  --ag-sb-seg-chat-messages: #3b82f6;
+  --ag-sb-seg-track: #e4e4e7;
 }
 ```
 
-#### B. 维度 1：底部常驻状态栏 (`DshStatusBar.tsx`)
+#### B. 维度 1：底部常驻状态栏 (`StatusBar.tsx`)
 - **尺寸与排版**：高 `30px`，水平排列，`gap-7` (约 28px)，底色 `#161618`，顶边框 `1px solid rgba(255, 255, 255, 0.08)`，字体大小 `13px`。
 - **三组常驻 Pill 项**：
   1. **性能项**：
@@ -727,7 +711,7 @@ export interface DshTelemetryData {
 
 #### F. 格式化工具函数规范
 ```typescript
-// 耗时格式化: 对齐 DSH 官方 locale (< 60s 保留 1 位小数，>= 60s 为 'X分Y秒' 无空格，防御 null/NaN/负数)
+// 耗时格式化: (< 60s 保留 1 位小数，>= 60s 为 'X分Y秒' 无空格，防御 null/NaN/负数)
 export function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds <= 0) return '0秒';
   if (seconds < 60) {
@@ -740,7 +724,7 @@ export function formatDuration(seconds: number | null | undefined): string {
   return `${m}分${rem}秒`;
 }
 
-// Token 紧凑格式化: 对齐 DSH 官方规则 (>= 100K 取整，< 100K 保留 1 位小数，防御非数值)
+// Token 紧凑格式化: (>= 100K 取整，< 100K 保留 1 位小数，防御非数值)
 export function formatCompactTokens(tokens: number | null | undefined): string {
   if (tokens == null || !Number.isFinite(tokens) || tokens <= 0) return '0';
   const scaled = (candidate: number): string =>
@@ -809,7 +793,7 @@ function extractSessionPerformanceMetrics(db, totalOutputTokens = 0) {
         if (firstTs && startMs > 0) {
           const firstMs = (Number(firstTs.get(1)) || 0) * 1000 + (Number(firstTs.get(2)) || 0) / 1e6;
           const ttft = Math.max(0, firstMs - startMs);
-          // 扩展上限至 300,000ms (5分钟)，覆盖 DeepSeek-R1 / Gemini 3.8 深度思考推理模型长思考延迟
+          // 扩展上限至 300,000ms (5分钟)，覆盖深度思考推理模型长思考延迟
           if (ttft > 0 && ttft < 300_000) {
             ttftSumMs += ttft;
             ttftStepsCount++;
@@ -845,7 +829,7 @@ function extractSessionPerformanceMetrics(db, totalOutputTokens = 0) {
   // 纯解码耗时 (剔除首 Token 到达前的思考/排队延迟)
   const decodeDurationSec = Math.max(0, (modelTimeMs - ttftSumMs) / 1000);
   
-  // 计算纯解码速度 TPS (对齐 DSH 官方定义，边界保护杜绝 NaN / Infinity)
+  // 计算纯解码速度 TPS (边界保护杜绝 NaN / Infinity)
   const tps = (decodeDurationSec > 0.05 && finalOutputTokens > 0)
     ? Math.round(finalOutputTokens / decodeDurationSec)
     : null;
@@ -864,7 +848,7 @@ function extractSessionPerformanceMetrics(db, totalOutputTokens = 0) {
 > **架构深度优化 (APOSD 实践)**：在 `scripts/aggregate-stats.cjs:readSingleSession` 中，已有现成的 `steps` 游标遍历循环。工程实施时直接将上述 Protobuf 纳秒时间戳解包与累加逻辑下沉并合并入既有循环，无需额外触发第二趟无索引全表扫描，将会话级遥测解析耗时从 ~14ms 进一步压缩至 ~2ms。
 
 #### B. 广播契约常量扩充 (`src/injection-contract.cjs`)
-遵循《软件设计哲学》的信息隐藏与深层接口原则，**绝不引入平行的 `EVENT_DSH_TELEMETRY` 事件通道**，避免双事件流导致的竞态与时序脱节。统一沿用并加深现有的 `EVENT_STATS_UPDATED` 广播总线，将 `dshTelemetry` 直接作为负载扩充至 `window.__ANTIGRAVITY_STATS__`：
+遵循《软件设计哲学》的信息隐藏与深层接口原则，**绝不引入平行的 `EVENT_TELEMETRY` 事件通道**，避免双事件流导致的竞态与时序脱节。统一沿用并加深现有的 `EVENT_STATS_UPDATED` 广播总线，将 `telemetry` 直接作为负载扩充至 `window.__ANTIGRAVITY_STATS__`：
 
 ```javascript
 module.exports = {
@@ -875,8 +859,8 @@ module.exports = {
   WINDOW_STATS_KEY: '__ANTIGRAVITY_STATS__',
 
   // 状态栏与卡片独立挂载容器标识符
-  CONTAINER_STATUSBAR_ID: 'antigravity-dsh-statusbar-container',
-  CONTAINER_POPOVER_ID: 'antigravity-dsh-popover-container',
+  CONTAINER_STATUSBAR_ID: 'antigravity-statusbar-container',
+  CONTAINER_POPOVER_ID: 'antigravity-statusbar-popover-container',
 };
 ```
 
@@ -893,16 +877,16 @@ module.exports = {
 
 | 里程碑编号 | 里程碑名称 | 工作范畴与核心产出 | 依赖前置 | 验收判据 |
 |---|---|---|---|---|
-| **M1** | **遥测聚合引擎升级** | 扩展 `scripts/aggregate-stats.cjs`，实现 `extractSessionPerformanceMetrics`；解析 steps 纳秒时间戳计算 Model/Tool Time (带 180s 离群截断)、TTFT (300s 阈值覆盖推理模型)、纯解码 TPS (带零输出除零防护与 null 守卫)；单会话读取性能控制在 $< 30\text{ms}$。 | 无 | `node scripts/test-performance-metrics.cjs` 测试通过，断言数据真实有效。 |
-| **M2** | **React 19 UI 组件套件实现** | 开发 `DshStatusBar` 及 3 个悬浮卡片 (`SessionStatsPopover`, `TokenUsagePopover`, `ContextUsagePopover`)；配置 Tailwind 与绝对对齐的 CSS 变量；实现视口自适应吸附算法与 256K 压缩阈值标记。 | M1 | 组件单元测试及 Mock 渲染测试 100% 通过，色彩和排版与截图 1:1 一致。 |
-| **M3** | **桌面注入与宿主挂载集成** | 重构 `hosts/antigravity/src/standalone.tsx`，将原生简单 Pill 升级为 DSH 常驻状态栏；接入统一的 `EVENT_STATS_UPDATED` (`antigravity:stats-updated`) 事件中的 `dshTelemetry` 载荷；实现 React 19 根实例安全销毁与单例路由重建 (`window.__ANTIGRAVITY_STATUSBAR_ROOT__` 隔离)。 | M2 | `npm run build:bundle` 产物无报错，开发模式下在 Antigravity 界面正常呈现。 |
+| **M1** | **遥测聚合引擎升级** | 扩展 `scripts/aggregate-stats.cjs`，实现 `extractSessionPerformanceMetrics`；解析 steps 纳秒时间戳计算 Model/Tool Time (带 180s 离群截断)、TTFT (300s 阈值覆盖推理模型)、纯解码 TPS (带零输出除零防护与 null 守卫)；单会话读取性能控制在 $< 30\text{ms}$。 | 无 | `node scripts/test-telemetry-metrics.cjs` 测试通过，断言数据真实有效。 |
+| **M2** | **React 19 UI 组件套件实现** | 开发 `StatusBar` 及 3 个悬浮卡片 (`SessionStatsPopover`, `TokenUsagePopover`, `ContextUsagePopover`)；配置 Tailwind 与 CSS 变量；实现视口自适应吸附算法与 256K 压缩阈值标记。 | M1 | 组件单元测试及 Mock 渲染测试 100% 通过。 |
+| **M3** | **桌面注入与宿主挂载集成** | 重构 `hosts/antigravity/src/standalone.tsx`，将原生简单 Pill 升级为常驻状态栏；接入统一的 `EVENT_STATS_UPDATED` (`antigravity:stats-updated`) 事件中的 `telemetry` 载荷；实现 React 19 根实例安全销毁与单例路由重建 (`window.__ANTIGRAVITY_STATUSBAR_ROOT__` 隔离)。 | M2 | `npm run build:bundle` 产物无报错，开发模式下在 Antigravity 界面正常呈现。 |
 | **M4** | **实时流式双引擎与真机验收** | 接入前端 live stream ticker (CJK 动态加权)；扩展 `hosts/antigravity/scripts/verify-real-device.cjs`，通过 CDP 连接真实 Antigravity 验证状态栏与悬浮卡片的展开与关闭、真实数据流转。 | M3 | 自动化 CDP 验证脚本全部通过，冷启动与多次会话切换无白屏或内存泄露。 |
 
 ---
 
 ### 5.2 实施步骤与验收用例
 
-#### M1: 遥测聚合引擎测试用例 (`scripts/test-dsh-metrics.cjs`)
+#### M1: 遥测聚合引擎测试用例 (`scripts/test-telemetry-metrics.cjs`)
 1. **用例 1 (Protobuf 时间戳抽取正确性)**：加载样本数据库，验证 `modelDurationSec > 0` 且 `toolDurationSec >= 0`。
 2. **用例 2 (TTFT 边界过滤与推理模型支持)**：验证异常离群值（如 $> 300\text{s}$ 或 $< 0$）被正确剔除，支持深度思考模型长思考延迟，流式取消未测得时安全返回 `null`。
 3. **用例 3 (性能基准测试)**：连续执行 50 次 `readSingleSession()`，平均耗时低于 $25\text{ms}$，满足实时性要求。
@@ -932,4 +916,4 @@ module.exports = {
 
 ## 6. 结语与后续工作
 
-本工程方案通过系统性的逆向分析、实机 SQLite 底层数据源挖掘以及严谨的软件架构设计，打通了从开源前沿标杆 **DeepSeek Harness** 到 Windows 宿主注入系统 **AntiToken** 的完整对齐链路。通过在底层坚持数据真实性、在中间层构建双引擎混合时序管道、在前端提供极致细腻的微交互呈现，该方案将赋能 Antigravity 用户在享受原生桌面集成便利的同时，获得工业级高精度与高美感的 AI 交互遥测体验。
+本工程方案通过系统性的实机 SQLite 底层数据源挖掘以及严谨的软件架构设计，构建了适用于 Windows 宿主注入系统 **AntiToken** 的状态栏与会话遥测方案。通过在底层坚持数据真实性、在中间层构建双引擎混合时序管道、在前端提供极致细腻的微交互呈现，该方案赋能 Antigravity 用户在享受原生桌面集成便利的同时，获得高精度与高可读性的 AI 交互遥测体验。

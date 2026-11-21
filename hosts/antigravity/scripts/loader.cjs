@@ -478,6 +478,26 @@ function init() {
   } catch (e) {}
   try {
     ipcMain.handle(contract.IPC_REQUEST_SYNC, async (_event, payload) => {
+      if (payload && typeof payload === 'object' && payload.action === 'open-proxy-logs') {
+        try {
+          let pm = null;
+          for (const p of ['./proxy-manager.cjs', '../../../scripts/proxy-manager.cjs']) {
+            try { pm = require(p); break; } catch {}
+          }
+          if (pm && electron?.shell && typeof electron.shell.openPath === 'function') {
+            const desktopStatus = pm.getTargetStatus('desktop', undefined, { nonBlocking: true });
+            const logDir = desktopStatus?.logDir || pm.resolveProxyLogDir(desktopStatus?.dir, desktopStatus?.installed);
+            if (logDir && fs.existsSync(logDir)) {
+              const openErr = await electron.shell.openPath(logDir);
+              return { success: !openErr, logDir, error: openErr || undefined };
+            }
+          }
+        } catch (err) {
+          return { success: false, error: err?.message || String(err) };
+        }
+        return { success: false };
+      }
+
       const sessionId = payload?.sessionId || (typeof payload === 'string' ? payload : null);
       // Session-scoped requests keep their promise: one DB read, no full rescan. Only the
       // dashboard (no sessionId) needs the whole aggregate refreshed.

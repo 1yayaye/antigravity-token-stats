@@ -1,6 +1,6 @@
 /**
  * scripts/test-challenger-reverification.cjs
- * Empirical Adversarial Re-verification of Remediated DeepSeek Harness Alignment Plan
+ * Empirical Adversarial Re-verification of Status Bar Telemetry Plan
  * Executed by Challenger 3.
  */
 
@@ -362,10 +362,10 @@ testCase('CJK dynamic weighting matches language characteristics without banned 
 // -------------------------------------------------------------------
 // 5. STATIC AUDIT OF PLAN DOCUMENT
 // -------------------------------------------------------------------
-console.log('\n--- 5. Static Inspection of docs/deepseek-harness-alignment-plan.md ---');
+console.log('\n--- 5. Static Inspection of docs/statusbar-telemetry-plan.md ---');
 
 testCase('Plan document contains all critical remediation keys', () => {
-  const planPath = path.join(__dirname, '..', 'docs', 'deepseek-harness-alignment-plan.md');
+  const planPath = path.join(__dirname, '..', 'docs', 'statusbar-telemetry-plan.md');
   const planContent = fs.readFileSync(planPath, 'utf8');
 
   // Must have window.__ANTIGRAVITY_STATUSBAR_ROOT__

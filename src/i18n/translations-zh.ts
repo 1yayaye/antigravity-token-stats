@@ -69,6 +69,10 @@ export const zhTranslations: Record<string, string> = {
 
   // Theme & Window
   switchLanguage: '切换语言',
+  statusBarModeDetailed: '状态栏：详细',
+  statusBarModeStandard: '状态栏：标准',
+  statusBarModeCompact: '状态栏：简洁',
+  statusBarModeToggleTitle: '切换输入框状态栏显示（详细三胶囊 / 标准精简三胶囊 / 简洁仅上下文圆环）',
 
   // Subscription & Quota
   subscriptionQuotaTitle: '订阅额度与官方 API 价值',
@@ -90,7 +94,7 @@ export const zhTranslations: Record<string, string> = {
   resetAt: '刷新时间',
   selectPlan: '选择订阅层级',
   officialRatesBadge: '官方 API 计价标准',
-  pricingFormulaNote: '价格按各模型官方 API 费率（每百万 Token）精确核算：Gemini Flash $0.75/$0.075/$3.75、Hydrogen $1.50/$0.075/$7.50、Carbon/Argon $2/$0.10/$10、3.1 Pro $2/$0.20/$12（≤200K）或 $4/$0.40/$18（>200K）、Claude 5.5 $2-$4/$0.10-$0.20/$10-$20、Claude 4.6 $3-$5/$0.30-$0.50/$15-$25、GPT-OSS 及未收录模型 $0',
+  pricingFormulaNote: '价格按各模型官方 API 费率（每百万 Token）精确核算：Gemini Flash $0.75/$0.075/$3.75、Hydrogen $1.50/$0.075/$7.50、Carbon/Argon $2/$0.10/$10、Neon $3/$0.15/$15、3.1 Pro $2/$0.20/$12（≤200K）或 $4/$0.40/$18（>200K）、Claude 5.5 $2-$4/$0.10-$0.20/$10-$20、Claude 4.6 $3-$5/$0.30-$0.50/$15-$25、GPT-OSS 及未收录模型 $0',
   cnyEquivalent: '折合人民币',
   tierFree: '免费层',
   tierPro: 'Google AI Pro ($19.99/月)',
@@ -104,12 +108,20 @@ export const zhTranslations: Record<string, string> = {
   perMonth: '/月',
   netSavingsBooked: '净节省价值',
 
-  // Transparent Proxy
-  proxyTitle: '免 TUN 进程代理',
+  // Local Process Proxy
+  proxyTitle: '本地进程代理',
   proxyDesktopLabel: '桌面端 (Desktop)',
   proxyIdeLabel: 'IDE 扩展端',
   proxyInstalled: '已启用',
   proxyNotInstalled: '未启用',
+  proxyPendingRestart: '待重启生效',
+  proxyDllMissing: 'DLL 缺失',
+  proxyConfigMissing: '配置缺失',
+  proxyDirectMode: '直连模式',
   proxyRunning: '运行中',
   proxyIdle: '未运行',
+  proxyLogLabel: '日志目录',
+  proxyCopyLogPath: '复制',
+  proxyCopied: '已复制',
+  proxyOpenLogDir: '打开目录',
 };

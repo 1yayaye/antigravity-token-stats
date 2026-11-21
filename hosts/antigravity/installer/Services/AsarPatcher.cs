@@ -941,7 +941,7 @@ try {{
             }
         }
 
-        private static void ReplaceFileAtomic(string tempFile, string targetFile)
+        internal static void ReplaceFileAtomic(string tempFile, string targetFile)
         {
             if (File.Exists(targetFile))
             {

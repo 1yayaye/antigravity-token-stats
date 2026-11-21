@@ -197,7 +197,7 @@ console.log('PASS: C# installer and embedded assets expose the optional componen
       translator.setLanguage('zh');
       assert.strictEqual(translator.getLanguage(), 'en', 'Translator must refuse switching to zh when zh-pack uiDict is absent');
 
-      const { DshStatusBar } = require(path.join(repoRoot, 'src', 'components', 'dsh', 'DshStatusBar.tsx'));
+      const { StatusBar } = require(path.join(repoRoot, 'src', 'components', 'statusbar', 'StatusBar.tsx'));
       const html = renderToStaticMarkup(
         React.createElement(
           LanguageProvider,
@@ -213,7 +213,7 @@ console.log('PASS: C# installer and embedded assets expose the optional componen
             onClearHoverPopover: () => {},
             onSetFocusedDate: () => {},
           }),
-          React.createElement(DshStatusBar, {
+          React.createElement(StatusBar, {
             lang: translator.getLanguage(),
             telemetry: {
               sessionId: 'test',

@@ -1,6 +1,6 @@
 /**
- * DeepSeek Harness Telemetry Metric Type Contracts
- * Strictly aligns with deepseek-ai/deepseek-harness telemetry models
+ * Session Telemetry Metric Type Contracts
+ * Defines performance, token billing, and context window breakdown models for the status bar.
  */
 
 /** Session performance metrics (Speedometer pill & SessionStatsPopover) */
@@ -49,8 +49,8 @@ export interface ContextMetrics {
   chatMessageTokens: number;
 }
 
-/** Unified DSH Telemetry Data Packet */
-export interface DshTelemetryData {
+/** Unified Session Telemetry Data Packet */
+export interface SessionTelemetry {
   /** Globally unique session identifier */
   sessionId: string;
   /** Whether the session is currently in active streaming generation */

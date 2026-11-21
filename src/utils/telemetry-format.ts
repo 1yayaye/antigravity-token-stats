@@ -1,6 +1,6 @@
 /**
- * DeepSeek Harness Format Utilities
- * Strictly aligns with deepseek-harness formatting specs
+ * Telemetry Format Utilities
+ * Formats session duration, compact token counts, and model context window limits.
  */
 
 export function formatDuration(seconds: number | null | undefined, lang: 'zh' | 'en' = 'zh'): string {
@@ -29,7 +29,9 @@ export function formatCompactTokens(tokens: number | null | undefined): string {
 // Keep tier steps and doubled-model rules aligned with scripts/aggregate-stats.cjs (resolveContextLimit).
 const CONTEXT_LIMIT_TIERS = [256000, 512000, 1000000, 2000000];
 const DOUBLED_CONTEXT_MODEL_RE =
-  /(?:^|[^a-z0-9])(argon|carbon|hydrogen|orchestrator|worker)(?:[^a-z0-9]|$)|(?:^|[^a-z0-9])gemini[-_.]?4[-_.](?:low|medium|high|xhigh)(?:$|[^a-z0-9])/i;
+  /(?:^|[^a-z0-9])(argon|carbon|hydrogen|neon|worker)(?:[^a-z0-9]|$)|(?:^|[^a-z0-9])gemini[-_.]?4[-_.](?:low|medium|high|xhigh)(?:$|[^a-z0-9])|(?:^|[^a-z0-9])opus[-_.\s]*5[._-]5(?:$|[^a-z0-9])/i;
+const ORCHESTRATOR_ONLY_RE = /(?:^|[^a-z0-9])orchestrator(?:[^a-z0-9]|$)/i;
+const NON_DOUBLED_MODEL_RE = /(?:^|[^a-z0-9])(claude|opus|sonnet|gpt)(?:[^a-z0-9]|$)/i;
 
 function isDelimiterBoundaryPrefix(full: string, prefix: string): boolean {
   if (full === prefix) return true;
@@ -38,9 +40,18 @@ function isDelimiterBoundaryPrefix(full: string, prefix: string): boolean {
   return next === '-' || next === '_' || next === '.';
 }
 
+function findLiveLimit(norm: string, liveLimits: Record<string, number>): number {
+  if (liveLimits[norm]) return liveLimits[norm];
+  const matches = Object.entries(liveLimits)
+    .map(([k, v]) => [k.toLowerCase(), v] as const)
+    .filter(([kn]) => isDelimiterBoundaryPrefix(norm, kn) || isDelimiterBoundaryPrefix(kn, norm))
+    .sort((a, b) => b[0].length - a[0].length);
+  return matches.length > 0 ? matches[0][1] : 0;
+}
+
 /**
  * Resolves the context window limit for a model display label or ID.
- * Prefers host-provided live limits, defaults Argon/Carbon/Hydrogen to 512K,
+ * Prefers host-provided live limits, defaults Argon/Carbon/Hydrogen/Neon and Claude Opus 5.5 to 512K,
  * and steps up tiers if observed usedTokens exceeds the baseline.
  */
 export function resolveModelContextLimit(
@@ -53,18 +64,17 @@ export function resolveModelContextLimit(
 
   if (raw && liveLimits) {
     const norm = raw.toLowerCase().replace(/[()]/g, '').replace(/\s+/g, '-');
-    limit = liveLimits[raw] || liveLimits[norm] || 0;
-    if (!limit) {
-      const matches = Object.entries(liveLimits)
-        .map(([k, v]) => [k.toLowerCase(), v] as const)
-        .filter(([kn]) => isDelimiterBoundaryPrefix(norm, kn) || isDelimiterBoundaryPrefix(kn, norm))
-        .sort((a, b) => b[0].length - a[0].length);
-      if (matches.length > 0) limit = matches[0][1];
+    limit = liveLimits[raw] || findLiveLimit(norm, liveLimits);
+    if (!limit && norm.startsWith('orchestrator-')) {
+      limit = findLiveLimit(norm.slice('orchestrator-'.length), liveLimits);
     }
   }
 
   if (!limit) {
-    limit = DOUBLED_CONTEXT_MODEL_RE.test(raw) ? 512000 : 256000;
+    const isDoubled =
+      DOUBLED_CONTEXT_MODEL_RE.test(raw) ||
+      (ORCHESTRATOR_ONLY_RE.test(raw) && !NON_DOUBLED_MODEL_RE.test(raw));
+    limit = isDoubled ? 512000 : 256000;
   }
 
   if (usedTokens > limit) {

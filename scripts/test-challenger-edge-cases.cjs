@@ -1,6 +1,6 @@
 /**
  * scripts/test-challenger-edge-cases.cjs
- * Empirical stress test for deepseek-harness-alignment-plan.md edge cases.
+ * Empirical stress test for statusbar-telemetry-plan.md edge cases.
  */
 
 const assert = require('node:assert');

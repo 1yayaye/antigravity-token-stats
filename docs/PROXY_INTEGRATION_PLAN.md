@@ -1,6 +1,6 @@
-# Antigravity Transparent Proxy Integration & Adaptation Plan
+# Antigravity Local Process Proxy Integration Plan
 
-This document details the architectural design, implementation, and adaptation strategy for incorporating the core capabilities of [yuaotian/antigravity-proxy](https://github.com/yuaotian/antigravity-proxy) into **Antigravity Token Stats** (`anti token`), adapting it seamlessly across both **Google Antigravity Desktop** and **Antigravity IDE**.
+This document details the architectural design and implementation for local process proxy forwarding in **Antigravity Token Stats** (`anti token`), supporting both **Google Antigravity Desktop** and **Antigravity IDE**.
 
 ---
 
@@ -9,18 +9,18 @@ This document details the architectural design, implementation, and adaptation s
 ### The Challenge
 Developers using Google Antigravity 2.0 (Desktop client) and Antigravity IDE in restricted regions (such as Mainland China) face critical network connectivity barriers:
 1. **Network Layer Isolation**: Standard system proxy settings (`HTTP_PROXY`/`HTTPS_PROXY`) or VPNs often fail to capture low-level TCP/gRPC socket calls initiated by Electron background helper processes (`language_server_windows_x64.exe`, `node.exe`, `agy.exe`).
-2. **TUN Mode Drawbacks**: Forcing traffic through global TUN mode requires elevated administrator privileges, hijacks all machine-wide IP traffic (disrupting local microservices, WSL, and intranet routes), and incurs network latency.
+2. **System-Wide Proxy Drawbacks**: Forcing traffic through a global virtual adapter requires elevated administrator privileges, hijacks all machine-wide IP traffic (disrupting local microservices, WSL, and intranet routes), and incurs network latency.
 3. **Google Egress Location Policy (Code 400)**: Even when a proxy tunnel is operational, Google API endpoints (`oauth2.googleapis.com`, `cloudcode-pa.googleapis.com`) inspect the exit IP ASN and geolocation. Datacenter, cloud VPS, or unsupported region IPs trigger:
    ```text
    agent executor error: FAILED_PRECONDITION (code 400): User location is not supported for the API use.
    ```
 
-### The Solution: Absorbing `antigravity-proxy`
-`yuaotian/antigravity-proxy` solves this via MinHook-based DLL search order hijacking (`version.dll` for applications and `dbghelp.dll` for CLI):
+### The Solution: Local Process Socket Forwarding
+`version.dll` solves this via per-application DLL socket forwarding:
 - Hooks Winsock socket connection routines (`connect`, `ConnectEx`, `WSAConnect`, `WSAConnectByName`, `GetAddrInfoW`).
 - Intercepts child processes via `CreateProcessW` hooks, propagating the hook into `language_server_windows_x64.exe` and `node.exe`.
-- Transparently routes outbound traffic to a local SOCKS5 or HTTP proxy (e.g., Clash / v2ray on `127.0.0.1:7890`), while preserving direct connections for loopback (`127.0.0.1` / localhost) so internal IPC and TLS are never broken.
-- Requires **zero administrator privileges** and leaves system-wide network behavior completely untouched.
+- Routes outbound traffic to a local SOCKS5 or HTTP proxy (e.g., Clash / v2ray on `127.0.0.1:7890`), while preserving direct connections for loopback (`127.0.0.1` / localhost) so internal IPC and TLS are never broken.
+- Requires **zero administrator privileges**, suppresses startup popups (`ui.load_notify: "none"`), and surfaces the log directory directly in the stats panel.
 
 ---
 
@@ -72,39 +72,34 @@ Guided by **John Ousterhout's *A Philosophy of Software Design***, the integrati
 ### Module Responsibilities:
 
 1. **`vendor/proxy/win-x64/` (Pre-verified Binaries)**
-   - Houses verified `version.dll` (SHA256: `40F037232A180DA8DFF7611021270549FCC4E208580D8BF0F70BC9975F871B5F`) and `config.template.json` from upstream v2.4.
+   - Houses verified `version.dll` (SHA256: `40F037232A180DA8DFF7611021270549FCC4E208580D8BF0F70BC9975F871B5F`) and `config.template.json` (v2.4).
    - Bundled automatically during release packaging (`npm run package:release`).
 
 2. **`scripts/proxy-manager.cjs` (Unified Proxy Engine)**
    - **Target Discovery**: Automatically locates Desktop (`Antigravity.exe`) and IDE (`Antigravity IDE.exe`) across standard locations and environment variables (`ANTIGRAVITY_IDE_DIR`, `ANTIGRAVITY_IDE_CMD`).
-   - **Configuration Management**: Generates tuned `config.json` supporting SOCKS5 and HTTP protocols, `child_injection`, loopback bypass rules, and diagnostic probing.
+   - **Configuration Management**: Generates tuned `config.json` supporting SOCKS5 and HTTP protocols, `ui.load_notify: "none"`, `child_injection`, loopback bypass rules, and diagnostic probing.
    - **Safe File Operations**: Prevents Windows `EBUSY` file locking by verifying process status (`Antigravity.exe` / `Antigravity IDE.exe`) before file operations.
    - **Connectivity & Socket Testing**: Validates local proxy reachability, negotiates SOCKS5/HTTP handshakes, and measures end-to-end latency to `oauth2.googleapis.com:443`.
    - **Location Error Diagnostics**: Scans recent `%APPDATA%\Antigravity\logs\` and `%APPDATA%\Antigravity IDE\logs\` for `User location is not supported for the API use` and explains root-cause solutions.
 
 3. **`hosts/antigravity/` (Desktop Host Adaptation)**
    - `paths.cjs`: Exposes `getProxyDllPath()`, `getProxyConfigPath()`, and `isProxyInstalled()`.
-   - `patch-antigravity.cjs`: Supports `--with-proxy` flag to install transparent proxy alongside the stats patch.
+   - `patch-antigravity.cjs`: Installs local process proxy alongside the stats patch unless `--no-proxy` is passed.
    - `unpatch-antigravity.cjs`: Automatically removes `version.dll` and `config.json` during factory restore.
-   - `install.ps1`: Supports `-Proxy`, `-ProxyPort`, and `-ProxyType` switches.
 
 4. **`hosts/antigravity-ide/` (IDE Host Adaptation)**
-   - Registers IDE commands in `package.json` and `extension.ts`:
-     - `antigravity-ide-stats.proxyStatus`: View live proxy status and active port.
-     - `antigravity-ide-stats.proxyInstall`: Interactive prompt to configure and install proxy for the IDE.
-   - `build-extension-ide.cjs`: Copies `proxy-manager.cjs` into `extension/out/` for standalone operation.
+   - Uses `proxy-manager.cjs` for IDE installation discovery and inherits system proxy settings via Chromium `resolveProxy`.
 
 5. **`src/components/stats/ProxyStatusCard.tsx` (Shared UI Layer)**
    - Modern, reactive card integrated into `StatsView.tsx`.
-   - Displays real-time status (Active / Inactive, Running / Idle, Protocol, Host & Port) for both Desktop and IDE.
-   - Shows CLI management quick commands and location policy recommendations.
+   - Displays real-time status (Running / Idle, Protocol, Host & Port, and active proxy log directory) for both Desktop and IDE.
    - Full bilingual localization (English / 简体中文).
 
 ---
 
 ## 3. Configuration Specification
 
-The proxy engine generates a standards-compliant `config.json` adhering to `yuaotian/antigravity-proxy` specifications:
+The proxy engine generates a standard `config.json` with startup popup notifications disabled:
 
 ```json
 {
@@ -112,6 +107,9 @@ The proxy engine generates a standards-compliant `config.json` adhering to `yuao
   "_version": "2.4",
   "log_level": "info",
   "traffic_logging": false,
+  "ui": {
+    "load_notify": "none"
+  },
   "proxy": {
     "type": "socks5",
     "host": "127.0.0.1",
@@ -167,25 +165,20 @@ The proxy engine generates a standards-compliant `config.json` adhering to `yuao
 | Command | Description |
 | :--- | :--- |
 | `npm run proxy:status` | Check proxy installation & running status for Desktop and IDE |
-| `npm run proxy:install` | Install transparent proxy for all targets (default: `socks5://127.0.0.1:7890`) |
+| `npm run proxy:install` | Install local process proxy for all targets (default: `socks5://127.0.0.1:7890`) |
 | `npm run proxy:install -- --target desktop --port 7890` | Install for Desktop client only |
 | `npm run proxy:install -- --target ide --port 7890` | Install for Antigravity IDE only |
 | `npm run proxy:uninstall` | Cleanly remove `version.dll` and `config.json` from all targets |
 | `npm run proxy:test` | Test local proxy connectivity and Google API handshake |
 | `npm run proxy:diagnose` | Run full diagnosis on recent logs and detect location restrictions |
 
-### 4.2 PowerShell One-Click Setup
+### 4.2 Desktop CLI Patching
 
-```powershell
-# Install Token Stats + Transparent Proxy in one step
-pwsh -File .\install.ps1 -Proxy -ProxyPort 7890
+```bash
+# Build bundle and patch with local process proxy
+npm run build:bundle
+npm run patch -- --proxy-port=7890 --proxy-type=socks5
 ```
-
-### 4.3 IDE In-App Management
-In Antigravity IDE:
-1. Press `Ctrl+Shift+P` (Command Palette).
-2. Type `Antigravity Proxy: Show Status & Diagnostics` to view current status.
-3. Type `Antigravity Proxy: Configure & Install Transparent Proxy` to configure a port and enable proxy on the fly.
 
 ---
 

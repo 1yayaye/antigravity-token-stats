@@ -40,6 +40,7 @@ export interface QuotaCycleMetrics {
   pools: Record<QuotaPoolId, PoolQuotaCycleMetrics>;
 }
 const WEEK_MS = 7 * 86400000;
+const BUCKET_MS = 60_000;
 
 function roundUsd(val: number): number {
   return Math.round((Math.max(0, val) + Number.EPSILON) * 100) / 100;
@@ -72,6 +73,9 @@ function computePoolCycleMetrics(
     };
   }
   const cycleStartMs = parsedResetMs - WEEK_MS;
+  // costTimeline floors timestamps to 1-minute buckets and the server may stamp resetTime
+  // after request completion; align to the bucket boundary with 1m skew so cycle-opening turns count.
+  const cycleBoundaryMs = Math.floor(cycleStartMs / BUCKET_MS) * BUCKET_MS - BUCKET_MS;
   const timeline = stats.activity?.costTimeline || [];
 
   // Cycle 0 is current; cycles 1..3 are the preceding reset-aligned weeks.
@@ -82,13 +86,13 @@ function computePoolCycleMetrics(
     const matchesPool = item.pool === pool || (mergeArgonIntoGemini && item.pool === 'argon');
     if (!matchesPool || !Number.isFinite(item.ts) || !(item.costUsd > 0)) continue;
     if (item.ts < earliestPoolMs) earliestPoolMs = item.ts;
-    if (item.ts >= cycleStartMs && item.ts <= nowMs) {
+    if (item.ts >= cycleBoundaryMs && item.ts <= nowMs + BUCKET_MS) {
       cycleCosts[0] += item.costUsd;
-    } else if (item.ts >= cycleStartMs - WEEK_MS && item.ts < cycleStartMs) {
+    } else if (item.ts >= cycleBoundaryMs - WEEK_MS && item.ts < cycleBoundaryMs) {
       cycleCosts[1] += item.costUsd;
-    } else if (item.ts >= cycleStartMs - 2 * WEEK_MS && item.ts < cycleStartMs - WEEK_MS) {
+    } else if (item.ts >= cycleBoundaryMs - 2 * WEEK_MS && item.ts < cycleBoundaryMs - WEEK_MS) {
       cycleCosts[2] += item.costUsd;
-    } else if (item.ts >= cycleStartMs - 3 * WEEK_MS && item.ts < cycleStartMs - 2 * WEEK_MS) {
+    } else if (item.ts >= cycleBoundaryMs - 3 * WEEK_MS && item.ts < cycleBoundaryMs - 2 * WEEK_MS) {
       cycleCosts[3] += item.costUsd;
     }
   }

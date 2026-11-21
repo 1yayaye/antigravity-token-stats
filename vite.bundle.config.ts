@@ -8,12 +8,12 @@ const CONTAINER_SCOPES = [
   '.antigravity-stats-container',
   '.stats-view',
   '#antigravity-stats-modal-overlay',
-  '.antigravity-dsh-container',
-  '.antigravity-dsh-statusbar',
-  '.antigravity-dsh-popover',
+  '.antigravity-statusbar-container',
+  '.antigravity-statusbar',
+  '.antigravity-statusbar-popover',
 ];
 
-const SCOPE_SELECTOR = ':where(.antigravity-stats-container, .antigravity-dsh-container)';
+const SCOPE_SELECTOR = ':where(.antigravity-stats-container, .antigravity-statusbar-container)';
 
 function isScopedSelector(sel: string): boolean {
   const s = sel.trim();

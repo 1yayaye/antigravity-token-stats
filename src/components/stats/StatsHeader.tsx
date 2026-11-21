@@ -1,6 +1,13 @@
 import React from 'react';
 import { TimeRange } from '../../domain/stats.types';
 import { useLanguage } from '../../i18n/LanguageContext';
+import { useStatusBarDisplayMode, type StatusBarDisplayMode } from '../statusbar/StatusBar';
+
+const STATUS_BAR_MODE_KEYS: Record<StatusBarDisplayMode, 'statusBarModeDetailed' | 'statusBarModeStandard' | 'statusBarModeCompact'> = {
+  detailed: 'statusBarModeDetailed',
+  standard: 'statusBarModeStandard',
+  compact: 'statusBarModeCompact',
+};
 
 interface StatsHeaderProps {
   timeRange: TimeRange;
@@ -11,6 +18,7 @@ interface StatsHeaderProps {
 
 export const StatsHeader: React.FC<StatsHeaderProps> = ({ timeRange, onTimeRangeChange, onRefresh, isRefreshing }) => {
   const { lang, toggleLang, canSwitchLang, t } = useLanguage();
+  const { displayMode, toggleDisplayMode } = useStatusBarDisplayMode();
   return (
     <header className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-card-border shrink-0">
       <div className="flex items-center gap-2">
@@ -24,6 +32,16 @@ export const StatsHeader: React.FC<StatsHeaderProps> = ({ timeRange, onTimeRange
         </span>
       </div>
       <div className="flex flex-nowrap items-center gap-2 shrink-0 mr-9">
+        <button
+          id="stats-statusbar-mode-toggle"
+          type="button"
+          onClick={toggleDisplayMode}
+          aria-label={t('statusBarModeToggleTitle')}
+          title={t('statusBarModeToggleTitle')}
+          className="h-8 px-2.5 text-xs font-medium bg-card text-foreground border border-card-border rounded-lg outline-none cursor-pointer hover:border-foreground/20 transition-colors focus:ring-1 focus:ring-primary whitespace-nowrap"
+        >
+          {t(STATUS_BAR_MODE_KEYS[displayMode] ?? 'statusBarModeDetailed')}
+        </button>
         <select
           aria-label={t('timeRangeLabel')}
           value={timeRange}

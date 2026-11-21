@@ -445,7 +445,7 @@ export interface IdeWidgetContentProps {
 function SessionStatsCard({ state, lang }: { state: IdeHostState; lang: Lang }) {
   const t = COPY[lang];
   const session = state.activeSessionId ? state.session : null;
-  const streaming = Boolean(session?.isRunning || session?.dshTelemetry?.isStreaming);
+  const streaming = Boolean(session?.isRunning || session?.telemetry?.isStreaming);
 
   const turns = session ? (hasCount(session.rounds) ? session.rounds : session.turnsCount) : 0;
   const steps = session ? (hasCount(session.steps) ? session.steps : session.turnsCount) : 0;
@@ -507,7 +507,7 @@ function TokenUsageCard({
 }) {
   const t = COPY[lang];
   const session = state.activeSessionId ? state.session : null;
-  const streaming = Boolean(session?.isRunning || session?.dshTelemetry?.isStreaming);
+  const streaming = Boolean(session?.isRunning || session?.telemetry?.isStreaming);
   const overview = resolveTokenOverview(state);
 
   const rows: Array<[string, string]> = [
@@ -631,7 +631,7 @@ function ContextQuotaCard({
 }) {
   const t = COPY[lang];
   const { session, limit, hasPrompt, pct } = resolveContextMetrics(state);
-  const streaming = Boolean(session?.isRunning || session?.dshTelemetry?.isStreaming);
+  const streaming = Boolean(session?.isRunning || session?.telemetry?.isStreaming);
   const barClass = pct !== null ? (pct >= 85 ? ' danger' : pct >= 70 ? ' warn' : '') : '';
 
   const pools = availablePools(state.quota);
@@ -1015,7 +1015,7 @@ export function IdeWidgets() {
   const t = COPY[lang];
   const summaries = widgetSummaries(state, lang);
   const activeSession = state.activeSessionId ? state.session : null;
-  const streaming = Boolean(activeSession?.isRunning || activeSession?.dshTelemetry?.isStreaming);
+  const streaming = Boolean(activeSession?.isRunning || activeSession?.telemetry?.isStreaming);
   const { pct: ctxPct } = resolveContextMetrics(state);
   const tokenOverview = resolveTokenOverview(state);
 

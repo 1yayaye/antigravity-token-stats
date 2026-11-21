@@ -5,32 +5,32 @@ All notable changes to Antigravity Token Stats will be documented in this file.
 ## [1.8.2] - 2026-11-17
 
 ### Added
-- **Split-Pane DSH Status Bar & Responsive Narrow-Pane Layout (`hosts/antigravity/src/standalone.tsx`, `hosts/antigravity/scripts/loader.cjs`, `src/components/dsh/DshStatusBar.tsx`, `src/index.css`)**:
-  - Upgraded `standalone.tsx` from a single status-bar root to a per-container `statusbarRoots` registry (`data-dsh-statusbar="true"`), mounting independent `DshStatusBar` pills in every split-pane composer footer, pruning detached roots when panes close, throttling `requestDataSync` per session (`lastSyncRequestBySession`), and probing host pill styles per container.
+- **Split-Pane Status Bar & Responsive Narrow-Pane Layout (`hosts/antigravity/src/standalone.tsx`, `hosts/antigravity/scripts/loader.cjs`, `src/components/statusbar/StatusBar.tsx`, `src/index.css`)**:
+  - Upgraded `standalone.tsx` from a single status-bar root to a per-container `statusbarRoots` registry (`data-ag-statusbar="true"`), mounting independent `StatusBar` pills in every split-pane composer footer, pruning detached roots when panes close, throttling `requestDataSync` per session (`lastSyncRequestBySession`), and probing host pill styles per container.
   - Added `resolveSessionIdForContainer` to bind each split pane to its own `[data-cascade-id]` (avoiding inheriting the route URL session in empty `[data-pane-id]` panes when another pane already owns it), and scoped `checkGenerationState(container)` (including `button[data-testid="input-cancel-button"]`) to each pane/composer so streaming in one pane does not mark sibling panes as streaming.
   - Updated `loader.cjs` (`broadcastStats`) to retain session entries for every `[data-testid="conversation-view"][data-cascade-id]` visible in the renderer DOM across full-scan broadcasts.
-  - Added `@container input-footer` responsive rules in `DshStatusBar.tsx` and `src/index.css`: at `max-width: 680px`, `.dsh-pill-full-only` labels collapse to compact `tok/s` and cache `%` readouts; at `max-width: 560px`, secondary pills smoothly collapse so only the context ring remains visible without crowding the model picker.
+  - Added `@container input-footer` responsive rules in `StatusBar.tsx` and `src/index.css`: at `max-width: 680px`, `.sb-pill-full-only` labels collapse to compact `tok/s` and cache `%` readouts; at `max-width: 560px`, secondary pills smoothly collapse so only the context ring remains visible without crowding the model picker.
 - **Installer Upgrade State Sync & `--inspect-dir` CLI (`hosts/antigravity/installer/`)**:
   - Added `AsarPatcher.ReadStatusBarEnabled` (reading `dist/antigravity-stats/contract.json` `features.statusBar`, defaulting to `true` on legacy patches without `features`), `DesktopInstallInfo.StatusBarInstalled`, `EnvironmentDetector` population, and the `--inspect-dir <appOrResourcesDir>` CLI command outputting JSON component status.
   - Updated `MainForm.cs` with `SyncOptionalCheckboxesFromInstall()` to sync the **中文翻译包** and **状态栏小部件** checkboxes when selecting a patched directory or after install/uninstall (without overwriting user edits during pre-flight checks on the same directory), and added `小部件: 已启用/未启用` (`Widget: On/Off`) to `_lblInstallDetails`.
 
 ### Improved & Fixed
-- **Regression & Integration Coverage (`scripts/test-audit-fixes.cjs`, `scripts/test-dsh-components.cjs`, `scripts/test-optional-components.cjs`, `scripts/test-integration.cjs`)**:
-  - Added split-pane status-bar isolation/pruning and `broadcastStats` multi-pane retention tests (`test-audit-fixes.cjs`), responsive compact/full pill span checks (`test-dsh-components.cjs`), `ReadStatusBarEnabled`/`--inspect-dir`/`SyncOptionalCheckboxesFromInstall` assertions (`test-optional-components.cjs`), and end-to-end `--inspect-dir` lifecycle checks across unpatched, full-patch, opt-out re-patch, legacy `contract.json`, and unpatched states (`test-integration.cjs`).
+- **Regression & Integration Coverage (`scripts/test-audit-fixes.cjs`, `scripts/test-statusbar-components.cjs`, `scripts/test-optional-components.cjs`, `scripts/test-integration.cjs`)**:
+  - Added split-pane status-bar isolation/pruning and `broadcastStats` multi-pane retention tests (`test-audit-fixes.cjs`), responsive compact/full pill span checks (`test-statusbar-components.cjs`), `ReadStatusBarEnabled`/`--inspect-dir`/`SyncOptionalCheckboxesFromInstall` assertions (`test-optional-components.cjs`), and end-to-end `--inspect-dir` lifecycle checks across unpatched, full-patch, opt-out re-patch, legacy `contract.json`, and unpatched states (`test-integration.cjs`).
 
 ### Release Notes (补充说明)
 - **Scope**: Release asset `antigravity-token-stats-v1.8.2-setup.exe` targets **Antigravity Desktop only** (does not package or patch Antigravity IDE; IDE users continue using `npm run build:bundle:ide && npm run build:host:ide && npm run patch:ide`).
-- **GUI Installer Behavior**: Fresh/unpatched installs still leave **透明代理**, **中文翻译包**, and **状态栏小部件** unchecked by default; when inspecting an already-patched directory, the GUI now syncs **中文翻译包** and **状态栏小部件** to reflect the currently installed state.
+- **GUI Installer Behavior**: Fresh/unpatched installs still leave **本地进程代理**, **中文翻译包**, and **状态栏小部件** unchecked by default; when inspecting an already-patched directory, the GUI now syncs **中文翻译包** and **状态栏小部件** to reflect the currently installed state.
 
 ## [1.8.1] - 2026-11-16
 
 ### Added
 - **Installer Optional Components: Chinese Translation Pack & Status Bar Widget (`hosts/antigravity/installer/`, `src/i18n/`, `hosts/antigravity/src/i18n/zh-pack.ts`)**:
-  - Two new installer checkboxes, **中文翻译包** and **状态栏小部件**, both **unchecked by default** in the installer GUI (same opt-in pattern as the transparent proxy); CLI routes (`npm run patch` and `AntiTokenSetup.exe --patch-dir`) keep everything **on by default** with `--no-zh-pack` / `--no-status-bar` opt-outs, preserving the GUI/CLI asymmetry established in v1.7.0.
-  - The Chinese translation pack is built as an independent injection bundle (`dist-bundle/antigravity-stats-zh-pack.js`, contract `ZH_PACK_FILE` / `WINDOW_ZH_PACK`): the host UI dictionary and stats-panel zh strings are excluded from the main bundle. When absent, `LanguageContext` (`hasZhStatsSupport()`), `AntigravityUITranslator`, and `DshStatusBar` clamp the active UI language to pure English (even under `zh-CN`) and hide the language toggle.
+  - Two new installer checkboxes, **中文翻译包** and **状态栏小部件**, both **unchecked by default** in the installer GUI (same opt-in pattern as the local process proxy); CLI routes (`npm run patch` and `AntiTokenSetup.exe --patch-dir`) keep everything **on by default** with `--no-zh-pack` / `--no-status-bar` opt-outs, preserving the GUI/CLI asymmetry established in v1.7.0.
+  - The Chinese translation pack is built as an independent injection bundle (`dist-bundle/antigravity-stats-zh-pack.js`, contract `ZH_PACK_FILE` / `WINDOW_ZH_PACK`): the host UI dictionary and stats-panel zh strings are excluded from the main bundle. When absent, `LanguageContext` (`hasZhStatsSupport()`), `AntigravityUITranslator`, and `StatusBar` clamp the active UI language to pure English (even under `zh-CN`) and hide the language toggle.
   - `loader.cjs` executes the zh-pack before the main bundle when present and relays `contract.json` `features` through `window.__ANTIGRAVITY_STATS_FEATURES__`; `standalone.tsx` gates status-bar mounting on it (missing global = all features on).
   - `contract.json` generation (JS patcher, C# installer, `prepare-assets.cjs`) derives from `contract.FEATURES`; `AsarPatcher.cs` preserves existing `features` entries when toggling `statusBar`.
-- **512K Model Context Limits & Extended Session Metrics (`aggregate-stats.cjs`, `dsh-format.ts`, `hosts/antigravity/src/quota.ts`, `standalone.tsx`)**:
+- **512K Model Context Limits & Extended Session Metrics (`aggregate-stats.cjs`, `telemetry-format.ts`, `hosts/antigravity/src/quota.ts`, `standalone.tsx`)**:
   - Added `resolveContextLimit` and `resolveModelContextLimit` with 512K baseline support for Gemini 4 Argon / Carbon / Hydrogen / Orchestrator / Worker models, live `modelContextLimits` extraction from `userStatus.cascadeModelConfigData.clientModelConfigs`, longest-prefix boundary matching, composer model pill detection before the first turn, and dynamic threshold labels in `ContextUsagePopover`.
   - Exposed `samplesCount` and `lastRequestTps` in `SessionSummary` and `extractSessionPerformanceMetrics`.
 - **Antigravity IDE Native Workbench Integration (`hosts/antigravity-ide/`)**:
@@ -41,11 +41,11 @@ All notable changes to Antigravity Token Stats will be documented in this file.
   - `parseRawBucket` and `parseQuotaSummaryResponse` now reject missing, non-finite, out-of-range, wrong-type, or non-`remainingFraction` oneof quota readings instead of fabricating 100%, guard invalid `resetTime` values, and keep valid duplicate pool readings intact.
   - Replaced the remaining hardcoded `lang === 'zh'` quota card fallbacks in `QuotaHeroCard.tsx` with pure dictionary keys (`weeklyQuota`, `monthlyCapacityTitle`, `quotaRingsRegionLabel`).
 - **CI & Regression Coverage (`.github/workflows/ci.yml`, `scripts/test-*.cjs`, `hosts/antigravity-ide/tests/`)**:
-  - Updated CI to run `npm run build:host:ide`, added `scripts/test-optional-components.cjs` (including no-zh-pack `zh-CN` pure-English render checks), updated `test-i18n-engine.cjs` / `test-dsh-components.cjs` / `test-context-widget.cjs` / `test-subscription-pricing.cjs` / `test-integration.cjs`, and added IDE test suites (`npm run test:ide`).
+  - Updated CI to run `npm run build:host:ide`, added `scripts/test-optional-components.cjs` (including no-zh-pack `zh-CN` pure-English render checks), updated `test-i18n-engine.cjs` / `test-statusbar-components.cjs` / `test-context-widget.cjs` / `test-subscription-pricing.cjs` / `test-integration.cjs`, and added IDE test suites (`npm run test:ide`).
 
 ### Release Notes (补充说明)
 - **Scope**: Release asset `antigravity-token-stats-v1.8.1-setup.exe` targets **Antigravity Desktop only** (does not package or patch Antigravity IDE; IDE users continue using `npm run build:bundle:ide && npm run build:host:ide && npm run patch:ide`).
-- **GUI Installer Defaults**: In `AntiTokenSetup.exe` GUI, **透明代理 (Proxy)**, **中文翻译包 (Zh-pack)**, and **状态栏小部件 (Status Bar)** are all **unchecked by default** — check the ones you want before clicking **Install / Update Patch**. CLI installs (`npm run patch` / `AntiTokenSetup.exe --patch-dir`) keep all optional components enabled by default unless `--no-proxy`, `--no-zh-pack`, or `--no-status-bar` is passed.
+- **GUI Installer Defaults**: In `AntiTokenSetup.exe` GUI, **本地进程代理 (Proxy)**, **中文翻译包 (Zh-pack)**, and **状态栏小部件 (Status Bar)** are all **unchecked by default** — check the ones you want before clicking **Install / Update Patch**. CLI installs (`npm run patch` / `AntiTokenSetup.exe --patch-dir`) keep all optional components enabled by default unless `--no-proxy`, `--no-zh-pack`, or `--no-status-bar` is passed.
 
 ## [1.8.0] - 2026-11-14
 
@@ -63,15 +63,15 @@ All notable changes to Antigravity Token Stats will be documented in this file.
 ### Improved & Fixed
 - **Host Settings Tab Restoration (`hosts/antigravity/src/standalone.tsx`)**:
   - Fixed switching away from **Settings → Usage Stats** back to host tabs (`Models`, `Editor`, etc.) by restoring `style.display` on sibling panels inside `panelsContainer`, backed by a new DOM regression test in `scripts/test-audit-fixes.cjs`.
-- **4-Channel Token Summary & DSH Polish (`TokenSummaryTile.tsx`, `DshStatusBar.tsx`, `ContextUsagePopover.tsx`, `src/index.css`)**:
+- **4-Channel Token Summary & Status Bar Polish (`TokenSummaryTile.tsx`, `StatusBar.tsx`, `ContextUsagePopover.tsx`, `src/index.css`)**:
   - Aligned the 4th composition channel to display net `Response` tokens as the primary metric and `Output` total in `subDetail`.
-  - Added DSH token count settle animation and context ring color/pulse thresholds (warning >= 70%, danger >= 85%), and standardized the context popover denominator fallback.
+  - Added status-bar token count settle animation and context ring color/pulse thresholds (warning >= 70%, danger >= 85%), and standardized the context popover denominator fallback.
   - Cleaned up unused `.bento-card` CSS selectors and temporary scratch preview/probe files.
 
 ## [1.7.0] - 2026-11-13
 
 ### Reissued - 2026-11-13
-- **Installer GUI Proxy Opt-In**: Transparent proxy configuration is unchecked by default. Detecting a local or previously installed proxy does not enable it or override the user's selection. Leaving it unchecked skips proxy installation; it does not remove an existing proxy. CLI proxy defaults are unchanged; use `--no-proxy` to skip proxy installation there.
+- **Installer GUI Proxy Opt-In**: Local process proxy configuration is unchecked by default. Detecting a local or previously installed proxy does not enable it or override the user's selection. Leaving it unchecked skips proxy installation; it does not remove an existing proxy. CLI proxy defaults are unchanged; use `--no-proxy` to skip proxy installation there.
 - **PR #1 Follow-Up**: The supported installation routes no longer depend on the retired PowerShell scripts, and the desktop loader supports `WebContentsView` / `BaseWindow` since v1.6.0. Thanks to [@Uziel660](https://github.com/Uziel660) for reporting these issues and proposing fixes in [PR #1](https://github.com/1yayaye/antigravity-token-stats/pull/1).
 - **Same-Version Reissue**: The v1.7.0 installer asset is replaced without increasing the version. Existing v1.7.0 installations will not receive another update notification; download the revised installer manually if needed.
 
@@ -101,11 +101,11 @@ All notable changes to Antigravity Token Stats will be documented in this file.
 ### Fixed
 - **Desktop CSS Isolation & Host Token Inheritance (`vite.bundle.config.ts`, `src/index.css`, `src/preview-theme.css`)**:
   - Moved `#root` / `#root.light` baseline CSS variables out of shared `src/index.css` into `src/preview-theme.css` (imported only in web preview and IDE webview), eliminating `#root` style hijacking on Antigravity Desktop.
-  - Added PostCSS `isolateDesktopCss` in `vite.bundle.config.ts` for the desktop target: drops duplicate `@keyframes pulse` / `spin`, scopes all utility selectors to `:where(.antigravity-stats-container, .antigravity-dsh-container)` inside `@layer components`, and moves `.stats-view` resets into `@layer base` so host `@layer utilities` always takes precedence.
-  - Inherited host CSS tokens (`--primary`, `--secondary`, `--card-border`, `--border`, `--muted`, `--foreground`, `--font-mono`, and `font-sans: inherit`) across Bento cards, DSH popovers, Settings nav item, and `ProxyStatusCard` (`MinHook v2.4` badge).
+  - Added PostCSS `isolateDesktopCss` in `vite.bundle.config.ts` for the desktop target: drops duplicate `@keyframes pulse` / `spin`, scopes all utility selectors to `:where(.antigravity-stats-container, .antigravity-statusbar-container)` inside `@layer components`, and moves `.stats-view` resets into `@layer base` so host `@layer utilities` always takes precedence.
+  - Inherited host CSS tokens (`--primary`, `--secondary`, `--card-border`, `--border`, `--muted`, `--foreground`, `--font-mono`, and `font-sans: inherit`) across Bento cards, status-bar popovers, Settings nav item, and `ProxyStatusCard`.
   - Updated `StatsView` and desktop `MutationObserver` to watch `data-vscode-theme-kind` alongside `class`, `style`, and `data-theme`, and removed duplicate outer container theme wrappers in `standalone.tsx`.
 - **Hot Re-Injection Listener & Timer Cleanup (`hosts/antigravity/src/standalone.tsx`)**:
-  - Replaced single-shot `window.__ANTIGRAVITY_STATS_LISTENER__` boolean guard with replaceable handler references and shared `window.__ANTIGRAVITY_PILL_HEARTBEAT__` / `window.__ANTIGRAVITY_SCAN_TIMER__` cleanup on re-injection, preventing stale-closure `Minified React error #321` crashes in the DSH status bar.
+  - Replaced single-shot `window.__ANTIGRAVITY_STATS_LISTENER__` boolean guard with replaceable handler references and shared `window.__ANTIGRAVITY_PILL_HEARTBEAT__` / `window.__ANTIGRAVITY_SCAN_TIMER__` cleanup on re-injection, preventing stale-closure `Minified React error #321` crashes in the status bar.
 - **Verification (`scripts/test-theme.cjs`, `scripts/test-all.cjs`)**:
   - Added PostCSS guardrails verifying desktop bundle CSS has zero `#root` or unscoped selectors and keeps scoped utilities inside `@layer components`, plus hot re-injection cleanup assertions.
 
@@ -125,7 +125,7 @@ All notable changes to Antigravity Token Stats will be documented in this file.
   - Prevents unpatch/restore from downgrading an already-unpatched newer official `app.asar` with an older backup.
   - Handles Windows `MAX_PATH` (>260 char) paths cleanly during `.unpacked` directory backups and restores.
 - **Stream-Safe Proxy Tunnel Probe (`EnvironmentDetector.cs`)**: Properly handles fragmented SOCKS5 `CONNECT` replies and HTTP `CONNECT` status lines.
-- **UI & Theme Polish**: Refined Bento tiles, glassmorphism popovers, DSH pill tokens, memoized `LanguageContext` / tile components, and `test-heatmap.cjs` date anchoring.
+- **UI & Theme Polish**: Refined Bento tiles, glassmorphism popovers, status-bar pill tokens, memoized `LanguageContext` / tile components, and `test-heatmap.cjs` date anchoring.
 
 ## [1.5.0] - 2026-10-31
 
@@ -135,7 +135,7 @@ All notable changes to Antigravity Token Stats will be documented in this file.
   - **`TokenSummaryTile`**: Consolidated lifetime, input, output, and active day metrics paired with a 4-channel composition stacked bar (Cache Read, Raw Input, Thinking, Response).
   - **`DailyTrendCard`**: Interactive SVG daily trend area chart with dynamic nice-number gridlines responding to active time range filters (`today`, `1d`, `7d`, `30d`, `all`).
   - **`ProxyStatusCard`**: Compact proxy tile embedded directly within the Bento layout tracking Desktop & IDE socket redirection status.
-- **DSH Status Bar Probing & Bridge**:
+- **Status Bar Probing & Bridge**:
   - `probeHostPillStyle`: Automatically samples surrounding Antigravity UI typography, font size, and accent tokens for seamless pixel-matching.
   - Transparent hover bridge (`POPOVER_BRIDGE_PX`) and hide timer delay (`POPOVER_HIDE_DELAY_MS`) preventing flicker when moving between status pills and popover cards.
   - Render memoization preventing redundant re-renders during high-frequency telemetry polling.
@@ -148,8 +148,8 @@ All notable changes to Antigravity Token Stats will be documented in this file.
 ## [1.4.0] - 2026-10-31
 
 ### Added
-- **DeepSeek Harness (DSH) Status Bar & Telemetry**: Three-pill status bar embedded alongside the chat footer showing user interaction rounds, steps, text-only TPS, total tokens consumed, cache hit rate, and context window occupancy with a 256K auto-compaction threshold marker.
-- **MinHook Transparent Socket Proxy (No TUN)**: Integrated transparent Winsock socket interception (`version.dll`) routing Google API traffic through SOCKS5/HTTP while bypassing loopback TLS connections, manageable via `ProxyStatusCard` and `npm run proxy:*` CLI commands.
+- **Session Telemetry Status Bar & Popovers**: Three-pill status bar embedded alongside the chat footer showing user interaction rounds, steps, text-only TPS, total tokens consumed, cache hit rate, and context window occupancy with a 256K auto-compaction threshold marker.
+- **Local Process Proxy**: Integrated local Winsock socket proxy forwarding (`version.dll`) routing Google API traffic through SOCKS5/HTTP while bypassing loopback TLS connections, manageable via `ProxyStatusCard` and `npm run proxy:*` CLI commands.
 - **Antigravity IDE Extension Host**: Adaptation for Antigravity IDE (`hosts/antigravity-ide/`) with independent webview bundle and telemetry aggregation.
 
 ### Changed

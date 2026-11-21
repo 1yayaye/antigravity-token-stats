@@ -6,11 +6,11 @@ import { LanguageProvider } from '../../../src/i18n/LanguageContext';
 import { detectAntigravityTheme, syncThemeToElement } from '../../../src/services/stats-service';
 import { antigravityI18n } from './i18n/antigravity-ui-i18n';
 import { startQuotaUpdates } from './quota';
-import { DshStatusBar } from '../../../src/components/dsh/DshStatusBar';
-import type { DshHostStyle } from '../../../src/components/dsh/DshStatusBar';
-import type { DshTelemetryData } from '../../../src/types/dsh-telemetry';
-import { resolveModelContextLimit } from '../../../src/utils/dsh-format';
-import { CONTAINER_STATUSBAR_ID, EVENT_LANGUAGE_CHANGED, EVENT_REQUEST_SYNC, EVENT_STATS_UPDATED, FEATURES, IPC_REQUEST_SYNC, WINDOW_LIVE_QUOTA, WINDOW_STATS_FEATURES, WINDOW_SYNC_BRIDGE } from '../../../src/injection-contract.cjs';
+import { StatusBar } from '../../../src/components/statusbar/StatusBar';
+import type { StatusBarHostStyle } from '../../../src/components/statusbar/StatusBar';
+import type { SessionTelemetry } from '../../../src/types/telemetry';
+import { resolveModelContextLimit } from '../../../src/utils/telemetry-format';
+import { CONTAINER_POPOVER_ID, CONTAINER_STATUSBAR_ID, EVENT_LANGUAGE_CHANGED, EVENT_REQUEST_SYNC, EVENT_STATS_UPDATED, FEATURES, IPC_REQUEST_SYNC, WINDOW_LIVE_QUOTA, WINDOW_STATS_FEATURES, WINDOW_SYNC_BRIDGE } from '../../../src/injection-contract.cjs';
 import '../../../src/domain/stats.types';
 
 let activeContainer: HTMLElement | null = null;
@@ -91,7 +91,7 @@ export function unmountStats() {
 }
 
 export function removeContextPopover() {
-  document.querySelectorAll('#antigravity-context-popover, #antigravity-dsh-popover-container').forEach(el => el.remove());
+  document.querySelectorAll(`#antigravity-context-popover, #${CONTAINER_POPOVER_ID}`).forEach(el => el.remove());
 }
 
 export function getCurrentConversationId(): string | null {
@@ -188,7 +188,7 @@ function isElementConnected(el: HTMLElement | null | undefined): el is HTMLEleme
 function pruneDisconnectedStatusBars() {
   for (const container of Array.from(statusbarRoots.keys())) {
     if (!isElementConnected(container)) {
-      unmountDshStatusBar(container);
+      unmountStatusBar(container);
     }
   }
 }
@@ -203,7 +203,7 @@ function getAllStatusBarContainers(): HTMLElement[] {
   };
   for (const container of statusbarRoots.keys()) add(container);
   if (typeof document.querySelectorAll === 'function') {
-    document.querySelectorAll(`#${CONTAINER_STATUSBAR_ID}, [data-dsh-statusbar="true"]`).forEach(add);
+    document.querySelectorAll(`#${CONTAINER_STATUSBAR_ID}, [data-ag-statusbar="true"]`).forEach(add);
   }
   if (typeof document.getElementById === 'function') {
     add(document.getElementById(CONTAINER_STATUSBAR_ID));
@@ -221,9 +221,9 @@ function stopContextPillHeartbeat() {
 // Probe the host's own control styling so the injected pills inherit the same text
 // color, size and weight as native Antigravity controls (e.g. the Turbo dropdown).
 // Every field is optional — when the host DOM isn't ready the pills fall back to
-// their own --dsh-* tokens.
-function probeHostPillStyle(container?: HTMLElement | null): DshHostStyle {
-  const probe: DshHostStyle = {};
+// their own --ag-sb-* tokens.
+function probeHostPillStyle(container?: HTMLElement | null): StatusBarHostStyle {
+  const probe: StatusBarHostStyle = {};
   try {
     const anchor = container?.parentElement?.querySelector?.('button[data-testid="permissions-selector-trigger"]')
       || document.querySelector('button[data-testid="permissions-selector-trigger"]');
@@ -242,7 +242,7 @@ function probeHostPillStyle(container?: HTMLElement | null): DshHostStyle {
   return probe;
 }
 
-const COMPOSER_MODEL_RE = /(?:^|[^a-z0-9])(gemini|claude|gpt|argon|carbon|hydrogen|orchestrator)(?:[^a-z0-9]|$)/i;
+const COMPOSER_MODEL_RE = /(?:^|[^a-z0-9])(gemini|claude|gpt|argon|carbon|hydrogen|neon|orchestrator)(?:[^a-z0-9]|$)/i;
 
 // Reads the currently selected model pill in the composer footer so new conversations
 // and mid-session model switches update the context window limit before the first turn.
@@ -270,7 +270,7 @@ function detectSelectedModelFromComposer(container: HTMLElement): string {
   return '';
 }
 
-export function mountDshStatusBar(container: HTMLElement) {
+export function mountStatusBar(container: HTMLElement) {
   if (!container || !isStatsFeatureEnabled('statusBar')) return;
 
   pruneDisconnectedStatusBars();
@@ -284,23 +284,23 @@ export function mountDshStatusBar(container: HTMLElement) {
   const selectedModel = detectSelectedModelFromComposer(container);
   const effectiveModel = selectedModel || session?.modelName || '';
   const liveLimits = (window as unknown as Record<string, { modelContextLimits?: Record<string, number> } | undefined>)[WINDOW_LIVE_QUOTA]?.modelContextLimits;
-  const baseUsedTokens = session?.dshTelemetry?.context?.usedTokens ?? 0;
+  const baseUsedTokens = session?.telemetry?.context?.usedTokens ?? 0;
   const resolvedLimit = resolveModelContextLimit(effectiveModel, baseUsedTokens, liveLimits);
   const resolvedUsedPct = baseUsedTokens > 0
     ? Math.min(100, Math.round((baseUsedTokens / resolvedLimit) * 100))
     : 0;
 
-  // Server-side aggregate-stats always attaches `dshTelemetry` to every SessionSummary;
+  // Server-side aggregate-stats always attaches `telemetry` to every SessionSummary;
   // fall back to a zero-baseline only when no session data has arrived yet.
-  const telemetry: DshTelemetryData = session?.dshTelemetry ? {
-    ...session.dshTelemetry,
+  const telemetry: SessionTelemetry = session?.telemetry ? {
+    ...session.telemetry,
     isStreaming: isGenerating,
     session: {
-      ...session.dshTelemetry.session,
+      ...session.telemetry.session,
       tps: effectiveTps,
     },
     context: {
-      ...session.dshTelemetry.context,
+      ...session.telemetry.context,
       limitTokens: resolvedLimit,
       usedPct: resolvedUsedPct,
     },
@@ -350,8 +350,8 @@ export function mountDshStatusBar(container: HTMLElement) {
     window.__ANTIGRAVITY_STATUSBAR_SIGNATURE__ = renderSignature;
     existing.root.render(
       <React.StrictMode>
-        <div className={`antigravity-dsh-container ${theme}`}>
-          <DshStatusBar
+        <div className={`antigravity-statusbar-container ${theme}`}>
+          <StatusBar
             telemetry={telemetry}
             lang={lang}
             theme={theme}
@@ -364,7 +364,7 @@ export function mountDshStatusBar(container: HTMLElement) {
   }
 
   if (existing) {
-    unmountDshStatusBar(container);
+    unmountStatusBar(container);
   }
 
   container.innerHTML = '';
@@ -376,8 +376,8 @@ export function mountDshStatusBar(container: HTMLElement) {
 
   root.render(
     <React.StrictMode>
-      <div className={`antigravity-dsh-container ${theme}`}>
-        <DshStatusBar
+      <div className={`antigravity-statusbar-container ${theme}`}>
+        <StatusBar
           telemetry={telemetry}
           lang={lang}
           theme={theme}
@@ -388,7 +388,7 @@ export function mountDshStatusBar(container: HTMLElement) {
   );
 }
 
-export function unmountDshStatusBar(targetContainer?: HTMLElement) {
+export function unmountStatusBar(targetContainer?: HTMLElement) {
   if (targetContainer) {
     const entry = statusbarRoots.get(targetContainer);
     if (entry) {
@@ -449,7 +449,7 @@ export function refreshStatusBar() {
   pruneDisconnectedStatusBars();
   const containers = getAllStatusBarContainers();
   for (const container of containers) {
-    mountDshStatusBar(container);
+    mountStatusBar(container);
   }
 }
 
@@ -505,11 +505,11 @@ export function initAntigravitySettingsInjector() {
     window.__ANTIGRAVITY_SCAN_TIMER__ = null;
   }
   unmountStats();
-  unmountDshStatusBar();
+  unmountStatusBar();
 
   // Clean up any stale misplaced containers, buttons, toasts and modal overlays
   // from prior injections (older bundles exposed a floating dashboard + toast).
-  document.querySelectorAll('#antigravity-stats-nav-btn, #antigravity-stats-sidebar-btn, #antigravity-stats-content, #antigravity-stats-settings-content, #antigravity-stats-modal-overlay, #antigravity-stats-toast, #antigravity-context-usage-pill, #antigravity-dsh-statusbar-container, [data-dsh-statusbar="true"], #antigravity-dsh-popover-container').forEach(el => el.remove());
+  document.querySelectorAll(`#antigravity-stats-nav-btn, #antigravity-stats-sidebar-btn, #antigravity-stats-content, #antigravity-stats-settings-content, #antigravity-stats-modal-overlay, #antigravity-stats-toast, #antigravity-context-usage-pill, #${CONTAINER_STATUSBAR_ID}, [data-ag-statusbar="true"], #${CONTAINER_POPOVER_ID}`).forEach(el => el.remove());
 
   const scanAndInject = () => {
     pruneDisconnectedStatusBars();
@@ -686,7 +686,7 @@ export function initAntigravitySettingsInjector() {
       existingSidebarBtn.remove();
     }
 
-    // 2. Hook into Turbo button in every chat input footer (DSH Status Bar); skipped
+    // 2. Hook into Turbo button in every chat input footer (Status Bar); skipped
     // entirely (no container, no heartbeat) when the feature is switched off.
     if (!isStatsFeatureEnabled('statusBar')) return;
     const turboButtons: HTMLElement[] = typeof document.querySelectorAll === 'function'
@@ -699,19 +699,19 @@ export function initAntigravitySettingsInjector() {
       if (turboBtn && turboBtn.parentElement) {
         const parent = turboBtn.parentElement;
         if (parent.contains(turboBtn)) {
-          let container = parent.querySelector(`#${CONTAINER_STATUSBAR_ID}, [data-dsh-statusbar="true"]`) as HTMLElement | null;
+          let container = parent.querySelector(`#${CONTAINER_STATUSBAR_ID}, [data-ag-statusbar="true"]`) as HTMLElement | null;
           if (!container) {
             container = document.createElement('div');
             container.id = CONTAINER_STATUSBAR_ID;
-            container.setAttribute('data-dsh-statusbar', 'true');
-            container.className = 'antigravity-dsh-statusbar-slot relative inline-flex items-center';
+            container.setAttribute('data-ag-statusbar', 'true');
+            container.className = 'antigravity-statusbar-slot relative inline-flex items-center';
             turboBtn.before(container);
           }
           const sessionId = resolveSessionIdForContainer(container);
           if (sessionId && !window.__ANTIGRAVITY_STATS__?.sessions?.[sessionId]) {
             requestDataSync(sessionId);
           }
-          mountDshStatusBar(container);
+          mountStatusBar(container);
           startContextPillHeartbeat();
         }
       }
@@ -790,8 +790,6 @@ export const mount = mountStats;
 export const unmount = unmountStats;
 export const init = initAntigravitySettingsInjector;
 export const i18n = antigravityI18n;
-export const mountStatusBar = mountDshStatusBar;
-export const unmountStatusBar = unmountDshStatusBar;
 
 // Automatically initialize when loaded into the renderer
 if (typeof window !== 'undefined') {
@@ -803,10 +801,8 @@ if (typeof window !== 'undefined') {
     init: initAntigravitySettingsInjector,
     initAntigravitySettingsInjector,
     i18n: antigravityI18n,
-    mountStatusBar: mountDshStatusBar,
-    mountDshStatusBar,
-    unmountStatusBar: unmountDshStatusBar,
-    unmountDshStatusBar,
+    mountStatusBar,
+    unmountStatusBar,
     refreshStatusBar,
   };
   window.AntigravityStats = api;

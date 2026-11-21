@@ -44,88 +44,88 @@
   --pill-active: var(--secondary, #e2e8f0);
 }
 
-/* DeepSeek Harness Scoped Design Tokens (inherits Antigravity host CSS tokens) */
-.antigravity-dsh-container,
-.antigravity-dsh-statusbar,
-.antigravity-dsh-popover,
-.antigravity-dsh-container.dark,
-.antigravity-dsh-statusbar.dark,
-.antigravity-dsh-popover.dark {
-  --dsh-statusbar-bg: transparent;
-  --dsh-statusbar-border: transparent;
-  --dsh-statusbar-hover: var(--secondary, rgba(255, 255, 255, 0.06));
-  --dsh-statusbar-height: 28px;
+/* Status Bar Scoped Design Tokens (inherits Antigravity host CSS tokens) */
+.antigravity-statusbar-container,
+.antigravity-statusbar,
+.antigravity-statusbar-popover,
+.antigravity-statusbar-container.dark,
+.antigravity-statusbar.dark,
+.antigravity-statusbar-popover.dark {
+  --ag-sb-bg: transparent;
+  --ag-sb-border: transparent;
+  --ag-sb-hover: var(--secondary, rgba(255, 255, 255, 0.06));
+  --ag-sb-height: 28px;
 
-  --dsh-card-bg: var(--card, #131317);
-  --dsh-card-border: var(--card-border, var(--border, rgba(255, 255, 255, 0.08)));
-  --dsh-card-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.65), 0 0 0 1px var(--border, rgba(255, 255, 255, 0.06));
-  --dsh-card-radius: 12px;
-  --dsh-card-width: 320px;
+  --ag-sb-card-bg: var(--card, #131317);
+  --ag-sb-card-border: var(--card-border, var(--border, rgba(255, 255, 255, 0.08)));
+  --ag-sb-card-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.65), 0 0 0 1px var(--border, rgba(255, 255, 255, 0.06));
+  --ag-sb-card-radius: 12px;
+  --ag-sb-card-width: 320px;
 
-  --dsh-text-primary: var(--foreground, #f4f4f5);
-  --dsh-text-secondary: var(--secondary-foreground, #a1a1aa);
-  --dsh-text-muted: var(--muted-foreground, #71717a);
-  --dsh-divider: var(--border, rgba(255, 255, 255, 0.08));
+  --ag-sb-text-primary: var(--foreground, #f4f4f5);
+  --ag-sb-text-secondary: var(--secondary-foreground, #a1a1aa);
+  --ag-sb-text-muted: var(--muted-foreground, #71717a);
+  --ag-sb-divider: var(--border, rgba(255, 255, 255, 0.08));
 
-  --dsh-accent: var(--primary, #2F71E3);
-  --dsh-donut-track: var(--border, rgba(255, 255, 255, 0.12));
-  --dsh-donut-fill: var(--foreground, #e4e4e7);
+  --ag-sb-accent: var(--primary, #2F71E3);
+  --ag-sb-donut-track: var(--border, rgba(255, 255, 255, 0.12));
+  --ag-sb-donut-fill: var(--foreground, #e4e4e7);
 
-  --dsh-seg-system-prompt: #71717a;
-  --dsh-seg-tool-definitions: #8b5cf6;
-  --dsh-seg-chat-messages: var(--primary, #2F71E3);
-  --dsh-seg-track: var(--muted, rgba(255, 255, 255, 0.1));
+  --ag-sb-seg-system-prompt: #71717a;
+  --ag-sb-seg-tool-definitions: #8b5cf6;
+  --ag-sb-seg-chat-messages: var(--primary, #2F71E3);
+  --ag-sb-seg-track: var(--muted, rgba(255, 255, 255, 0.1));
 }
 
-.antigravity-dsh-container.light,
-.antigravity-dsh-statusbar.light,
-.antigravity-dsh-popover.light {
-  --dsh-statusbar-bg: transparent;
-  --dsh-statusbar-border: transparent;
-  --dsh-statusbar-hover: var(--secondary, rgba(0, 0, 0, 0.05));
+.antigravity-statusbar-container.light,
+.antigravity-statusbar.light,
+.antigravity-statusbar-popover.light {
+  --ag-sb-bg: transparent;
+  --ag-sb-border: transparent;
+  --ag-sb-hover: var(--secondary, rgba(0, 0, 0, 0.05));
 
-  --dsh-card-bg: var(--card, #ffffff);
-  --dsh-card-border: var(--card-border, var(--border, rgba(0, 0, 0, 0.08)));
-  --dsh-card-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.08), 0 0 0 1px var(--border, rgba(0, 0, 0, 0.05));
+  --ag-sb-card-bg: var(--card, #ffffff);
+  --ag-sb-card-border: var(--card-border, var(--border, rgba(0, 0, 0, 0.08)));
+  --ag-sb-card-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.08), 0 0 0 1px var(--border, rgba(0, 0, 0, 0.05));
 
-  --dsh-text-primary: var(--foreground, #18181b);
-  --dsh-text-secondary: var(--secondary-foreground, #52525b);
-  --dsh-text-muted: var(--muted-foreground, #a1a1aa);
-  --dsh-divider: var(--border, rgba(0, 0, 0, 0.06));
+  --ag-sb-text-primary: var(--foreground, #18181b);
+  --ag-sb-text-secondary: var(--secondary-foreground, #52525b);
+  --ag-sb-text-muted: var(--muted-foreground, #a1a1aa);
+  --ag-sb-divider: var(--border, rgba(0, 0, 0, 0.06));
 
-  --dsh-accent: var(--primary, #2F71E3);
-  --dsh-donut-track: var(--border, rgba(0, 0, 0, 0.08));
-  --dsh-donut-fill: var(--foreground, #18181b);
+  --ag-sb-accent: var(--primary, #2F71E3);
+  --ag-sb-donut-track: var(--border, rgba(0, 0, 0, 0.08));
+  --ag-sb-donut-fill: var(--foreground, #18181b);
 
-  --dsh-seg-system-prompt: #9ca3af;
-  --dsh-seg-tool-definitions: #8b5cf6;
-  --dsh-seg-chat-messages: var(--primary, #2F71E3);
-  --dsh-seg-track: var(--muted, rgba(0, 0, 0, 0.06));
+  --ag-sb-seg-system-prompt: #9ca3af;
+  --ag-sb-seg-tool-definitions: #8b5cf6;
+  --ag-sb-seg-chat-messages: var(--primary, #2F71E3);
+  --ag-sb-seg-track: var(--muted, rgba(0, 0, 0, 0.06));
 }
 
 /* Injected pills: hover feedback matches the host's hover density; the host's
    global button focus ring is suppressed so a clicked pill doesn't glow at rest */
-.antigravity-dsh-statusbar .dsh-pill {
+.antigravity-statusbar .sb-pill {
   height: 28px;
   border-radius: 9999px;
-  color: var(--secondary-foreground, var(--dsh-text-secondary, #a1a1aa));
+  color: var(--secondary-foreground, var(--ag-sb-text-secondary, #a1a1aa));
   background-color: transparent;
   border: 1px solid transparent;
   transition: all 0.15s ease;
 }
 
-.antigravity-dsh-statusbar .dsh-pill:hover {
-  background-color: var(--secondary, var(--dsh-statusbar-hover, rgba(255, 255, 255, 0.06)));
+.antigravity-statusbar .sb-pill:hover {
+  background-color: var(--secondary, var(--ag-sb-hover, rgba(255, 255, 255, 0.06)));
   border-color: var(--border, rgba(255, 255, 255, 0.06));
   color: var(--foreground, #ffffff);
 }
 
-.antigravity-dsh-statusbar .dsh-pill:focus-visible {
+.antigravity-statusbar .sb-pill:focus-visible {
   outline: none !important;
   box-shadow: none !important;
 }
 
-.antigravity-dsh-statusbar .dsh-pill-secondary {
+.antigravity-statusbar .sb-pill-secondary {
   max-width: 340px;
   opacity: 1;
   transform: scale(1);
@@ -144,28 +144,33 @@
     color 0.15s ease;
 }
 
+/* Manual standard mode: keep tighter pill spacing while leaving pill padding/gap untouched so #statusbar-pill-context stays aligned across modes. */
+.antigravity-statusbar:where(.statusbar-standard) {
+  gap: 4px;
+}
+
 /* Host composer footer defines container: input-footer / inline-size; in split-pane
    widths drop redundant round/step/token prefixes so pills never crush the model picker. */
 @container input-footer (max-width: 680px) {
-  .antigravity-dsh-statusbar {
+  .antigravity-statusbar {
     gap: 2px;
   }
-  .antigravity-dsh-statusbar .dsh-pill {
+  .antigravity-statusbar .sb-pill {
     padding-left: 6px;
     padding-right: 6px;
     gap: 4px;
   }
-  .antigravity-dsh-statusbar .dsh-pill-secondary {
+  .antigravity-statusbar .sb-pill-secondary {
     max-width: 96px;
   }
-  .antigravity-dsh-statusbar .dsh-pill-full-only {
+  .antigravity-statusbar .sb-pill-full-only {
     display: none;
   }
 }
 
 /* Narrow split panes: smoothly collapse session & token pills so only the context ring stays visible. */
 @container input-footer (max-width: 560px) {
-  .antigravity-dsh-statusbar .dsh-pill-secondary {
+  .antigravity-statusbar .sb-pill-secondary {
     max-width: 0;
     padding-left: 0;
     padding-right: 0;
@@ -178,13 +183,30 @@
   }
 }
 
-/* DSH Status Bar Micro-Interactions (2.5s calm breathing, settle ticker & physics damping) */
-@keyframes dsh-breathe {
+/* Manual compact mode: reuse the exact split-pane collapse physics at any container width. */
+.antigravity-statusbar.statusbar-compact {
+  gap: 2px;
+}
+
+.antigravity-statusbar.statusbar-compact .sb-pill-secondary {
+  max-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  margin-right: -2px;
+  border-width: 0;
+  opacity: 0;
+  transform: scale(0.92);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Status Bar Micro-Interactions (2.5s calm breathing, settle ticker & physics damping) */
+@keyframes ag-sb-breathe {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
 
-@keyframes dsh-token-settle {
+@keyframes ag-sb-token-settle {
   from {
     opacity: 0.35;
     transform: translateY(2.5px);
@@ -195,7 +217,7 @@
   }
 }
 
-@keyframes dsh-donut-breathe {
+@keyframes ag-sb-donut-breathe {
   0%, 100% {
     stroke-opacity: 1;
     filter: drop-shadow(0 0 0px transparent);
@@ -206,7 +228,7 @@
   }
 }
 
-@keyframes dsh-donut-danger-breathe {
+@keyframes ag-sb-donut-danger-breathe {
   0%, 100% {
     stroke-opacity: 1;
     filter: drop-shadow(0 0 2px rgba(239, 68, 68, 0.4));
@@ -217,21 +239,21 @@
   }
 }
 
-.antigravity-dsh-statusbar .dsh-icon-pulse {
-  animation: dsh-breathe 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+.antigravity-statusbar .sb-icon-pulse {
+  animation: ag-sb-breathe 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-.antigravity-dsh-statusbar .dsh-token-settle {
+.antigravity-statusbar .sb-token-settle {
   display: inline-block;
-  animation: dsh-token-settle 0.37s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: ag-sb-token-settle 0.37s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.antigravity-dsh-statusbar .dsh-donut-pulse {
-  animation: dsh-donut-breathe 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+.antigravity-statusbar .sb-donut-pulse {
+  animation: ag-sb-donut-breathe 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-.antigravity-dsh-statusbar .dsh-donut-danger-pulse {
-  animation: dsh-donut-danger-breathe 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+.antigravity-statusbar .sb-donut-danger-pulse {
+  animation: ag-sb-donut-danger-breathe 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 .stats-view *, .stats-view *::before, .stats-view *::after { box-sizing: border-box; }
 :where(.stats-view, .stats-view *) { border: 0 solid var(--card-border, var(--border, rgba(255, 255, 255, 0.08))); }
@@ -731,11 +753,27 @@
 
 /* Proxy status strip */
 .stats-view .bento-proxy {
-  flex-direction: row;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 20px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   padding: 12px 16px;
+}
+.stats-view .proxy-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  min-width: 0;
+}
+.stats-view .proxy-log-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--card-border, rgba(127, 127, 127, 0.16));
+  min-width: 0;
 }
 .stats-view .proxy-status-item {
   display: inline-flex;
@@ -750,6 +788,22 @@
   background: var(--secondary, rgba(127, 127, 127, 0.15));
   color: var(--muted-foreground);
   letter-spacing: 0.04em;
+}
+.stats-view .proxy-action-btn {
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 1px 8px;
+  border-radius: 5px;
+  border: 1px solid var(--card-border, rgba(127, 127, 127, 0.22));
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+.stats-view .proxy-action-btn:hover {
+  color: var(--foreground);
+  background: var(--secondary, rgba(127, 127, 127, 0.15));
+  border-color: var(--border, rgba(127, 127, 127, 0.35));
 }
 
 /* Responsive adjustments */

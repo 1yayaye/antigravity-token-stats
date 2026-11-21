@@ -505,10 +505,10 @@ namespace AntiTokenSetup.UI
             _btnBrowse.Text = T("浏览...", "Browse...");
             _btnRescan.Text = T("重新扫描", "Rescan");
 
-            _grpProxy.Text = T("免 TUN 透明代理配置（可选）", "Transparent Proxy Configuration (Optional)");
+            _grpProxy.Text = T("本地进程代理配置（可选）", "Local Process Proxy Configuration (Optional)");
             _chkEnableProxy.Text = T(
-                "配置免 TUN 透明代理（推荐，解决地区限制与接口直连）",
-                "Enable transparent proxy (recommended for region/API connectivity)");
+                "启用本地进程代理（可选，解决地区限制与接口直连）",
+                "Enable local process proxy (optional, for region/API connectivity)");
             _lblDetectedProxy.Text = T("本机代理:", "Local Proxy:");
             _lblProtocol.Text = T("协议与端口:", "Protocol / Port:");
             _lblPort.Text = T("端口:", "Port:");
@@ -756,7 +756,7 @@ namespace AntiTokenSetup.UI
             string permText = _currentInstall.NeedsElevation ? T(" · 需要管理员权限", " · Needs Admin") : "";
 
             _lblInstallDetails.Text = T(
-                $"app.asar: 正常 | 补丁状态: {patchState} ({backupText}) | 透明代理: {proxyText} | 翻译包: {zhPackText} | 小部件: {statusBarText}{permText}",
+                $"app.asar: 正常 | 补丁状态: {patchState} ({backupText}) | 本地代理: {proxyText} | 翻译包: {zhPackText} | 小部件: {statusBarText}{permText}",
                 $"app.asar: Found | Patch: {patchState} ({backupText}) | Proxy: {proxyText} | Zh-pack: {zhPackText} | Widget: {statusBarText}{permText}");
         }
 
@@ -1048,6 +1048,10 @@ namespace AntiTokenSetup.UI
                 if (IsDisposed || Disposing) return;
 
                 InspectCurrentPathFromUi(forceSyncCheckboxes: true);
+                if (enableProxy)
+                {
+                    AppendLog(T($"代理日志目录: {ResolveProxyLogPath(rootDir)}", $"Proxy log directory: {ResolveProxyLogPath(rootDir)}"));
+                }
                 AppendLog(T(
                     "✓ 安装完成！请在 Antigravity 中点击 Settings -> Usage Stats。",
                     "✓ Installation complete! Open Settings -> Usage Stats inside Antigravity."));
@@ -1105,11 +1109,12 @@ namespace AntiTokenSetup.UI
             SetBusy(true);
             try
             {
-                AppendLog(T("正在更新透明代理配置...", "Updating transparent proxy..."));
+                AppendLog(T("正在更新本地进程代理配置...", "Updating local process proxy..."));
                 await Task.Run(() => ProxyInstaller.Install(rootDir, proxyHost, proxyPort, proxyType, AppendLog));
                 if (IsDisposed || Disposing) return;
                 InspectCurrentPathFromUi();
-                AppendLog(T("✓ 透明代理更新完成。", "✓ Transparent proxy updated."));
+                AppendLog(T($"代理日志目录: {ResolveProxyLogPath(rootDir)}", $"Proxy log directory: {ResolveProxyLogPath(rootDir)}"));
+                AppendLog(T("✓ 本地进程代理更新完成。", "✓ Local process proxy updated."));
 
                 if (_chkLaunchAfter.Checked && !EnvironmentDetector.IsAntigravityRunning() && File.Exists(_currentInstall.ExePath))
                 {
@@ -1117,8 +1122,8 @@ namespace AntiTokenSetup.UI
                 }
 
                 MessageBox.Show(this,
-                    T($"透明代理已配置为 {proxyType}://{proxyHost}:{proxyPort}。",
-                      $"Transparent proxy configured as {proxyType}://{proxyHost}:{proxyPort}."),
+                    T($"本地进程代理已配置为 {proxyType}://{proxyHost}:{proxyPort}。",
+                      $"Local process proxy configured as {proxyType}://{proxyHost}:{proxyPort}."),
                     Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
@@ -1139,8 +1144,8 @@ namespace AntiTokenSetup.UI
             if (!EnsurePreconditions(requireAsar: true, requireStopProcess: true)) return;
 
             var confirm = MessageBox.Show(this,
-                T("确定要卸载补丁并还原 Antigravity 官方出厂状态吗？（将同时移除透明代理文件）",
-                  "Are you sure you want to uninstall and restore Antigravity to factory state? (Transparent proxy files will also be removed)"),
+                T("确定要卸载补丁并还原 Antigravity 官方出厂状态吗？（将同时移除本地代理文件）",
+                  "Are you sure you want to uninstall and restore Antigravity to factory state? (Local proxy files will also be removed)"),
                 Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (confirm != DialogResult.Yes) return;
 
@@ -1179,6 +1184,19 @@ namespace AntiTokenSetup.UI
                 SetBusy(false);
                 InspectCurrentPathFromUi();
             }
+        }
+
+        private static string ResolveProxyLogPath(string rootDir)
+        {
+            if (!string.IsNullOrWhiteSpace(rootDir))
+            {
+                string appLogDir = Path.Combine(rootDir, "logs");
+                if (Directory.Exists(appLogDir) && Directory.GetFiles(appLogDir, "proxy*.log*").Length > 0)
+                {
+                    return appLogDir;
+                }
+            }
+            return Path.Combine(Path.GetTempPath(), "antigravity-proxy-logs");
         }
 
         private void LaunchAntigravity(string exePath, string workDir)

@@ -41,10 +41,10 @@ if (fs.existsSync(desktopBundlePath)) {
     '.antigravity-stats-container',
     '.stats-view',
     '#antigravity-stats-modal-overlay',
-    '.antigravity-dsh-container',
-    '.antigravity-dsh-statusbar',
-    '.antigravity-dsh-popover',
-    ':where(.antigravity-stats-container, .antigravity-dsh-container)',
+    '.antigravity-statusbar-container',
+    '.antigravity-statusbar',
+    '.antigravity-statusbar-popover',
+    ':where(.antigravity-stats-container, .antigravity-statusbar-container)',
     ':where(.stats-view',
   ];
 
@@ -61,7 +61,7 @@ if (fs.existsSync(desktopBundlePath)) {
       );
       assert(isAllowed, `Desktop bundle CSS contains unscoped selector: "${sel}"`);
     }
-    if (rule.selectors.some((s) => s.includes(':where(.antigravity-stats-container, .antigravity-dsh-container)'))) {
+    if (rule.selectors.some((s) => s.includes(':where(.antigravity-stats-container, .antigravity-statusbar-container)'))) {
       let cur = rule.parent;
       let inLayer = false;
       while (cur) {
@@ -74,7 +74,7 @@ if (fs.existsSync(desktopBundlePath)) {
       assert(inLayer, `Utility rule "${rule.selector}" must be inside @layer components so host @layer utilities wins`);
     }
   });
-  console.log('PASS: desktop bundle CSS is 100% scoped to stats/dsh containers and layered below host utilities');
+  console.log('PASS: desktop bundle CSS is 100% scoped to stats/statusbar containers and layered below host utilities');
 }
 
 // 2. Test detectAntigravityTheme logic via stats-service

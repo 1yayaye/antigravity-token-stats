@@ -767,7 +767,6 @@ export const UI_EXACT_MAP: Record<string, string> = {
   'Add scheduled task': '添加定时任务',
   'Add automation': '添加自动化任务',
   'Create with Prompt': '通过提示词创建',
-  'New': '新建',
   'Run Now': '立即运行',
   'Restart': '重启',
   'View Logs': '查看日志',

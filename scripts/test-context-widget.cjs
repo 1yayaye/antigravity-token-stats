@@ -181,6 +181,11 @@ assert.strictEqual(resolveContextLimit({ modelName: 'Orchestrator (Carbon)', pro
 assert.strictEqual(resolveContextLimit({ modelName: 'gemini-4-high', promptTokens: 100000 }).limitTokens, 512000);
 assert.strictEqual(resolveContextLimit({ modelName: 'orchestrator-worker', promptTokens: 100000 }).limitTokens, 512000);
 assert.strictEqual(resolveContextLimit({ modelName: 'gemini-4-carbon', promptTokens: 100000 }).limitTokens, 512000);
+assert.strictEqual(resolveContextLimit({ modelName: 'gemini-4-neon', promptTokens: 100000 }).limitTokens, 512000);
+assert.strictEqual(resolveContextLimit({ modelName: 'Orchestrator Gemini 4 Neon High', promptTokens: 100000 }).limitTokens, 512000);
+assert.strictEqual(resolveContextLimit({ modelName: 'Orchestrator Claude Opus 5.5 Medium', promptTokens: 100000 }).limitTokens, 512000);
+assert.strictEqual(resolveContextLimit({ modelName: 'claude-opus-5-5-medium', promptTokens: 100000 }).limitTokens, 512000);
+assert.strictEqual(resolveContextLimit({ modelName: 'Orchestrator Claude Sonnet 5.5 Medium', promptTokens: 100000 }).limitTokens, 256000);
 assert.strictEqual(resolveContextLimit({ modelName: 'claude-sonnet-5.5', promptTokens: 100000 }).limitTokens, 256000);
 assert.strictEqual(resolveContextLimit({ modelName: 'gemini-4-hydrogen', promptTokens: 540000 }).limitTokens, 1000000);
 const sniffed = resolveContextLimit({

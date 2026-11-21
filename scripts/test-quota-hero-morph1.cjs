@@ -31,7 +31,11 @@ const contract = require('../src/injection-contract.cjs');
 
 console.log('=== Testing QuotaHeroCard Morph 1 (Dual Radial Rings) ===\n');
 
+const baseNow = Date.parse('2026-11-13T10:00:00Z');
+
 function renderCard(stats, mockWindowQuota, savedTier = null, lang = 'zh') {
+  const realDateNow = Date.now;
+  Date.now = () => baseNow;
   global.window = new EventTarget();
   global.localStorage = { getItem: () => savedTier, setItem: () => {}, removeItem: () => {} };
   if (mockWindowQuota !== undefined) {
@@ -46,6 +50,7 @@ function renderCard(stats, mockWindowQuota, savedTier = null, lang = 'zh') {
       )
     );
   } finally {
+    Date.now = realDateNow;
     delete global.window;
     delete global.localStorage;
   }
@@ -80,7 +85,6 @@ assert(zeroHtml.includes('stroke-linecap="butt"'), '0% ring must use butt lineca
 console.log('PASS: 0% usage renders empty ring with no dot artifact and ~ cap placeholder');
 
 // 3. Test: Normal usage (68% weekly, monthly extrapolated)
-const baseNow = Date.parse('2026-11-13T10:00:00Z');
 const cycleReset = new Date(baseNow + 4 * 86400000).toISOString();
 const cycleStart = new Date(cycleReset).getTime() - 7 * 86400000;
 

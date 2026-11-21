@@ -891,16 +891,39 @@ namespace AntiTokenSetup.Services
                         await stream.WriteAsync(greeting, 0, greeting.Length, cts.Token).ConfigureAwait(false);
                         byte[] greetResp = new byte[2];
                         int r1 = await ReadExactWithTimeoutAsync(stream, greetResp, 2, cts.Token).ConfigureAwait(false);
-                        if (r1 < 2 || greetResp[0] != 0x05 || greetResp[1] != 0x00)
+                        if (r1 >= 1 && greetResp[0] == (byte)'H')
                         {
                             return new ProxyTestResult
                             {
                                 Ok = false,
                                 ConnectLatencyMs = connectMs,
                                 TotalLatencyMs = sw.ElapsedMilliseconds,
-                                Message = r1 < 2
-                                    ? "SOCKS5 handshake closed unexpectedly."
-                                    : $"SOCKS5 handshake rejected: [{greetResp[0]}, {greetResp[1]}]."
+                                Message = $"Protocol mismatch: {normalizedHost}:{port} responded with HTTP instead of SOCKS5. Switch protocol to HTTP."
+                            };
+                        }
+                        if (r1 < 2 || greetResp[0] != 0x05 || greetResp[1] != 0x00)
+                        {
+                            string msg;
+                            if (r1 < 2)
+                            {
+                                msg = cts.IsCancellationRequested
+                                    ? $"SOCKS5 handshake timed out after {timeoutMs}ms (port {port} may be HTTP instead of SOCKS5)."
+                                    : $"SOCKS5 handshake closed unexpectedly on {normalizedHost}:{port} (port may be HTTP instead of SOCKS5).";
+                            }
+                            else if (greetResp[0] == 0x05 && greetResp[1] == 0x02)
+                            {
+                                msg = $"SOCKS5 proxy on {normalizedHost}:{port} requires username/password authentication.";
+                            }
+                            else
+                            {
+                                msg = $"SOCKS5 handshake rejected: [{greetResp[0]}, {greetResp[1]}].";
+                            }
+                            return new ProxyTestResult
+                            {
+                                Ok = false,
+                                ConnectLatencyMs = connectMs,
+                                TotalLatencyMs = sw.ElapsedMilliseconds,
+                                Message = msg
                             };
                         }
 
@@ -956,6 +979,16 @@ namespace AntiTokenSetup.Services
 
                         byte[] respBuf = new byte[512];
                         var (r, gotNewline) = await ReadLineWithTimeoutAsync(stream, respBuf, cts.Token).ConfigureAwait(false);
+                        if (r >= 1 && respBuf[0] == 0x05)
+                        {
+                            return new ProxyTestResult
+                            {
+                                Ok = false,
+                                ConnectLatencyMs = connectMs,
+                                TotalLatencyMs = sw.ElapsedMilliseconds,
+                                Message = $"Protocol mismatch: {normalizedHost}:{port} responded with SOCKS5 (0x05) instead of HTTP. Switch protocol to SOCKS5."
+                            };
+                        }
                         if (!gotNewline && cts.IsCancellationRequested)
                         {
                             return new ProxyTestResult
@@ -963,7 +996,7 @@ namespace AntiTokenSetup.Services
                                 Ok = false,
                                 ConnectLatencyMs = connectMs,
                                 TotalLatencyMs = sw.ElapsedMilliseconds,
-                                Message = $"HTTP CONNECT timed out after {timeoutMs}ms."
+                                Message = $"HTTP CONNECT timed out after {timeoutMs}ms (port {port} may be SOCKS5 instead of HTTP)."
                             };
                         }
                         string respStr = Encoding.ASCII.GetString(respBuf, 0, r);
@@ -1034,6 +1067,7 @@ namespace AntiTokenSetup.Services
                 int r = await readTask.ConfigureAwait(false);
                 if (r <= 0) return (total, false);
                 int end = total + r;
+                if (total == 0 && buffer[0] == 0x05) return (end, false);
                 for (int i = total; i < end; i++)
                 {
                     if (buffer[i] == (byte)'\n')

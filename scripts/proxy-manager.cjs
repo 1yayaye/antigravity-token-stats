@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Antigravity Transparent Proxy Manager
+ * Antigravity Local Process Proxy Manager
  *
- * Integrates and manages yuaotian/antigravity-proxy (MinHook-based transparent socket hook)
- * for both Google Antigravity Desktop (Electron) and Antigravity IDE (VSCode fork).
+ * Manages local socket proxy forwarding (version.dll + config.json)
+ * for both Google Antigravity Desktop (Electron) and Antigravity IDE.
  *
  * Features:
  * - Discovers Desktop and IDE installation paths automatically.
@@ -17,6 +17,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const net = require('node:net');
+const crypto = require('node:crypto');
 const { execFileSync, execFile } = require('node:child_process');
 
 // Load path resolver from desktop host if available
@@ -183,7 +184,7 @@ function getVendorDllPath() {
 }
 
 /**
- * Build standard config.json structure for antigravity-proxy
+ * Build standard config.json structure for local process proxy
  */
 function buildConfig(options = {}) {
   const host = options.host || '127.0.0.1';
@@ -192,11 +193,11 @@ function buildConfig(options = {}) {
 
   return {
     _managed_by: 'antigravity-token-stats',
-    _version: '2.4',
+    _version: '2.6.3',
     log_level: options.logLevel || 'info',
     traffic_logging: Boolean(options.trafficLogging),
     ui: {
-      load_notify: options.loadNotify || 'once',
+      load_notify: options.loadNotify || 'none',
     },
     proxy: {
       type,
@@ -213,7 +214,7 @@ function buildConfig(options = {}) {
       send: 5000,
     },
     diagnostics: {
-      agent_ip_probe: options.agentIpProbe !== false,
+      agent_ip_probe: Boolean(options.agentIpProbe),
     },
     child_injection: true,
     child_injection_mode: 'filtered',
@@ -247,6 +248,129 @@ function buildConfig(options = {}) {
   };
 }
 
+function sha256FileSync(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function writeFileAtomic(filePath, content) {
+  const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  try {
+    fs.writeFileSync(tmpPath, content, typeof content === 'string' ? 'utf8' : undefined);
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    try { fs.rmSync(tmpPath, { force: true }); } catch {}
+    throw err;
+  }
+}
+
+function copyFileAtomicWithSha256(srcPath, dstPath) {
+  const expectedHash = sha256FileSync(srcPath);
+  const tmpPath = `${dstPath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  try {
+    fs.copyFileSync(srcPath, tmpPath);
+    if (sha256FileSync(tmpPath) !== expectedHash) {
+      throw new Error(`SHA256 verification failed after copying ${path.basename(srcPath)}`);
+    }
+    fs.renameSync(tmpPath, dstPath);
+  } catch (err) {
+    try { fs.rmSync(tmpPath, { force: true }); } catch {}
+    throw err;
+  }
+}
+
+// Strip // and /* */ comments outside string literals plus trailing commas (JSONC-tolerant).
+function parseJsonTolerant(raw) {
+  const text = String(raw || '').replace(/^\uFEFF/, '');
+  let out = '';
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      out += ch;
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      continue;
+    }
+    if (ch === '/' && text[i + 1] === '/') {
+      while (i < text.length && text[i] !== '\n') i++;
+      if (i < text.length) out += '\n';
+      continue;
+    }
+    if (ch === '/' && text[i + 1] === '*') {
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) i++;
+      i++;
+      continue;
+    }
+    out += ch;
+  }
+  const cleaned = out.replace(/,(\s*[}\]])/g, '$1');
+  return JSON.parse(cleaned);
+}
+
+function mergeConfigWithExisting(targetConfigPath, options = {}) {
+  if (!options.overwriteConfig && fs.existsSync(targetConfigPath)) {
+    try {
+      const existing = parseJsonTolerant(fs.readFileSync(targetConfigPath, 'utf8'));
+      if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+        const host = options.host || existing.proxy?.host || '127.0.0.1';
+        const port = Number(options.port) || Number(existing.proxy?.port) || 7890;
+        const type = options.type === 'http'
+          ? 'http'
+          : (options.type === 'socks5' ? 'socks5' : (existing.proxy?.type === 'http' ? 'http' : 'socks5'));
+        const existingProxy = existing.proxy && typeof existing.proxy === 'object' && !Array.isArray(existing.proxy)
+          ? existing.proxy
+          : {};
+        return {
+          ...existing,
+          _managed_by: 'antigravity-token-stats',
+          _version: '2.6.3',
+          proxy: {
+            ...existingProxy,
+            type,
+            host,
+            port,
+          },
+        };
+      }
+    } catch {}
+  }
+  return buildConfig(options);
+}
+
+function hasProxyLogFiles(dirPath) {
+  if (!dirPath || !fs.existsSync(dirPath)) return false;
+  try {
+    return fs.readdirSync(dirPath).some(
+      (f) => f === 'proxy.log' || f === 'proxy.log.1' || (f.startsWith('proxy-') && f.endsWith('.log'))
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve the active proxy log directory for an installation directory.
+ */
+function resolveProxyLogDir(targetDir, installed = false) {
+  const appLogDir = targetDir ? path.join(targetDir, 'logs') : null;
+  if (hasProxyLogFiles(appLogDir)) return appLogDir;
+  const tempLogDir = path.join(os.tmpdir(), 'antigravity-proxy-logs');
+  if (hasProxyLogFiles(tempLogDir) || fs.existsSync(tempLogDir)) return tempLogDir;
+  return installed ? tempLogDir : null;
+}
+
 /**
  * Read current proxy status for Desktop and IDE targets
  */
@@ -269,6 +393,7 @@ function getTargetStatus(target, customDir, options = {}) {
       dllExists: false,
       configExists: false,
       config: null,
+      logDir: null,
     };
   }
 
@@ -277,6 +402,10 @@ function getTargetStatus(target, customDir, options = {}) {
   const dllExists = fs.existsSync(dllPath);
   const configExists = fs.existsSync(configPath);
   const isRunning = isProcessRunning(exeName, 5000, options);
+  const isInsideTargetHost = isDesktop
+    ? Boolean(process.versions?.electron || process.type)
+    : Boolean(process.env.VSCODE_PID || process.env.ANTIGRAVITY_IDE_PID);
+  const dllLoaded = dllExists && isInsideTargetHost ? isDllLoadedInProcess(dllPath) : null;
 
   let config = null;
   if (configExists) {
@@ -285,16 +414,19 @@ function getTargetStatus(target, customDir, options = {}) {
     } catch {}
   }
 
+  const installed = dllExists && configExists;
   return {
     target,
-    installed: dllExists && configExists,
+    installed,
     available: true,
     dir,
     exeExists: true,
     isRunning,
     dllExists,
     configExists,
+    dllLoaded,
     config,
+    logDir: resolveProxyLogDir(dir, installed),
   };
 }
 
@@ -302,9 +434,12 @@ function getTargetStatus(target, customDir, options = {}) {
  * Get comprehensive status for all supported targets
  */
 function getAllStatus(options = {}) {
+  const desktop = getTargetStatus('desktop', undefined, options);
+  const ide = getTargetStatus('ide', undefined, options);
   return {
-    desktop: getTargetStatus('desktop', undefined, options),
-    ide: getTargetStatus('ide', undefined, options),
+    desktop,
+    ide,
+    logDir: desktop.logDir || ide.logDir || null,
   };
 }
 
@@ -339,20 +474,14 @@ function installProxy(target, options = {}) {
   const targetDll = path.join(dir, 'version.dll');
   const targetConfig = path.join(dir, 'config.json');
 
-  // Check if version.dll already exists and matches the vendor DLL.
+  // Check if version.dll already exists and matches the vendor DLL by SHA256.
   // If identical, we don't need to overwrite it, avoiding Windows EBUSY locking
   // even while the application is active.
   let needsDllCopy = true;
   if (fs.existsSync(targetDll)) {
     try {
-      const vendorStat = fs.statSync(vendorDll);
-      const targetStat = fs.statSync(targetDll);
-      if (vendorStat.size === targetStat.size) {
-        const vBuf = fs.readFileSync(vendorDll);
-        const tBuf = fs.readFileSync(targetDll);
-        if (vBuf.equals(tBuf)) {
-          needsDllCopy = false;
-        }
+      if (sha256FileSync(vendorDll) === sha256FileSync(targetDll)) {
+        needsDllCopy = false;
       }
     } catch {}
   }
@@ -362,18 +491,18 @@ function installProxy(target, options = {}) {
       throw new Error(`Cannot install proxy: ${exeName} is currently running. Close the application first or pass --force.`);
     }
     try {
-      fs.copyFileSync(vendorDll, targetDll);
+      copyFileAtomicWithSha256(vendorDll, targetDll);
     } catch (err) {
-      if (err.code === 'EBUSY') {
+      if (err.code === 'EBUSY' || err.code === 'EPERM') {
         throw new Error(`Cannot update version.dll: ${exeName} is currently locking the file. Close the application and retry.`);
       }
       throw err;
     }
   }
 
-  // Generate and write config (always safe and un-locked)
-  const config = buildConfig(options);
-  fs.writeFileSync(targetConfig, JSON.stringify(config, null, 2), 'utf8');
+  // Merge with existing config.json (preserving custom rules/settings) or generate baseline, then write atomically.
+  const config = mergeConfigWithExisting(targetConfig, options);
+  writeFileAtomic(targetConfig, `${JSON.stringify(config, null, 2)}\n`);
 
   return {
     target,
@@ -438,14 +567,24 @@ function testProxy(options = {}) {
   const host = options.host || '127.0.0.1';
   const port = Number(options.port) || 7890;
   const type = options.type === 'http' ? 'http' : 'socks5';
-  const targetHost = 'oauth2.googleapis.com';
-  const targetPort = 443;
+  const targetHost = options.targetHost || 'oauth2.googleapis.com';
+  const targetPort = Number(options.targetPort) || 443;
   const timeoutMs = options.timeoutMs || 4000;
+
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return Promise.resolve({
+      ok: false,
+      stage: 'config',
+      error: `Invalid proxy port: ${options.port}`,
+      latencyMs: 0,
+    });
+  }
 
   return new Promise((resolve) => {
     const startTime = Date.now();
     const socket = new net.Socket();
     let resolved = false;
+    let phase = 'tcp'; // 'tcp' | 'handshake' | 'tunnel'
 
     const finish = (result) => {
       if (resolved) return;
@@ -454,44 +593,99 @@ function testProxy(options = {}) {
       resolve(result);
     };
 
+    const mismatchHint = (errCode) => {
+      if (phase === 'handshake' && (errCode === 'TIMEOUT' || errCode === 'ECONNRESET' || errCode === 'EOF')) {
+        const other = type === 'socks5' ? 'http' : 'socks5';
+        return ` Port ${port} may be speaking ${other.toUpperCase()} instead of ${type.toUpperCase()}; try switching proxy type to "${other}".`;
+      }
+      return '';
+    };
+
     socket.setTimeout(timeoutMs);
 
     socket.on('timeout', () => {
       finish({
         ok: false,
-        error: `Connection timed out after ${timeoutMs}ms. Is your proxy client (e.g. Clash/v2ray) running on ${host}:${port}?`,
+        stage: phase,
+        error: phase === 'tcp'
+          ? `Connection timed out after ${timeoutMs}ms. Is your proxy client (e.g. Clash/v2ray) running on ${host}:${port}?`
+          : `Timed out during ${phase} with ${host}:${port} after ${timeoutMs}ms.${mismatchHint('TIMEOUT')}`,
         latencyMs: Date.now() - startTime,
       });
     });
 
     socket.on('error', (err) => {
+      const code = err.code || err.message;
       finish({
         ok: false,
-        error: `Failed to connect to proxy at ${host}:${port} (${err.code || err.message})`,
+        stage: phase,
+        error: `Failed during ${phase} at ${host}:${port} (${code}).${mismatchHint(err.code)}`,
         latencyMs: Date.now() - startTime,
       });
     });
 
+    socket.on('end', () => {
+      if (!resolved) {
+        finish({
+          ok: false,
+          stage: phase,
+          error: `Proxy closed connection during ${phase} at ${host}:${port}.${mismatchHint('EOF')}`,
+          latencyMs: Date.now() - startTime,
+        });
+      }
+    });
+
     socket.connect(port, host, () => {
       const connectLatency = Date.now() - startTime;
+      phase = 'handshake';
+      let rxBuf = Buffer.alloc(0);
 
       if (type === 'socks5') {
         // Step 1: SOCKS5 greeting: VER 5, NMETHODS 1, METHOD 0 (No Auth)
         socket.write(Buffer.from([0x05, 0x01, 0x00]));
 
         let stage = 0;
-        socket.on('data', (data) => {
+        socket.on('data', (chunk) => {
+          rxBuf = Buffer.concat([rxBuf, chunk]);
           if (stage === 0) {
-            // Expect [0x05, 0x00]
-            if (data[0] !== 0x05 || data[1] !== 0x00) {
+            if (rxBuf.length >= 1 && rxBuf[0] === 0x48) { // 'H' from HTTP/1.x
               return finish({
                 ok: false,
-                error: `SOCKS5 handshake rejected: server returned [${data[0]}, ${data[1]}]`,
+                stage: 'handshake',
+                error: `Protocol mismatch: ${host}:${port} responded with HTTP instead of SOCKS5. Switch proxy type to "http".`,
+                latencyMs: Date.now() - startTime,
+              });
+            }
+            if (rxBuf.length < 2) return;
+            const greeting = rxBuf.subarray(0, 2);
+            rxBuf = rxBuf.subarray(2);
+            if (greeting[0] !== 0x05) {
+              return finish({
+                ok: false,
+                stage: 'handshake',
+                error: `SOCKS5 handshake invalid version: expected 5, got ${greeting[0]}`,
+                latencyMs: Date.now() - startTime,
+              });
+            }
+            if (greeting[1] === 0x02) {
+              return finish({
+                ok: false,
+                stage: 'handshake',
+                error: `SOCKS5 proxy at ${host}:${port} requires username/password authentication`,
+                latencyMs: Date.now() - startTime,
+              });
+            }
+            if (greeting[1] !== 0x00) {
+              return finish({
+                ok: false,
+                stage: 'handshake',
+                error: `SOCKS5 handshake rejected: server returned [${greeting[0]}, ${greeting[1]}]`,
                 latencyMs: Date.now() - startTime,
               });
             }
             stage = 1;
-            // Step 2: SOCKS5 CONNECT to oauth2.googleapis.com:443
+            phase = 'tunnel';
+            // Step 2: SOCKS5 CONNECT to target
             const hostBuf = Buffer.from(targetHost, 'utf8');
             const portBuf = Buffer.alloc(2);
             portBuf.writeUInt16BE(targetPort, 0);
@@ -501,12 +695,13 @@ function testProxy(options = {}) {
               portBuf,
             ]);
             socket.write(req);
-          } else if (stage === 1) {
-            // Expect reply with REP 0 (Success)
-            if (data[0] === 0x05 && data[1] === 0x00) {
+          }
+          if (stage === 1 && rxBuf.length >= 2) {
+            if (rxBuf[0] === 0x05 && rxBuf[1] === 0x00) {
               const totalLatency = Date.now() - startTime;
               finish({
                 ok: true,
+                stage: 'tunnel',
                 proxy: `${host}:${port} (${type})`,
                 target: `${targetHost}:${targetPort}`,
                 latencyMs: totalLatency,
@@ -516,7 +711,8 @@ function testProxy(options = {}) {
             } else {
               finish({
                 ok: false,
-                error: `SOCKS5 tunnel establishment failed: REP status ${data[1]}`,
+                stage: 'tunnel',
+                error: `SOCKS5 tunnel establishment failed: REP status ${rxBuf[1]}`,
                 latencyMs: Date.now() - startTime,
               });
             }
@@ -527,22 +723,43 @@ function testProxy(options = {}) {
         const connectReq = `CONNECT ${targetHost}:${targetPort} HTTP/1.1\r\nHost: ${targetHost}:${targetPort}\r\nUser-Agent: AntigravityProxyCheck/1.0\r\n\r\n`;
         socket.write(connectReq);
 
-        socket.once('data', (data) => {
-          const resp = data.toString('utf8');
-          if (resp.startsWith('HTTP/1.1 200') || resp.startsWith('HTTP/1.0 200')) {
+        socket.on('data', (chunk) => {
+          rxBuf = Buffer.concat([rxBuf, chunk]);
+          if (rxBuf.length >= 1 && rxBuf[0] === 0x05) {
+            return finish({
+              ok: false,
+              stage: 'handshake',
+              error: `Protocol mismatch: ${host}:${port} responded with SOCKS5 (0x05) instead of HTTP. Switch proxy type to "socks5".`,
+              latencyMs: Date.now() - startTime,
+            });
+          }
+          const eol = rxBuf.indexOf('\r\n');
+          if (eol === -1 && rxBuf.indexOf('\n') === -1 && rxBuf.length < 256) return;
+          const resp = rxBuf.toString('utf8');
+          const firstLine = resp.split(/\r?\n/)[0];
+          if (/^HTTP\/1\.[01]\s+200\b/i.test(firstLine)) {
             const totalLatency = Date.now() - startTime;
             finish({
               ok: true,
+              stage: 'tunnel',
               proxy: `${host}:${port} (${type})`,
               target: `${targetHost}:${targetPort}`,
               latencyMs: totalLatency,
               connectLatencyMs: connectLatency,
               message: `Successfully connected and tunneled to ${targetHost}:${targetPort} via HTTP CONNECT`,
             });
+          } else if (/^HTTP\/1\.[01]\s+407\b/i.test(firstLine)) {
+            finish({
+              ok: false,
+              stage: 'handshake',
+              error: `HTTP proxy requires authentication (407): ${firstLine}`,
+              latencyMs: Date.now() - startTime,
+            });
           } else {
             finish({
               ok: false,
-              error: `HTTP proxy tunnel error: ${resp.split('\r\n')[0]}`,
+              stage: 'tunnel',
+              error: `HTTP proxy tunnel error: ${firstLine}`,
               latencyMs: Date.now() - startTime,
             });
           }
@@ -569,12 +786,84 @@ function readTailSync(filePath, maxBytes = 128 * 1024) {
   }
 }
 
+const LOCATION_ERROR_PATTERNS = [
+  /User location is not supported for the API use/i,
+  /User location is not supported/i,
+  /UNSUPPORTED_LOCATION/i,
+  /not currently available in your location/i,
+  /error_number\D{0,8}1008/i,
+];
+
+const SESSION_LOGIN_PATTERNS = [
+  /ProjectId updated for /i,
+  /\[CloudCode:AuthorizedQuota\][^\r\n]*loadCodeAssist/i,
+  /Authorized quota source active/i,
+  /Access token (?:updated|refreshed)/i,
+  /Synced .+ to legacy key/i,
+];
+
+function collectRunLogFiles(runDirPath) {
+  const files = [];
+  const walk = (dir, depth) => {
+    if (depth > 4 || files.length >= 40) return;
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (files.length >= 40) return;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (/^(node_modules|cache|CachedData)$/i.test(entry.name)) continue;
+        walk(fullPath, depth + 1);
+      } else if (/\.log$/i.test(entry.name)) {
+        try {
+          const st = fs.statSync(fullPath);
+          files.push({ path: fullPath, name: entry.name, mtimeMs: st.mtimeMs });
+        } catch {}
+      }
+    }
+  };
+  walk(runDirPath, 0);
+  // Prefer ls-main.log / cloudcode.log first, then newest mtime
+  return files.sort((a, b) => {
+    const aPri = /^(ls-main|cloudcode)\.log$/i.test(a.name) ? 1 : 0;
+    const bPri = /^(ls-main|cloudcode)\.log$/i.test(b.name) ? 1 : 0;
+    if (aPri !== bPri) return bPri - aPri;
+    return b.mtimeMs - a.mtimeMs;
+  });
+}
+
+function inspectLogFileEvidence(filePath) {
+  const content = readTailSync(filePath);
+  if (!content) return { locationIdx: -1, loginIdx: -1, locationLine: '' };
+  const lines = content.split(/\r?\n/);
+  let locationIdx = -1;
+  let loginIdx = -1;
+  let locationLine = '';
+  for (let i = lines.length - 1; i >= 0 && (locationIdx === -1 || loginIdx === -1); i--) {
+    const line = lines[i];
+    if (locationIdx === -1 && LOCATION_ERROR_PATTERNS.some((re) => re.test(line))) {
+      locationIdx = i;
+      locationLine = line.trim();
+    }
+    if (loginIdx === -1 && SESSION_LOGIN_PATTERNS.some((re) => re.test(line))) {
+      loginIdx = i;
+    }
+  }
+  return { locationIdx, loginIdx, locationLine };
+}
+
 /**
- * Scan Antigravity logs for location restriction errors
+ * Scan Antigravity logs for active location restriction errors (ignoring historical errors
+ * superseded by newer login-success evidence).
  */
 function scanLogForLocationErrors(logDir) {
-  if (!fs.existsSync(logDir)) return [];
-  const results = [];
+  if (!logDir || !fs.existsSync(logDir)) return [];
+  const candidates = [];
+  let newestLoginMtimeMs = 0;
 
   try {
     const entries = fs.readdirSync(logDir, { withFileTypes: true });
@@ -587,21 +876,130 @@ function scanLogForLocationErrors(logDir) {
       .slice(0, 3); // check 3 newest runs
 
     for (const d of dirs) {
-      const lsMainPath = path.join(logDir, d, 'ls-main.log');
-      if (fs.existsSync(lsMainPath)) {
-        const content = readTailSync(lsMainPath);
-        if (content.includes('User location is not supported for the API use')) {
-          results.push({
-            logFile: lsMainPath,
+      const files = collectRunLogFiles(path.join(logDir, d));
+      for (const file of files) {
+        const ev = inspectLogFileEvidence(file.path);
+        if (ev.loginIdx !== -1 && file.mtimeMs > newestLoginMtimeMs) {
+          newestLoginMtimeMs = file.mtimeMs;
+        }
+        // Ignore error if login succeeded later in the very same log file
+        if (ev.locationIdx !== -1 && ev.locationIdx > ev.loginIdx) {
+          candidates.push({
+            logFile: file.path,
             error: 'FAILED_PRECONDITION (code 400): User location is not supported for the API use.',
             timestamp: d,
+            line: ev.locationLine,
+            mtimeMs: file.mtimeMs,
           });
         }
       }
     }
   } catch {}
 
-  return results;
+  return candidates
+    .filter((item) => item.mtimeMs >= newestLoginMtimeMs)
+    .map(({ logFile, error, timestamp }) => ({ logFile, error, timestamp }));
+}
+
+const dllLoadedCache = new Map();
+
+/**
+ * Check whether the exact target version.dll (not C:\Windows\System32\version.dll)
+ * is loaded inside the current Node/Electron process.
+ * Cached per resolved path because DLL attachment is immutable within a process.
+ */
+function isDllLoadedInProcess(dllPath) {
+  if (!dllPath) return null;
+  const target = path.resolve(dllPath).toLowerCase();
+  if (dllLoadedCache.has(target)) return dllLoadedCache.get(target);
+  const reporter = process.report;
+  if (!reporter || typeof reporter.getReport !== 'function') return null;
+
+  const prevExcludeNetwork = reporter.excludeNetwork;
+  let result = null;
+  try {
+    // Exclude network info to avoid synchronous reverse-DNS stalls inside getReport()
+    reporter.excludeNetwork = true;
+    const sharedObjects = reporter.getReport()?.sharedObjects;
+    if (Array.isArray(sharedObjects)) {
+      result = sharedObjects.some((p) => {
+        if (typeof p !== 'string' || !p) return false;
+        try {
+          return path.resolve(p).toLowerCase() === target;
+        } catch {
+          return false;
+        }
+      });
+    }
+  } catch {
+    result = null;
+  } finally {
+    reporter.excludeNetwork = prevExcludeNetwork;
+  }
+  dllLoadedCache.set(target, result);
+  return result;
+}
+
+/**
+ * Inspect running processes belonging to targetDir and verify whether targetDir\version.dll
+ * is actually loaded (explicitly excluding System32\version.dll).
+ */
+function inspectLoadedProxyModules(targetDir, processNames = ['Antigravity', 'Antigravity IDE', 'language_server_windows_x64', 'agy']) {
+  if (process.platform !== 'win32' || !targetDir) return null;
+  const expectedDll = path.resolve(targetDir, 'version.dll');
+  if (!fs.existsSync(expectedDll)) {
+    return { dllExists: false, checked: false, running: 0, loaded: 0, samples: [] };
+  }
+
+  const normalizedDir = path.resolve(targetDir);
+  const psScript = [
+    '$dir = $env:AG_PROXY_DIR.TrimEnd("\\") + "\\"',
+    '$dll = $env:AG_PROXY_DLL',
+    '$names = @($env:AG_PROXY_NAMES -split ",")',
+    '$procs = @(Get-Process -Name $names -ErrorAction SilentlyContinue)',
+    '$running = 0; $loaded = 0; $enumOk = $true; $samples = @()',
+    'foreach ($p in $procs) {',
+    '  $pp = ""; try { $pp = [string]$p.Path } catch {}',
+    '  if (-not $pp) { continue }',
+    '  $inDir = $pp.StartsWith($dir, [System.StringComparison]::OrdinalIgnoreCase)',
+    '  if (-not $inDir -and $p.ProcessName -ne "agy") { continue }',
+    '  $running++',
+    '  $hit = $false',
+    '  try {',
+    '    foreach ($m in $p.Modules) {',
+    '      if ($m.FileName -and $m.FileName.Equals($dll, [System.StringComparison]::OrdinalIgnoreCase)) { $hit = $true; break }',
+    '    }',
+    '  } catch { $enumOk = $false }',
+    '  if ($hit) { $loaded++ }',
+    '  if ($samples.Count -lt 8) { $samples += [pscustomobject]@{ name=$p.ProcessName; pid=$p.Id; loaded=$hit } }',
+    '}',
+    '[pscustomobject]@{ dllExists=$true; checked=$enumOk; running=$running; loaded=$loaded; samples=$samples } | ConvertTo-Json -Compress',
+  ].join('; ');
+
+  const env = {
+    ...process.env,
+    AG_PROXY_DIR: normalizedDir,
+    AG_PROXY_DLL: expectedDll,
+    AG_PROXY_NAMES: processNames.join(','),
+  };
+
+  for (const shell of ['pwsh', 'powershell']) {
+    try {
+      const out = execFileSync(shell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', psScript], {
+        encoding: 'utf8',
+        windowsHide: true,
+        timeout: 3000,
+        env,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const parsed = JSON.parse(String(out || '').trim() || 'null');
+      if (parsed && typeof parsed === 'object') {
+        parsed.samples = Array.isArray(parsed.samples) ? parsed.samples : (parsed.samples ? [parsed.samples] : []);
+        return parsed;
+      }
+    } catch {}
+  }
+  return null;
 }
 
 /**
@@ -647,9 +1045,32 @@ function diagnose() {
   const ideErrors = scanLogForLocationErrors(ideLogDir);
 
   const desktopProxyLogs = status.desktop.dir ? scanProxyLogs(path.join(status.desktop.dir, 'logs')) : [];
+  const ideProxyLogs = status.ide.dir ? scanProxyLogs(path.join(status.ide.dir, 'logs')) : [];
   const tempProxyLogs = scanProxyLogs(tempLogDir);
 
+  const runtimeModules = {
+    desktop: status.desktop.dir ? inspectLoadedProxyModules(status.desktop.dir) : null,
+    ide: status.ide.dir ? inspectLoadedProxyModules(status.ide.dir) : null,
+  };
+
   const findings = [];
+
+  for (const [targetName, modInfo] of Object.entries(runtimeModules)) {
+    if (modInfo && modInfo.checked && modInfo.running > 0 && modInfo.loaded === 0 && status[targetName]?.installed) {
+      findings.push({
+        type: 'DLL_NOT_LOADED',
+        severity: 'HIGH',
+        title: `Proxy DLL not loaded in running ${targetName} process(es)`,
+        description:
+          `${modInfo.running} running ${targetName} process(es) did not load ${path.join(status[targetName].dir, 'version.dll')}. ` +
+          'Restart the application completely so version.dll is loaded at startup.',
+        evidence: modInfo.samples.map((s) => ({
+          timestamp: 'runtime',
+          logFile: `${s.name} (PID ${s.pid}) loaded=${s.loaded}`,
+        })),
+      });
+    }
+  }
 
   if (desktopErrors.length > 0 || ideErrors.length > 0) {
     findings.push({
@@ -657,7 +1078,7 @@ function diagnose() {
       severity: 'HIGH',
       title: 'Google Location Policy Restriction (Code 400)',
       description:
-        'Detected "User location is not supported for the API use" in Antigravity ls-main.log. ' +
+        'Detected "User location is not supported for the API use" in Antigravity logs. ' +
         'This means your proxy DLL is successfully hooked and communicating, but Google API rejected your egress IP. ' +
         'Root cause: The exit node is identified as a datacenter/cloud VPS or unsupported country. ' +
         'Solution: Switch your proxy (Clash/v2ray) to a residential or supported ISP node (e.g. non-datacenter Singapore, Japan, or US node).',
@@ -669,7 +1090,8 @@ function diagnose() {
     status,
     desktopLogDir,
     ideLogDir,
-    proxyLogs: [...desktopProxyLogs, ...tempProxyLogs],
+    runtimeModules,
+    proxyLogs: [...desktopProxyLogs, ...ideProxyLogs, ...tempProxyLogs],
     findings,
   };
 }
@@ -703,16 +1125,20 @@ function runCli() {
   if (command === 'status') {
     const status = getAllStatus();
     console.log('\n======================================================');
-    console.log('🛡️  Antigravity Transparent Proxy Status');
+    console.log('🛡️  Antigravity Local Process Proxy Status');
     console.log('======================================================\n');
 
     for (const [name, s] of Object.entries(status)) {
+      if (!s || typeof s !== 'object') continue;
       console.log(`[${name.toUpperCase()}]`);
       console.log(`  Path:      ${s.dir || 'Not Found'}`);
       console.log(`  Installed: ${s.installed ? '✅ Yes (version.dll + config.json)' : '❌ No'}`);
       console.log(`  Running:   ${s.isRunning ? '⚠️ Running' : 'Idle'}`);
       if (s.config) {
         console.log(`  Proxy:     ${s.config.proxy?.type}://${s.config.proxy?.host}:${s.config.proxy?.port}`);
+      }
+      if (s.logDir) {
+        console.log(`  Logs:      ${s.logDir}`);
       }
       console.log('');
     }
@@ -723,7 +1149,7 @@ function runCli() {
     const forceKill = hasFlag('--force');
 
     console.log('\n======================================================');
-    console.log(`📦 Installing Transparent Proxy (Target: ${target}, ${type}://127.0.0.1:${port})`);
+    console.log(`📦 Installing Local Process Proxy (Target: ${target}, ${type}://127.0.0.1:${port})`);
     console.log('======================================================\n');
 
     const targets = target === 'all' ? ['desktop', 'ide'] : [target];
@@ -744,7 +1170,7 @@ function runCli() {
     const forceKill = hasFlag('--force');
 
     console.log('\n======================================================');
-    console.log(`↺ Uninstalling Transparent Proxy (Target: ${target})`);
+    console.log(`↺ Uninstalling Local Process Proxy (Target: ${target})`);
     console.log('======================================================\n');
 
     const targets = target === 'all' ? ['desktop', 'ide'] : [target];
@@ -825,8 +1251,12 @@ module.exports = {
   findIdeDir,
   getVendorDllPath,
   buildConfig,
+  parseJsonTolerant,
+  isDllLoadedInProcess,
+  inspectLoadedProxyModules,
   getTargetStatus,
   getAllStatus,
+  resolveProxyLogDir,
   installProxy,
   uninstallProxy,
   testProxy,

@@ -13,7 +13,7 @@ Seamlessly integrated into the UI (**Settings → Usage Stats**) via native app.
 - **Subscription Quota & Value**: Live tracking of weekly/monthly quota usage, reset countdowns, and subscription capacity evaluated at official Google API rates.
 - **Exact Breakdown**: Granular stats for Input, Cache Read, Thinking, and Output tokens.
 - **Activity Heatmap**: GitHub-style daily calendar with single-day drilldown and streaks.
-- **Transparent Proxy (No TUN)**: Integrated transparent Winsock socket proxy for Desktop and IDE. Directs traffic to local SOCKS5/HTTP without administrator rights or global TUN mode.
+- **Local Process Proxy**: Integrated local socket proxy forwarding for Desktop and IDE. Directs traffic to local SOCKS5/HTTP without administrator rights or global TUN mode.
 - **Native Integration & One-Command Rollback**: Programmatically patched into `app.asar` with automatic factory backup and clean rollback (`npm run unpatch`).
 - **Local & Private**: Read-only access to `%USERPROFILE%\.gemini\antigravity`. Zero network telemetry.
 
@@ -36,7 +36,7 @@ Seamlessly integrated into the UI (**Settings → Usage Stats**) via native app.
 
 1. Download the latest `antigravity-token-stats-vX.Y.Z-setup.exe` from [Releases](https://github.com/1yayaye/antigravity-token-stats/releases).
 2. Double-click `antigravity-token-stats-vX.Y.Z-setup.exe` (**no Node.js or extraction required**). It automatically detects your Antigravity Desktop path and active local proxy ports (with connectivity testing and manual port/protocol options), and will offer to safely close Antigravity if it is running.
-3. Transparent proxy is **unchecked by default**; enable it only if needed. Click **Install / Update Patch**, then launch Antigravity and open **Settings → Usage Stats**. Leaving proxy unchecked skips installation but does not remove a previously installed proxy.
+3. Local process proxy is **unchecked by default**; enable it only if needed. Click **Install / Update Patch**, then launch Antigravity and open **Settings → Usage Stats**. Leaving proxy unchecked skips installation but does not remove a previously installed proxy.
 > **Note**: To uninstall the patch and restore factory state at any time, open the same `.exe` installer and click **Uninstall / Restore Factory**.
 
 #### Update notifications
@@ -73,8 +73,8 @@ Developer mode automatically configures a dev-bundle redirect pointer (`%LOCALAP
 | `npm run launch` | Launch Antigravity 2.0 |
 | `npm test` | Run complete offline regression test suites |
 | `npm run proxy:status` | Check proxy status for Desktop and IDE |
-| `npm run proxy:install` | Deploy transparent proxy (`--target all/desktop/ide --port 7890`) |
-| `npm run proxy:uninstall` | Cleanly remove transparent proxy files |
+| `npm run proxy:install` | Deploy local process proxy (`--target all/desktop/ide --port 7890`) |
+| `npm run proxy:uninstall` | Cleanly remove local proxy files |
 | `npm run proxy:test` | Test proxy connection and Google API reachability |
 | `npm run proxy:diagnose` | Scan logs for location restrictions (Code 400) |
 | `npm run mock:data` | Generate local mock data for non-Antigravity environments |

@@ -65,7 +65,7 @@ console.log('PASS: Critical code block and chat content exclusion selectors veri
 // 2b. Terms that must stay English (see the antigravity-ui-dict.ts header comment)
 const keepEnglish = [
   'Skills', 'Rules', 'MCP Servers', 'Plugins', 'Hooks', 'Walkthrough',
-  'Low', 'Medium', 'High', 'Extra High', 'Error',
+  'Low', 'Medium', 'High', 'Extra High', 'Error', 'New',
   'Google AI Pro', 'Google AI Ultra',
   'Artifacts', 'Artifact', 'Code Diff', 'Tokens', 'Review', 'Turbo', 'Tab'
 ];

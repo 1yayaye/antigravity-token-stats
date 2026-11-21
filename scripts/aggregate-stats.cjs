@@ -74,7 +74,7 @@ let lastScanTime = 0;
 let lastAggregatedStats = null;
 let lastAggregatedDir = null;
 const FAST_SCAN_TTL = 300; // 300ms throttle for back-to-back incremental calls
-const PERSIST_CACHE_VERSION = 11;
+const PERSIST_CACHE_VERSION = 12;
 const CACHE_FLUSH_DELAY_MS = 50;
 const CACHE_LOCK_MAX_AGE_MS = 10000;
 let cacheDirty = false;
@@ -402,6 +402,12 @@ const OFFICIAL_MODEL_PRICING = {
     outputPerM: 10.00,
     pool: 'gemini',
   },
+  'gemini-4-neon': {
+    inputPerM: 3.00,
+    cacheReadPerM: 0.15,
+    outputPerM: 15.00,
+    pool: 'gemini',
+  },
   'gemini-4-argon': {
     inputPerM: 2.00,
     cacheReadPerM: 0.10,
@@ -486,6 +492,7 @@ function resolveOfficialModelId(modelName) {
     return 'gpt-oss-120b';
   }
   if (m.includes('carbon')) return 'gemini-4-carbon';
+  if (m.includes('neon')) return 'gemini-4-neon';
   if (m.includes('argon')) return 'gemini-4-argon';
   // worker must match before orchestrator and flash
   if (
@@ -495,7 +502,6 @@ function resolveOfficialModelId(modelName) {
   ) {
     return 'gemini-4-hydrogen';
   }
-  if (m.includes('orchestrator')) return 'gemini-4-argon';
 
   if (hasModelKeyword(m, 'pro') && hasModelVersion(m, 3, 1)) {
     return 'gemini-3.1-pro';
@@ -513,6 +519,7 @@ function resolveOfficialModelId(modelName) {
     if (hasModelVersion(m, 5, 5)) return 'claude-sonnet-5-5';
     if (hasModelVersion(m, 4, 6)) return 'claude-sonnet-4-6';
   }
+  if (m.includes('orchestrator')) return 'gemini-4-argon';
 
   return null;
 }
@@ -1228,7 +1235,23 @@ function computeStats(force = false, dataDir) {
     proxy: (function() {
       try {
         const pm = require('./proxy-manager.cjs');
-        return pm.getAllStatus({ nonBlocking: true });
+        const status = pm.getAllStatus({ nonBlocking: true });
+        let pluginVersion = null;
+        for (const candidate of [
+          path.join(__dirname, 'contract.json'),
+          path.join(__dirname, '..', 'package.json'),
+        ]) {
+          try {
+            if (fs.existsSync(candidate)) {
+              const parsed = JSON.parse(fs.readFileSync(candidate, 'utf8'));
+              if (typeof parsed?.version === 'string' && parsed.version.trim()) {
+                pluginVersion = parsed.version.trim();
+                break;
+              }
+            }
+          } catch {}
+        }
+        return pluginVersion ? { ...status, pluginVersion } : status;
       } catch {
         return undefined;
       }
@@ -1376,11 +1399,11 @@ function extractSessionPerformanceMetrics(dbOrSteps) {
 }
 
 const CONTEXT_LIMIT_TIERS = [256000, 512000, 1000000, 2000000];
-const DOUBLED_OFFICIAL_MODELS = new Set(['gemini-4-argon', 'gemini-4-carbon', 'gemini-4-hydrogen']);
+const DOUBLED_OFFICIAL_MODELS = new Set(['gemini-4-argon', 'gemini-4-carbon', 'gemini-4-hydrogen', 'gemini-4-neon', 'claude-opus-5-5']);
 
 /**
  * Resolves the effective context window limit and sniffs observed compaction peaks.
- * Argon, Carbon, Hydrogen, and Orchestrator (Argon-backed) default to 512K; exceeding any tier steps up cleanly.
+ * Argon, Carbon, Hydrogen, Neon, Claude Opus 5.5, and Argon-backed Orchestrator default to 512K; exceeding any tier steps up cleanly.
  */
 function resolveContextLimit({ modelName = '', usages = [], promptTokens = 0 } = {}) {
   const official = resolveOfficialModelId(modelName);
@@ -1405,7 +1428,7 @@ function resolveContextLimit({ modelName = '', usages = [], promptTokens = 0 } =
   return { limitTokens, observedCompactionTokens };
 }
 
-function buildDshTelemetry({
+function buildSessionTelemetry({
   sessionId,
   isStreaming = false,
   perf,
@@ -1494,7 +1517,7 @@ function buildSessionSummary(sId, metrics, isRunning) {
   const turnCalls = metrics.turnCalls || 0;
   const turnTokens = metrics.turnTokens;
   const perf = metrics.perf || { rounds: 1, steps: 0, tps: null, samplesCount: 0, lastRequestTps: null, modelDurationSec: 0, toolDurationSec: 0, ttftSec: null };
-  const dshTelemetry = buildDshTelemetry({
+  const telemetry = buildSessionTelemetry({
     sessionId: sId,
     isStreaming: isRunning,
     perf,
@@ -1534,7 +1557,7 @@ function buildSessionSummary(sId, metrics, isRunning) {
     modelDurationSec: perf.modelDurationSec,
     toolDurationSec: perf.toolDurationSec,
     ttftSec: perf.ttftSec,
-    dshTelemetry,
+    telemetry,
   };
 }
 
@@ -1564,7 +1587,7 @@ module.exports = {
   readSingleSession,
   extractSessionPerformanceMetrics,
   resolveContextLimit,
-  buildDshTelemetry,
+  buildSessionTelemetry,
   pairGenerationDates,
   decodeVarint,
   parseProtoFields,

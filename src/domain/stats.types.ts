@@ -77,7 +77,7 @@ export interface SessionSummary {
   modelDurationSec?: number;
   toolDurationSec?: number;
   ttftSec?: number | null;
-  dshTelemetry?: import('../types/dsh-telemetry').DshTelemetryData;
+  telemetry?: import('../types/telemetry').SessionTelemetry;
   /** Estimated session spend in USD (Σ per-generation cost), rounded to 4 decimals. */
   costUsd?: number;
 }
@@ -90,6 +90,8 @@ export interface ProxyTargetInfo {
   isRunning: boolean;
   dllExists: boolean;
   configExists: boolean;
+  dllLoaded?: boolean | null;
+  logDir?: string | null;
   config?: {
     proxy?: {
       type: 'socks5' | 'http';
@@ -105,6 +107,8 @@ export interface ProxyTargetInfo {
 export interface ProxyStatusSummary {
   desktop: ProxyTargetInfo;
   ide: ProxyTargetInfo;
+  logDir?: string | null;
+  pluginVersion?: string | null;
 }
 
 /**

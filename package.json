@@ -34,7 +34,7 @@
     "mock:data": "node scripts/generate-mock-data.cjs",
     "test:integration": "node scripts/test-integration.cjs",
     "test:ide": "node hosts/antigravity-ide/tests/test-loader.cjs && node hosts/antigravity-ide/tests/test-widgets.cjs && node hosts/antigravity-ide/tests/test-patch-ide.cjs",
-    "test": "node scripts/test-all.cjs && node scripts/test-persistent-cache.cjs && node scripts/test-subscription-pricing.cjs && node scripts/test-context-widget.cjs && node scripts/test-proxy-manager.cjs && node scripts/test-dsh-metrics.cjs && node scripts/test-dsh-components.cjs && node scripts/test-update-checker.cjs && node scripts/test-live-quota.cjs && node scripts/test-audit-fixes.cjs && node scripts/test-quota-hero-morph1.cjs && npm run test:ide"
+    "test": "node scripts/test-all.cjs && node scripts/test-persistent-cache.cjs && node scripts/test-subscription-pricing.cjs && node scripts/test-context-widget.cjs && node scripts/test-proxy-manager.cjs && node scripts/test-telemetry-metrics.cjs && node scripts/test-statusbar-components.cjs && node scripts/test-update-checker.cjs && node scripts/test-live-quota.cjs && node scripts/test-audit-fixes.cjs && node scripts/test-quota-hero-morph1.cjs && npm run test:ide"
   },
   "dependencies": {
     "react": "^19.0.0",

@@ -66,6 +66,10 @@ const en = {
 
   // Theme & Window
   switchLanguage: 'Switch language',
+  statusBarModeDetailed: 'Status Bar: Detailed',
+  statusBarModeStandard: 'Status Bar: Standard',
+  statusBarModeCompact: 'Status Bar: Compact',
+  statusBarModeToggleTitle: 'Switch status bar display mode (Detailed / Standard / Compact)',
 
   // Subscription & Quota
   subscriptionQuotaTitle: 'Subscription Quota & API Value',
@@ -87,7 +91,7 @@ const en = {
   resetAt: 'Reset time',
   selectPlan: 'Subscription Plan',
   officialRatesBadge: 'Official API Rates',
-  pricingFormulaNote: 'Prices computed from official API model rates per 1M tokens: Gemini Flash $0.75/$0.075/$3.75, Hydrogen $1.50/$0.075/$7.50, Carbon/Argon $2/$0.10/$10, 3.1 Pro $2/$0.20/$12 (<=200K) or $4/$0.40/$18 (>200K), Claude 5.5 $2-$4/$0.10-$0.20/$10-$20, Claude 4.6 $3-$5/$0.30-$0.50/$15-$25, GPT-OSS & unlisted $0',
+  pricingFormulaNote: 'Prices computed from official API model rates per 1M tokens: Gemini Flash $0.75/$0.075/$3.75, Hydrogen $1.50/$0.075/$7.50, Carbon/Argon $2/$0.10/$10, Neon $3/$0.15/$15, 3.1 Pro $2/$0.20/$12 (<=200K) or $4/$0.40/$18 (>200K), Claude 5.5 $2-$4/$0.10-$0.20/$10-$20, Claude 4.6 $3-$5/$0.30-$0.50/$15-$25, GPT-OSS & unlisted $0',
   cnyEquivalent: 'CNY Approx',
   tierFree: 'Free ($0/mo)',
   tierPro: 'Google AI Pro ($19.99/mo)',
@@ -101,14 +105,22 @@ const en = {
   perMonth: '/mo',
   netSavingsBooked: 'net value saved',
 
-  // Transparent Proxy
-  proxyTitle: 'Transparent Proxy (No TUN)',
+  // Local Process Proxy
+  proxyTitle: 'Local Process Proxy',
   proxyDesktopLabel: 'Desktop Client',
   proxyIdeLabel: 'Antigravity IDE',
   proxyInstalled: 'Active',
   proxyNotInstalled: 'Inactive',
+  proxyPendingRestart: 'Restart required',
+  proxyDllMissing: 'DLL missing',
+  proxyConfigMissing: 'Config missing',
+  proxyDirectMode: 'Direct',
   proxyRunning: 'Running',
   proxyIdle: 'Idle',
+  proxyLogLabel: 'Logs',
+  proxyCopyLogPath: 'Copy',
+  proxyCopied: 'Copied',
+  proxyOpenLogDir: 'Open',
 };
 
 export const translations = {

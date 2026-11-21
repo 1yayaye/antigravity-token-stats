@@ -13,7 +13,7 @@
 - **订阅额度与价值评估**：实时捕获周/月官方配额用量与重置倒计时，按 Google 官方 API 价格反推订阅总容量与回本倍数。
 - **精准拆分**：Input、Cache Read、Thinking（思考模型消耗）、Response 独立统计。
 - **活跃看板**：GitHub 风格日度活跃热力图，支持单日下钻明细与连续打卡天数。
-- **免 TUN 进程代理**：吸收 `antigravity-proxy` 核心技术，支持桌面端与 IDE 端的透明 Winsock 代理劫持，无需管理员权限或全局 TUN 模式，自带出口 IP 限制诊断。
+- **本地进程代理**：支持桌面端与 IDE 端的进程级 Winsock 代理转发，无需管理员权限或全局 TUN 模式，自带出口 IP 限制诊断。
 - **原生集成与无损回滚**：原生集成进 `app.asar`，自动出厂备份，支持随时一键无损还原（`npm run unpatch`）。
 - **本地只读**：仅读取本机目录（`%USERPROFILE%\.gemini\antigravity`），零外发上报。
 
@@ -36,7 +36,7 @@
 
 1. 前往 [Releases 页面](https://github.com/1yayaye/antigravity-token-stats/releases) 下载最新的 `antigravity-token-stats-vX.Y.Z-setup.exe`。
 2. 直接双击运行 `antigravity-token-stats-vX.Y.Z-setup.exe`（**无需 Node.js，无需解压**）。安装器会自动探测 Antigravity 桌面端安装路径与本机运行中的代理端口（支持手动指定与连通性测试），若客户端正在运行会提示协助安全关闭并完成注入。
-3. 透明代理**默认不勾选**，需要时手动启用。点击 **安装 / 更新补丁**，完成后启动 Antigravity 客户端，进入 **Settings → Usage Stats** 即可使用。未勾选只跳过代理安装，不会移除已安装的代理。
+3. 本地进程代理**默认不勾选**，需要时手动启用。点击 **安装 / 更新补丁**，完成后启动 Antigravity 客户端，进入 **Settings → Usage Stats** 即可使用。未勾选只跳过代理安装，不会移除已安装的代理。
 > **提示**：需要卸载补丁并恢复官方原厂状态时，随时打开同一个 `.exe` 安装器，点击 **卸载 / 还原出厂** 即可一键干净卸载。
 
 #### 更新提醒
@@ -73,7 +73,7 @@ npm run launch  # 启动 Antigravity 客户端
 | `npm run launch` | 启动 Antigravity 2.0 |
 | `npm test` | 运行离线全套自动化回归测试 |
 | `npm run proxy:status` | 查看桌面端与 IDE 端的代理安装与运行状态 |
-| `npm run proxy:install` | 一键安装免 TUN 代理（`--target all/desktop/ide --port 7890`） |
+| `npm run proxy:install` | 一键安装本地进程代理（`--target all/desktop/ide --port 7890`） |
 | `npm run proxy:uninstall` | 一键无损卸载并清理代理文件 |
 | `npm run proxy:test` | 测试代理连通性与 Google 接口握手延迟 |
 | `npm run proxy:diagnose` | 扫描诊断日志中是否命中地区限制（Code 400） |

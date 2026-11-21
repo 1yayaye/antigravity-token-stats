@@ -1,7 +1,7 @@
 {
   "_build": {
     "config": "Release",
-    "date": "2026-09-01 20:44:44",
+    "date": "2026-11-17 21:37:00",
     "arch": "x64"
   },
   "child_injection_mode": "filtered",
@@ -23,9 +23,12 @@
   "diagnostics": {
     "agent_ip_probe": false
   },
-  "_version": "2.4",
-  "_comment": "Antigravity-Proxy 配置文件",
+  "_version": "2.6.3",
+  "_comment": "Local process proxy configuration",
   "log_level": "info",
+  "ui": {
+    "load_notify": "none"
+  },
   "child_injection": true,
   "proxy_rules": {
     "routing": {
@@ -46,23 +49,12 @@
   },
   "child_injection_exclude": [],
   "updates": {
-    "allow_insecure_mirrors": true,
-    "check_delay_ms": 15000,
-    "timeout_ms": 5000,
-    "enabled": false,
-    "notify_once": true,
-    "mirrors": [
-      "https://wget.la/",
-      "https://rapidgit.jjda.de5.net/",
-      "https://fastgit.cc/",
-      "https://gitproxy.mrhjx.cn/",
-      "https://github.boki.moe/",
-      "https://github.ednovas.xyz/"
-    ]
+    "enabled": false
   },
   "target_processes": [
     "agy.exe",
     "language_server.exe",
+    "language_server_windows_x64.exe",
     "language_server_windows",
     "Antigravity.exe",
     "Antigravity IDE.exe",

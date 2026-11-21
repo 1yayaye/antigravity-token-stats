@@ -65,6 +65,6 @@ module.exports = {
   STYLE_ELEMENT_ID: 'antigravity-stats-styles',
 
   // Status bar & popover container IDs
-  CONTAINER_STATUSBAR_ID: 'antigravity-dsh-statusbar-container',
-  CONTAINER_POPOVER_ID: 'antigravity-dsh-popover-container',
+  CONTAINER_STATUSBAR_ID: 'antigravity-statusbar-container',
+  CONTAINER_POPOVER_ID: 'antigravity-statusbar-popover-container',
 };

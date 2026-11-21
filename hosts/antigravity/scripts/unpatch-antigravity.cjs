@@ -114,7 +114,7 @@ function unpatch(options = {}) {
         pm = require('../../../scripts/proxy-manager.cjs');
       }
       pm.uninstallProxy('desktop');
-      log('   ✓ Removed transparent proxy files from desktop');
+      log('   ✓ Removed local proxy files from desktop');
     } catch {}
   }
 

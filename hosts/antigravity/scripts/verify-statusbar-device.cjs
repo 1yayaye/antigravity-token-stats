@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 /**
- * Real-Device Verification for DeepSeek Harness (DSH) Status Bar & Popovers
+ * Real-Device Verification for Status Bar & Popovers
  * Tests live rendering and interactivity against running Antigravity via CDP.
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
 const { findDevToolsPort } = require('./paths.cjs');
+const { CONTAINER_STATUSBAR_ID, CONTAINER_POPOVER_ID } = require('../../../src/injection-contract.cjs');
 
-async function runDshDeviceVerification() {
+async function runStatusBarDeviceVerification() {
   console.log('======================================================');
-  console.log('🎯 DSH Status Bar & Popovers Real-Device Acceptance');
+  console.log('🎯 Status Bar & Popovers Real-Device Acceptance');
   console.log('======================================================\n');
 
   const port = findDevToolsPort();
@@ -64,7 +65,7 @@ async function runDshDeviceVerification() {
               hasUnmountStatusBar: typeof api.unmountStatusBar === 'function',
               hasRefreshStatusBar: typeof api.refreshStatusBar === 'function',
               hasStats: !!window.__ANTIGRAVITY_STATS__,
-              hasStatusBar: !!document.getElementById('dsh-pill-performance'),
+              hasStatusBar: !!document.getElementById('statusbar-pill-performance'),
             };
           })()`,
           returnByValue: true
@@ -78,7 +79,7 @@ async function runDshDeviceVerification() {
           for (let i = 0; i < 40; i++) {
             await new Promise(r => setTimeout(r, 500));
             const ready = await sendCommand('Runtime.evaluate', {
-              expression: `!!document.getElementById('dsh-pill-performance')`,
+              expression: `!!document.getElementById('statusbar-pill-performance')`,
               returnByValue: true
             }).catch(() => false);
             if (ready) {
@@ -115,11 +116,11 @@ async function runDshDeviceVerification() {
 
         const statusBarDOM = await sendCommand('Runtime.evaluate', {
           expression: `(() => {
-            const container = document.getElementById('antigravity-dsh-statusbar-container');
-            const speedoPill = document.getElementById('dsh-pill-performance') || document.getElementById('dsh-pill-speedometer');
-            const usagePill = document.getElementById('dsh-pill-usage');
+            const container = document.getElementById('${CONTAINER_STATUSBAR_ID}');
+            const speedoPill = document.getElementById('statusbar-pill-performance');
+            const usagePill = document.getElementById('statusbar-pill-usage');
             const contextPillWrap = document.getElementById('antigravity-context-usage-pill');
-            const contextPillBtn = document.getElementById('dsh-pill-context');
+            const contextPillBtn = document.getElementById('statusbar-pill-context');
 
             return {
               containerFound: !!container,
@@ -137,14 +138,14 @@ async function runDshDeviceVerification() {
         });
         console.log('✓ Status Bar DOM Verification:', statusBarDOM);
         if (!statusBarDOM.containerFound || !statusBarDOM.speedoFound || !statusBarDOM.usageFound || !statusBarDOM.contextPillBtnFound) {
-          throw new Error('DSH Status Bar or one of its 3 pills not found in DOM!');
+          throw new Error('Status Bar or one of its 3 pills not found in DOM!');
         }
 
         // Step 3: Test Speedometer Pill Popover (Session Stats)
         console.log('\n--- [Step 3: Speedometer Pill Hover -> Session Stats Popover] ---');
         await sendCommand('Runtime.evaluate', {
           expression: `(() => {
-            const btn = document.getElementById('dsh-pill-performance') || document.getElementById('dsh-pill-speedometer');
+            const btn = document.getElementById('statusbar-pill-performance');
             if (btn) {
               btn.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
               btn.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
@@ -159,7 +160,7 @@ async function runDshDeviceVerification() {
             if (!popover) return { found: false };
             const text = popover.innerText;
             // Clean up hover
-            const btn = document.getElementById('dsh-pill-performance') || document.getElementById('dsh-pill-speedometer');
+            const btn = document.getElementById('statusbar-pill-performance');
             if (btn) {
               btn.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
               btn.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
@@ -185,7 +186,7 @@ async function runDshDeviceVerification() {
         console.log('\n--- [Step 4: Usage Pill Hover -> Token Usage Popover] ---');
         await sendCommand('Runtime.evaluate', {
           expression: `(() => {
-            const btn = document.getElementById('dsh-pill-usage');
+            const btn = document.getElementById('statusbar-pill-usage');
             if (btn) {
               btn.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
               btn.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
@@ -200,7 +201,7 @@ async function runDshDeviceVerification() {
             if (!popover) return { found: false };
             const text = popover.innerText;
             // Clean up hover
-            const btn = document.getElementById('dsh-pill-usage');
+            const btn = document.getElementById('statusbar-pill-usage');
             if (btn) {
               btn.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
               btn.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
@@ -227,7 +228,7 @@ async function runDshDeviceVerification() {
         console.log('\n--- [Step 5: Context Pill Hover -> Context Usage Popover] ---');
         await sendCommand('Runtime.evaluate', {
           expression: `(() => {
-            const btn = document.getElementById('dsh-pill-context');
+            const btn = document.getElementById('statusbar-pill-context');
             if (btn) {
               btn.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
               btn.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
@@ -242,7 +243,7 @@ async function runDshDeviceVerification() {
             if (!popover) return { found: false };
             const text = popover.innerText;
             // Clean up hover
-            const btn = document.getElementById('dsh-pill-context');
+            const btn = document.getElementById('statusbar-pill-context');
             if (btn) {
               btn.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
               btn.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
@@ -269,12 +270,12 @@ async function runDshDeviceVerification() {
         console.log('\n--- [Step 6: Popover Boundary & Portal Check] ---');
         const portalInfo = await sendCommand('Runtime.evaluate', {
           expression: `(() => {
-            const btn = document.getElementById('dsh-pill-performance') || document.getElementById('dsh-pill-speedometer');
+            const btn = document.getElementById('statusbar-pill-performance');
             if (btn) {
               btn.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
               btn.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
             }
-            const popoverContainer = document.getElementById('antigravity-dsh-popover-container');
+            const popoverContainer = document.getElementById('${CONTAINER_POPOVER_ID}');
             const isDirectChildOfBody = popoverContainer?.parentElement === document.body;
             const rect = popoverContainer?.getBoundingClientRect();
             if (btn) {
@@ -298,7 +299,7 @@ async function runDshDeviceVerification() {
         }
 
         console.log('\n======================================================');
-        console.log('🎯 ALL 6 DSH ACCEPTANCE STEPS COMPLETED WITH 100% SUCCESS!');
+        console.log('🎯 ALL 6 STATUSBAR ACCEPTANCE STEPS COMPLETED WITH 100% SUCCESS!');
         console.log('======================================================');
         clearTimeout(timer);
         ws.close();
@@ -317,7 +318,7 @@ async function runDshDeviceVerification() {
   });
 }
 
-runDshDeviceVerification().catch(err => {
-  console.error('\n❌ Real-device DSH acceptance failed:', err.message);
+runStatusBarDeviceVerification().catch(err => {
+  console.error('\n❌ Real-device status bar acceptance failed:', err.message);
   process.exit(1);
 });

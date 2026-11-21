@@ -305,7 +305,7 @@ try {
         const port = Number(options.proxyPort || 7890);
         const type = options.proxyType || 'socks5';
         proxyManager.installProxy('desktop', { port, type, skipProcessCheck: true });
-        log(`   ✓ Transparent proxy deployed alongside Antigravity.exe (${type}://127.0.0.1:${port})`);
+        log(`   ✓ Local process proxy deployed alongside Antigravity.exe (${type}://127.0.0.1:${port})`);
       } catch (err) {
         log(`   ⚠️ Proxy installation skipped: ${err.message}`);
       }

@@ -425,7 +425,7 @@ function encodeFieldVarint(fieldNum, value) {
       },
       './quota': { startQuotaUpdates: () => {} },
       '../../../src/components/stats/StatsView': { StatsView: () => null },
-      '../../../src/components/dsh/DshStatusBar': { DshStatusBar: () => null },
+      '../../../src/components/statusbar/StatusBar': { StatusBar: () => null },
       '../../../src/services/stats-service': {
         detectAntigravityTheme: () => ({ mode: 'dark' }),
         syncThemeToElement: () => {},
@@ -475,7 +475,7 @@ function encodeFieldVarint(fieldNum, value) {
   }
 }
 
-// 9. standalone.tsx injects independent DshStatusBar widgets into every split pane with per-pane session resolution
+// 9. standalone.tsx injects independent StatusBar widgets into every split pane with per-pane session resolution
 {
   const savedWindow = global.window;
   const savedDocument = global.document;
@@ -635,7 +635,7 @@ function encodeFieldVarint(fieldNum, value) {
       },
       './quota': { startQuotaUpdates: () => () => {} },
       '../../../src/components/stats/StatsView': { StatsView: () => null },
-      '../../../src/components/dsh/DshStatusBar': { DshStatusBar: (props) => props },
+      '../../../src/components/statusbar/StatusBar': { StatusBar: (props) => props },
       '../../../src/services/stats-service': {
         detectAntigravityTheme: () => 'dark',
         syncThemeToElement: () => {},
@@ -647,17 +647,17 @@ function encodeFieldVarint(fieldNum, value) {
       'react-dom/client': {
         createRoot: (container) => ({
           render: (node) => {
-            const findDsh = (vnode) => {
+            const findStatusBar = (vnode) => {
               if (!vnode || typeof vnode !== 'object') return null;
-              if (typeof vnode.type === 'function' && vnode.type.name === 'DshStatusBar') return vnode.props;
+              if (typeof vnode.type === 'function' && vnode.type.name === 'StatusBar') return vnode.props;
               const kids = vnode.props?.children || [];
               for (const k of Array.isArray(kids) ? kids : [kids]) {
-                const hit = findDsh(k);
+                const hit = findStatusBar(k);
                 if (hit) return hit;
               }
               return null;
             };
-            renderedProps.set(container, findDsh(node));
+            renderedProps.set(container, findStatusBar(node));
           },
           unmount: () => {
             unmountedContainers.push(container);
@@ -684,12 +684,12 @@ function encodeFieldVarint(fieldNum, value) {
           'session-left': {
             modelName: 'gemini-3.8-flash',
             tps: 111,
-            dshTelemetry: makeTelemetry('session-left', 64000, 111),
+            telemetry: makeTelemetry('session-left', 64000, 111),
           },
           'session-right': {
             modelName: 'gemini-3.8-flash',
             tps: 222,
-            dshTelemetry: makeTelemetry('session-right', 128000, 222),
+            telemetry: makeTelemetry('session-right', 128000, 222),
           },
         },
       },
@@ -702,9 +702,9 @@ function encodeFieldVarint(fieldNum, value) {
       const leftSlot = leftPane.footerActions.children[0];
       const rightSlot = rightPane.footerActions.children[0];
       const emptySlot = emptyPane.footerActions.children[0];
-      assert.strictEqual(leftSlot.getAttribute('data-dsh-statusbar'), 'true');
-      assert.strictEqual(rightSlot.getAttribute('data-dsh-statusbar'), 'true');
-      assert.strictEqual(emptySlot.getAttribute('data-dsh-statusbar'), 'true');
+      assert.strictEqual(leftSlot.getAttribute('data-ag-statusbar'), 'true');
+      assert.strictEqual(rightSlot.getAttribute('data-ag-statusbar'), 'true');
+      assert.strictEqual(emptySlot.getAttribute('data-ag-statusbar'), 'true');
       assert.strictEqual(leftPane.footerActions.children[1], leftPane.turboBtn, 'Slot must be inserted before turboBtn in left pane');
       assert.strictEqual(rightPane.footerActions.children[1], rightPane.turboBtn, 'Slot must be inserted before turboBtn in right pane');
       assert.strictEqual(emptyPane.footerActions.children[1], emptyPane.turboBtn, 'Slot must be inserted before turboBtn in empty pane');
@@ -743,7 +743,7 @@ function encodeFieldVarint(fieldNum, value) {
 
       console.log('PASS: standalone.tsx injects independent split-pane status bars, isolates streaming, and prunes closed panes');
     } finally {
-      standaloneMod.unmountDshStatusBar();
+      standaloneMod.unmountStatusBar();
     }
   } finally {
     if (savedWindow === undefined) delete global.window; else global.window = savedWindow;

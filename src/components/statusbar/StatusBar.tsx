@@ -1,27 +1,87 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
-import type { DshTelemetryData } from '../../types/dsh-telemetry';
-import { formatCompactTokens } from '../../utils/dsh-format';
+import type { SessionTelemetry } from '../../types/telemetry';
+import { formatCompactTokens } from '../../utils/telemetry-format';
+import { CONTAINER_POPOVER_ID } from '../../injection-contract.cjs';
 import { SessionStatsPopover } from './SessionStatsPopover';
 import { TokenUsagePopover } from './TokenUsagePopover';
 import { ContextUsagePopover } from './ContextUsagePopover';
 
 // Visual style overrides probed from the host client at injection time so the pills
 // match the surrounding Antigravity controls. Every field is optional: when probing
-// fails the component falls back to its own --dsh-* tokens from index.css.
-export interface DshHostStyle {
+// fails the component falls back to its own --ag-sb-* tokens from index.css.
+export interface StatusBarHostStyle {
   textColor?: string;
   fontSize?: string;
   fontWeight?: string;
   accentColor?: string;
 }
 
-export interface DshStatusBarProps {
-  telemetry: DshTelemetryData;
+export type StatusBarDisplayMode = 'detailed' | 'standard' | 'compact';
+export const STATUSBAR_DISPLAY_MODE_STORAGE_KEY = 'antigravity-statusbar-display-mode';
+
+const DISPLAY_MODE_ORDER: readonly StatusBarDisplayMode[] = ['detailed', 'standard', 'compact'];
+const displayModeListeners = new Set<(mode: StatusBarDisplayMode) => void>();
+
+function normalizeStatusBarDisplayMode(raw: string | null | undefined): StatusBarDisplayMode {
+  return raw === 'standard' || raw === 'compact' ? raw : 'detailed';
+}
+
+export function getStatusBarDisplayMode(): StatusBarDisplayMode {
+  if (typeof localStorage === 'undefined') return 'detailed';
+  try {
+    return normalizeStatusBarDisplayMode(localStorage.getItem(STATUSBAR_DISPLAY_MODE_STORAGE_KEY));
+  } catch {
+    return 'detailed';
+  }
+}
+
+export function setStatusBarDisplayMode(mode: StatusBarDisplayMode): void {
+  const normalized = normalizeStatusBarDisplayMode(mode);
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(STATUSBAR_DISPLAY_MODE_STORAGE_KEY, normalized);
+    } catch {}
+  }
+  displayModeListeners.forEach((listener) => listener(normalized));
+}
+
+export function useStatusBarDisplayMode(overrideMode?: StatusBarDisplayMode): {
+  displayMode: StatusBarDisplayMode;
+  setDisplayMode: (mode: StatusBarDisplayMode) => void;
+  toggleDisplayMode: () => void;
+} {
+  const [storedMode, setStoredMode] = useState<StatusBarDisplayMode>(getStatusBarDisplayMode);
+
+  useEffect(() => {
+    setStoredMode(getStatusBarDisplayMode());
+    const listener = (next: StatusBarDisplayMode) => setStoredMode(next);
+    displayModeListeners.add(listener);
+    return () => {
+      displayModeListeners.delete(listener);
+    };
+  }, []);
+
+  const effectiveMode = overrideMode ?? storedMode;
+  const toggleDisplayMode = () => {
+    const nextIndex = (DISPLAY_MODE_ORDER.indexOf(effectiveMode) + 1) % DISPLAY_MODE_ORDER.length;
+    setStatusBarDisplayMode(DISPLAY_MODE_ORDER[nextIndex]);
+  };
+
+  return {
+    displayMode: effectiveMode,
+    setDisplayMode: setStatusBarDisplayMode,
+    toggleDisplayMode,
+  };
+}
+
+export interface StatusBarProps {
+  telemetry: SessionTelemetry;
   lang?: 'zh' | 'en';
   theme?: 'dark' | 'light';
   liveTps?: number | null;
-  hostStyle?: DshHostStyle;
+  hostStyle?: StatusBarHostStyle;
+  displayMode?: StatusBarDisplayMode;
 }
 
 type PopoverKind = 'session' | 'token' | 'context';
@@ -34,15 +94,19 @@ const POPOVER_GAP_PX = 2;
 const POPOVER_BRIDGE_PX = 6;
 const POPOVER_HIDE_DELAY_MS = 150;
 
-export const DshStatusBar: React.FC<DshStatusBarProps> = ({
+export const StatusBar: React.FC<StatusBarProps> = ({
   telemetry,
   lang = 'zh',
   theme = 'dark',
   liveTps = null,
   hostStyle,
+  displayMode,
 }) => {
   const isZh = lang === 'zh';
   const { session, token, context, isStreaming } = telemetry;
+  const { displayMode: effectiveMode, toggleDisplayMode } = useStatusBarDisplayMode(displayMode);
+  const isCompact = effectiveMode === 'compact';
+  const isStandard = effectiveMode === 'standard';
 
   const [activePopover, setActivePopover] = useState<PopoverKind | null>(null);
   const [popoverPos, setPopoverPos] = useState<{ bottom: number; left?: number; right?: number }>({ bottom: 40 });
@@ -151,6 +215,13 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
   }, [activePopover]);
 
   useEffect(() => {
+    if (isCompact && (activePopover === 'session' || activePopover === 'token')) {
+      setPortalVisible(false);
+      setActivePopover(null);
+    }
+  }, [isCompact, activePopover]);
+
+  useEffect(() => {
     return () => {
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     };
@@ -159,15 +230,21 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
   // Performance Text
   const roundsStepsText = `${session.rounds} ${isZh ? '轮' : 'rounds'} ${session.steps} ${isZh ? '步' : 'steps'}`;
   const currentTps = liveTps !== null ? liveTps : session.tps;
-  const perfText = currentTps !== null
-    ? `${roundsStepsText} · ${currentTps} tok/s`
-    : roundsStepsText;
+  const standardPerfText = currentTps !== null ? `${currentTps} tok/s` : '-- tok/s';
+  const perfText = isStandard
+    ? standardPerfText
+    : currentTps !== null
+      ? `${roundsStepsText} · ${currentTps} tok/s`
+      : roundsStepsText;
 
   // Usage Text
   const compactTotal = formatCompactTokens(token.totalTokens);
-  const usageText = token.cacheHitRatePct !== null
-    ? `${compactTotal} tok · ${isZh ? '缓存命中' : 'Cache'} ${token.cacheHitRatePct}%`
-    : `${compactTotal} tok`;
+  const standardUsageText = token.cacheHitRatePct !== null ? `${token.cacheHitRatePct}%` : '--%';
+  const usageText = isStandard
+    ? standardUsageText
+    : token.cacheHitRatePct !== null
+      ? `${compactTotal} tok · ${isZh ? '缓存命中' : 'Cache'} ${token.cacheHitRatePct}%`
+      : `${compactTotal} tok`;
 
   // Token settle micro-animation on count update
   const [isTokenSettling, setIsTokenSettling] = useState(false);
@@ -188,23 +265,23 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
   const offset = circumference - (Math.min(100, Math.max(0, context.usedPct)) / 100) * circumference;
 
   const usedPct = Math.min(100, Math.max(0, context.usedPct));
-  let donutStroke = isStreaming ? 'var(--primary, var(--dsh-accent, #2F71E3))' : 'var(--dsh-donut-fill, #e4e4e7)';
-  let donutAnimClass = isStreaming ? 'dsh-donut-pulse' : '';
+  let donutStroke = isStreaming ? 'var(--primary, var(--ag-sb-accent, #2F71E3))' : 'var(--ag-sb-donut-fill, #e4e4e7)';
+  let donutAnimClass = isStreaming ? 'sb-donut-pulse' : '';
   if (usedPct >= 85) {
     donutStroke = '#ef4444';
-    donutAnimClass = 'dsh-donut-danger-pulse';
+    donutAnimClass = 'sb-donut-danger-pulse';
   } else if (usedPct >= 70) {
     donutStroke = '#f59e0b';
-    if (isStreaming) donutAnimClass = 'dsh-donut-pulse';
+    if (isStreaming) donutAnimClass = 'sb-donut-pulse';
   }
 
   const probeVars = {
-    ...(hostStyle?.textColor ? { '--dsh-text-secondary': hostStyle.textColor } : {}),
-    ...(hostStyle?.accentColor ? { '--dsh-accent': hostStyle.accentColor } : {}),
+    ...(hostStyle?.textColor ? { '--ag-sb-text-secondary': hostStyle.textColor } : {}),
+    ...(hostStyle?.accentColor ? { '--ag-sb-accent': hostStyle.accentColor } : {}),
   } as React.CSSProperties;
   const rootStyle: React.CSSProperties = {
     ...probeVars,
-    color: 'var(--dsh-text-secondary, #a1a1aa)',
+    color: 'var(--ag-sb-text-secondary, #a1a1aa)',
     ...(hostStyle?.fontSize ? { fontSize: hostStyle.fontSize } : {}),
   };
   const pillTextStyle: React.CSSProperties = hostStyle?.fontWeight
@@ -214,20 +291,23 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
   return (
     <div
       ref={rootRef}
-      id="antigravity-dsh-statusbar-inner"
-      className="antigravity-dsh-statusbar inline-flex items-center gap-2 h-7 text-xs font-sans select-none bg-transparent transition-colors"
+      id="antigravity-statusbar-inner"
+      data-display-mode={effectiveMode}
+      className={`antigravity-statusbar inline-flex items-center gap-2 h-7 text-xs font-sans select-none bg-transparent transition-colors${isCompact ? ' statusbar-compact' : isStandard ? ' statusbar-standard' : ''}`}
       style={rootStyle}
     >
       {/* 1. Performance Pill */}
       <button
-        id="dsh-pill-performance"
+        id="statusbar-pill-performance"
         ref={perfBtnRef}
         type="button"
         onMouseEnter={() => handlePillEnter('session', perfBtnRef.current)}
         onMouseLeave={scheduleHide}
         onClick={() => handlePillClick('session')}
-        className="dsh-pill dsh-pill-secondary flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
+        className="sb-pill sb-pill-secondary flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
         aria-label={`${isZh ? '性能统计' : 'Session stats'}: ${perfText}`}
+        aria-hidden={isCompact ? true : undefined}
+        tabIndex={isCompact ? -1 : undefined}
       >
         <svg
           width="13"
@@ -238,19 +318,23 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className={isStreaming ? 'dsh-icon-pulse shrink-0' : 'shrink-0 opacity-80'}
-          style={{ color: isStreaming ? 'var(--primary, var(--dsh-accent, #2F71E3))' : undefined }}
+          className={isStreaming ? 'sb-icon-pulse shrink-0' : 'shrink-0 opacity-80'}
+          style={{ color: isStreaming ? 'var(--primary, var(--ag-sb-accent, #2F71E3))' : undefined }}
         >
           <path d="m12 14 4-4" />
           <path d="M3.34 19a10 10 0 1 1 17.32 0" />
         </svg>
-        {currentTps !== null ? (
+        {isStandard ? (
+          <span className="sb-pill-compact-keep font-medium whitespace-nowrap text-xs" style={pillTextStyle}>
+            {standardPerfText}
+          </span>
+        ) : currentTps !== null ? (
           <span className="font-medium whitespace-nowrap text-xs" style={pillTextStyle}>
-            <span className="dsh-pill-full-only">{`${roundsStepsText} · `}</span>
-            <span className="dsh-pill-compact-keep">{`${currentTps} tok/s`}</span>
+            <span className="sb-pill-full-only">{`${roundsStepsText} · `}</span>
+            <span className="sb-pill-compact-keep">{`${currentTps} tok/s`}</span>
           </span>
         ) : (
-          <span className="dsh-pill-full-only font-medium whitespace-nowrap text-xs" style={pillTextStyle}>
+          <span className="sb-pill-full-only font-medium whitespace-nowrap text-xs" style={pillTextStyle}>
             {roundsStepsText}
           </span>
         )}
@@ -258,14 +342,16 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
 
       {/* 2. Usage Pill */}
       <button
-        id="dsh-pill-usage"
+        id="statusbar-pill-usage"
         ref={usageBtnRef}
         type="button"
         onMouseEnter={() => handlePillEnter('token', usageBtnRef.current)}
         onMouseLeave={scheduleHide}
         onClick={() => handlePillClick('token')}
-        className="dsh-pill dsh-pill-secondary flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
+        className="sb-pill sb-pill-secondary flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
         aria-label={`${isZh ? '用量统计' : 'Token usage'}: ${usageText}`}
+        aria-hidden={isCompact ? true : undefined}
+        tabIndex={isCompact ? -1 : undefined}
       >
         <svg
           width="13"
@@ -276,24 +362,31 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className={isStreaming ? 'dsh-icon-pulse shrink-0' : 'shrink-0 opacity-80'}
-          style={{ color: isStreaming ? 'var(--primary, var(--dsh-accent, #2F71E3))' : undefined }}
+          className={isStreaming ? 'sb-icon-pulse shrink-0' : 'shrink-0 opacity-80'}
+          style={{ color: isStreaming ? 'var(--primary, var(--ag-sb-accent, #2F71E3))' : undefined }}
         >
           <ellipse cx="12" cy="5" rx="9" ry="3" />
           <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
           <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
         </svg>
-        {token.cacheHitRatePct !== null ? (
+        {isStandard ? (
           <span
-            className={`font-medium whitespace-nowrap text-xs ${isTokenSettling ? 'dsh-token-settle' : ''}`}
+            className={`sb-pill-compact-keep font-medium whitespace-nowrap text-xs ${isTokenSettling ? 'sb-token-settle' : ''}`}
             style={pillTextStyle}
           >
-            <span className="dsh-pill-full-only">{`${compactTotal} tok · ${isZh ? '缓存命中 ' : 'Cache '}`}</span>
-            <span className="dsh-pill-compact-keep">{`${token.cacheHitRatePct}%`}</span>
+            {standardUsageText}
+          </span>
+        ) : token.cacheHitRatePct !== null ? (
+          <span
+            className={`font-medium whitespace-nowrap text-xs ${isTokenSettling ? 'sb-token-settle' : ''}`}
+            style={pillTextStyle}
+          >
+            <span className="sb-pill-full-only">{`${compactTotal} tok · ${isZh ? '缓存命中 ' : 'Cache '}`}</span>
+            <span className="sb-pill-compact-keep">{`${token.cacheHitRatePct}%`}</span>
           </span>
         ) : (
           <span
-            className={`dsh-pill-full-only font-medium whitespace-nowrap text-xs ${isTokenSettling ? 'dsh-token-settle' : ''}`}
+            className={`sb-pill-full-only font-medium whitespace-nowrap text-xs ${isTokenSettling ? 'sb-token-settle' : ''}`}
             style={pillTextStyle}
           >
             {`${compactTotal} tok`}
@@ -301,16 +394,16 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
         )}
       </button>
 
-      {/* 3. Context Donut Pill (with backward-compatible id antigravity-context-usage-pill) */}
+      {/* 3. Context Donut Pill */}
       <div id="antigravity-context-usage-pill" className="inline-flex items-center">
         <button
-          id="dsh-pill-context"
+          id="statusbar-pill-context"
           ref={contextBtnRef}
           type="button"
           onMouseEnter={() => handlePillEnter('context', contextBtnRef.current)}
           onMouseLeave={scheduleHide}
           onClick={() => handlePillClick('context')}
-          className="dsh-pill flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
+          className="sb-pill flex items-center gap-1.5 h-7 px-2.5 py-0.5 rounded-full transition-all outline-none border border-transparent active:scale-[0.98] bg-transparent cursor-pointer"
           aria-label={`${isZh ? '上下文已用' : 'Context used'}: ${context.usedPct}%`}
         >
           <div className="relative w-[13px] h-[13px] flex items-center justify-center shrink-0">
@@ -319,7 +412,7 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
                 cx="8"
                 cy="8"
                 r="6"
-                stroke="var(--dsh-donut-track, rgba(255, 255, 255, 0.12))"
+                stroke="var(--ag-sb-donut-track, rgba(255, 255, 255, 0.12))"
                 strokeWidth="2"
                 fill="none"
               />
@@ -353,8 +446,8 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
       {typeof document !== 'undefined' && activePopover && ReactDOM.createPortal(
         <div
           ref={portalRef}
-          id="antigravity-dsh-popover-container"
-          className={`antigravity-dsh-container ${theme}`}
+          id={CONTAINER_POPOVER_ID}
+          className={`antigravity-statusbar-container ${theme}`}
           style={{
             position: 'fixed',
             bottom: `${popoverPos.bottom}px`,
@@ -377,7 +470,14 @@ export const DshStatusBar: React.FC<DshStatusBarProps> = ({
             />
           )}
           {activePopover === 'token' && <TokenUsagePopover metrics={token} lang={lang} />}
-          {activePopover === 'context' && <ContextUsagePopover metrics={context} lang={lang} />}
+          {activePopover === 'context' && (
+            <ContextUsagePopover
+              metrics={context}
+              lang={lang}
+              displayMode={effectiveMode}
+              onToggleDisplayMode={toggleDisplayMode}
+            />
+          )}
         </div>,
         document.body
       )}

@@ -42,20 +42,54 @@ namespace AntiTokenSetup.Services
 
             if (needsDllCopy)
             {
-                if (File.Exists(targetDll))
+                string tempDll = $"{targetDll}.tmp-{Guid.NewGuid():N}";
+                try
                 {
-                    var attrs = File.GetAttributes(targetDll);
-                    if ((attrs & FileAttributes.ReadOnly) != 0)
+                    File.WriteAllBytes(tempDll, embeddedDll);
+                    if (!string.Equals(EmbeddedAssets.ComputeFileSha256Hex(tempDll), embeddedHash, StringComparison.Ordinal))
                     {
-                        File.SetAttributes(targetDll, attrs & ~FileAttributes.ReadOnly);
+                        throw new IOException("SHA256 verification failed while staging version.dll.");
+                    }
+                    AsarPatcher.ReplaceFileAtomic(tempDll, targetDll);
+                }
+                finally
+                {
+                    if (File.Exists(tempDll))
+                    {
+                        try { File.Delete(tempDll); } catch { }
                     }
                 }
-                File.WriteAllBytes(targetDll, embeddedDll);
                 log?.Invoke($"   ✓ Deployed version.dll -> {targetDll}");
             }
 
             string templateJson = EmbeddedAssets.ReadText("proxy-config-template.json");
-            var config = JsonHelper.DeserializeObject(templateJson);
+            var templateConfig = JsonHelper.DeserializeObject(templateJson);
+            string targetConfig = Path.Combine(appRootDir, "config.json");
+
+            System.Collections.Generic.Dictionary<string, object> config = null;
+            if (File.Exists(targetConfig))
+            {
+                try
+                {
+                    var existing = JsonHelper.DeserializeObject(File.ReadAllText(targetConfig, Encoding.UTF8));
+                    if (existing != null && existing.Count > 0)
+                    {
+                        config = existing;
+                        config["_managed_by"] = JsonHelper.GetString(templateConfig, "_managed_by", "antigravity-token-stats");
+                        string templateVersion = JsonHelper.GetString(templateConfig, "_version");
+                        if (!string.IsNullOrEmpty(templateVersion))
+                        {
+                            config["_version"] = templateVersion;
+                        }
+                    }
+                }
+                catch { }
+            }
+            if (config == null)
+            {
+                config = templateConfig;
+            }
+
             var proxyObj = JsonHelper.GetObject(config, "proxy");
             if (proxyObj == null)
             {
@@ -66,8 +100,19 @@ namespace AntiTokenSetup.Services
             proxyObj["host"] = normalizedHost;
             proxyObj["port"] = port;
 
-            string targetConfig = Path.Combine(appRootDir, "config.json");
-            File.WriteAllText(targetConfig, JsonHelper.SerializePretty(config), Utf8NoBom);
+            string tempConfig = $"{targetConfig}.tmp-{Guid.NewGuid():N}";
+            try
+            {
+                File.WriteAllText(tempConfig, JsonHelper.SerializePretty(config), Utf8NoBom);
+                AsarPatcher.ReplaceFileAtomic(tempConfig, targetConfig);
+            }
+            finally
+            {
+                if (File.Exists(tempConfig))
+                {
+                    try { File.Delete(tempConfig); } catch { }
+                }
+            }
             log?.Invoke($"   ✓ Wrote proxy config ({normalizedType}://{normalizedHost}:{port}) -> {targetConfig}");
         }
 

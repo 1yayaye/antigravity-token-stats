@@ -1,5 +1,5 @@
 /**
- * DeepSeek Harness Telemetry Metrics Test Suite (M1 Verification)
+ * Session Telemetry Metrics Test Suite (M1 Verification)
  */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -8,11 +8,11 @@ const path = require('node:path');
 const {
   readSingleSession,
   extractSessionPerformanceMetrics,
-  buildDshTelemetry,
+  buildSessionTelemetry,
   computeStats,
 } = require('./aggregate-stats.cjs');
 
-console.log('=== DeepSeek Harness Telemetry Metrics Test Suite ===');
+console.log('=== Session Telemetry Metrics Test Suite ===');
 
 // Helper to construct synthetic protobuf timestamp: Tag num -> { 1: seconds, 2: nanos }
 function makeTimestampBuf(tagNum, seconds, nanos = 0) {
@@ -114,11 +114,11 @@ if (fs.existsSync(dir)) {
     if (session.ttftSec !== null) {
       assert(typeof session.ttftSec === 'number' && session.ttftSec > 0 && session.ttftSec <= 300, `ttftSec should be between 0 and 300s, got ${session.ttftSec}`);
     }
-    assert(session.dshTelemetry, 'dshTelemetry should be present');
-    assert.strictEqual(session.dshTelemetry.sessionId, sId);
-    assert.strictEqual(typeof session.dshTelemetry.session.rounds, 'number');
-    assert.strictEqual(typeof session.dshTelemetry.token.totalTokens, 'number');
-    assert.strictEqual(typeof session.dshTelemetry.context.usedTokens, 'number');
+    assert(session.telemetry, 'telemetry should be present');
+    assert.strictEqual(session.telemetry.sessionId, sId);
+    assert.strictEqual(typeof session.telemetry.session.rounds, 'number');
+    assert.strictEqual(typeof session.telemetry.token.totalTokens, 'number');
+    assert.strictEqual(typeof session.telemetry.context.usedTokens, 'number');
     console.log(`PASS: Real session metrics verified: { rounds: ${session.rounds}, steps: ${session.steps}, modelDuration: ${session.modelDurationSec.toFixed(2)}s, toolDuration: ${session.toolDurationSec.toFixed(2)}s, ttft: ${session.ttftSec ? session.ttftSec.toFixed(2) + 's' : 'null'}, tps: ${session.tps} }`);
   }
 } else {
@@ -256,14 +256,14 @@ console.log('\n--- Test 4: Tool Duration 180s Cap & Text-only TPS ---');
 }
 
 // -------------------------------------------------------------
-// Test 5: Context Breakdown & Telemetry Packaging (buildDshTelemetry)
+// Test 5: Context Breakdown & Telemetry Packaging (buildSessionTelemetry)
 // -------------------------------------------------------------
 console.log('\n--- Test 5: Context Breakdown & Telemetry Packaging ---');
 {
   const perf = { rounds: 2, steps: 78, tps: 190, modelDurationSec: 411, toolDurationSec: 71, ttftSec: 2.9 };
 
   // Case A: Large session (72.4K promptTokens >= 16.5K baseline)
-  const tLarge = buildDshTelemetry({
+  const tLarge = buildSessionTelemetry({
     sessionId: 'session-large',
     isStreaming: false,
     perf,
@@ -280,7 +280,7 @@ console.log('\n--- Test 5: Context Breakdown & Telemetry Packaging ---');
   assert.strictEqual(tLarge.token.cacheHitRatePct, 99); // 3699456 / (27687 + 3699456) = 99.25% -> 99% (honest rule)
 
   // Case B: Small session (8250 promptTokens < 16.5K baseline)
-  const tSmall = buildDshTelemetry({
+  const tSmall = buildSessionTelemetry({
     sessionId: 'session-small',
     isStreaming: true,
     perf,
@@ -295,7 +295,7 @@ console.log('\n--- Test 5: Context Breakdown & Telemetry Packaging ---');
   assert.strictEqual(tSmall.context.systemPromptTokens + tSmall.context.toolDefinitionTokens, 8250, 'Sum must equal promptTokens');
 
   // Case C: Empty session (0 prompt tokens)
-  const tZero = buildDshTelemetry({
+  const tZero = buildSessionTelemetry({
     sessionId: 'session-zero',
     isStreaming: false,
     perf,
@@ -313,5 +313,5 @@ console.log('\n--- Test 5: Context Breakdown & Telemetry Packaging ---');
 }
 
 console.log('\n=============================================================');
-console.log('✓ ALL DeepSeek Harness Telemetry Tests Passed Successfully!');
+console.log('✓ ALL Session Telemetry Tests Passed Successfully!');
 console.log('=============================================================');

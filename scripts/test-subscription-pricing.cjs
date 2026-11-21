@@ -88,6 +88,13 @@ assert.equal(resolveOfficialModelId('gemini-4-carbon-customtools'), 'gemini-4-ca
 assert.equal(resolveOfficialModelId('orchestrator-carbon'), 'gemini-4-carbon');
 assert.equal(classifyQuotaPool('gemini-4-carbon'), 'gemini');
 
+// Gemini 4 Neon & Neon-backed Orchestrator: $3.00 / $0.15 / $15.00 (pool: gemini)
+for (const neonVariant of ['gemini-4-neon', 'gemini-4-neon-high', 'orchestrator-neon', 'Orchestrator Gemini 4 Neon High']) {
+  assert.equal(resolveOfficialModelId(neonVariant), 'gemini-4-neon', `Expected ${neonVariant} to resolve to gemini-4-neon`);
+  assert.equal(classifyQuotaPool(neonVariant), 'gemini');
+  assert.equal(computeGenerationCostUsd(neonVariant, 1000000, 1000000, 1000000), 3.00 + 0.15 + 15.00);
+}
+
 // Gemini 4 Argon & Orchestrator: $2.00 / $0.10 / $10.00 (base pool: argon)
 assert.equal(computeGenerationCostUsd('gemini-4-argon-high', 1000000, 1000000, 1000000), 2.00 + 0.10 + 10.00);
 assert.equal(computeGenerationCostUsd('gemini-pro-orchestrator-g1-pro', 1000000, 1000000, 1000000), 2.00 + 0.10 + 10.00);
@@ -133,6 +140,10 @@ assert.equal(computeGenerationCostUsd('claude-sonnet-5.5-thinking', 1000000, 100
 assert.equal(computeGenerationCostUsd('claude-opus-4-6-thinking', 1000000, 1000000, 1000000), 5.00 + 0.50 + 25.00);
 assert.equal(computeGenerationCostUsd('claude_sonnet_4_6_fast', 1000000, 1000000, 1000000), 3.00 + 0.30 + 15.00);
 assert.equal(resolveOfficialModelId('claude-opus-4.6-customtools'), 'claude-opus-4-6');
+for (const orchClaude of ['orchestrator-claude-opus-5-5', 'Orchestrator Claude Opus 5.5 Medium']) {
+  assert.equal(resolveOfficialModelId(orchClaude), 'claude-opus-5-5');
+  assert.equal(classifyQuotaPool(orchClaude), 'claude');
+}
 assert.equal(classifyQuotaPool('claude-opus-5-5'), 'claude');
 assert.equal(classifyQuotaPool('claude-sonnet-5-5'), 'claude');
 assert.equal(classifyQuotaPool('claude-opus-4-6-thinking'), 'claude');
@@ -590,6 +601,44 @@ for (const ultraTier of ['ultra_5x', 'ultra_20x']) {
   assert.equal(ultraWithArgonBucket.pools.argon.weeklyCostUsd, null);
   assert.equal(ultraWithArgonBucket.pools.argon.monthlyCostUsd, null);
   assert.equal(ultraWithArgonBucket.monthlyCostUsd, (20 + 12) * 4, `${ultraTier} monthly cost must sum merged Gemini and Claude without double-counting Argon`);
+}
+
+// Scenario 6b: Cycle-opening 1-minute bucket truncation & server completion skew
+{
+  const openNowMs = Date.parse('2026-11-21T06:51:39Z');
+  const openStats = {
+    ...statsJustReset,
+    activity: {
+      ...statsJustReset.activity,
+      costTimeline: [
+        { ts: Date.parse('2026-11-21T06:42:00Z'), costUsd: 9.00, pool: 'claude' },  // 3+ min prior -> excluded
+        { ts: Date.parse('2026-11-21T06:45:00Z'), costUsd: 1.27, pool: 'claude' },  // same-minute floored vs 06:45:37Z start
+        { ts: Date.parse('2026-11-21T06:45:00Z'), costUsd: 0.50, pool: 'argon' },   // cross-minute skew vs 06:46:02Z start
+      ],
+    },
+  };
+  const openQuota = {
+    capturedAt: new Date(openNowMs).toISOString(),
+    weeklyClaude: {
+      displayName: 'Claude & GPT',
+      bucketId: '3p-weekly',
+      remainingFraction: 0.69,
+      usedFraction: 0.31,
+      resetTime: '2026-11-28T06:45:37Z',
+    },
+    weeklyArgon: {
+      displayName: 'Gemini 4 Argon Weekly Limit',
+      bucketId: 'gemini-argon-wtu-weekly',
+      remainingFraction: 0.97,
+      usedFraction: 0.03,
+      resetTime: '2026-11-28T06:46:02Z',
+    },
+  };
+  const openMetrics = computeQuotaCycleMetrics(openStats, openQuota, 'pro', openNowMs);
+  assert.equal(openMetrics.pools.claude.weeklyCostUsd, 1.27, 'Cycle-opening floored Claude bucket must count toward current cycle');
+  assert.equal(openMetrics.pools.claude.totalWeeklyCapUsd, 4.10, 'Claude weekly cap must back-calculate once cycle-opening turn counts');
+  assert.equal(openMetrics.pools.argon.weeklyCostUsd, 0.50, 'Cross-minute skew Argon bucket must count toward current cycle');
+  assert.equal(openMetrics.pools.argon.totalWeeklyCapUsd, 16.67);
 }
 
 console.log('PASS: computeQuotaCycleMetrics accurately handles cycle reset boundaries, weekly cap back-calculation, and 4-week monthly rules');

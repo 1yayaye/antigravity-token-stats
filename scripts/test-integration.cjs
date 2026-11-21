@@ -471,6 +471,24 @@ test('Standalone C# .exe installer: mock ASAR patch, @electron/asar interop, pro
     assert(fs.readFileSync(path.join(verifyExtractDir, 'dist', "中文&'file.txt"), 'utf8') === 'unicode-ok', 'Unicode & special-char filename must retain content');
     assert(fs.readFileSync(path.join(asarPath + '.unpacked', 'node_modules', 'chrome-devtools-mcp', 'build', 'index.js'), 'utf8') === pristineMcp, 'Unpacked file must remain intact');
 
+    // 1b. Proxy config preservation across re-patch
+    const customCfg = JSON.parse(fs.readFileSync(deployedConfig, 'utf8'));
+    customCfg.log_level = 'debug';
+    customCfg.proxy_rules.routing.rules = [{ name: 'keep-me', action: 'direct', domains: ['local.test'] }];
+    fs.writeFileSync(deployedConfig, JSON.stringify(customCfg, null, 2), 'utf8');
+    execFileSync(isolatedExe, [
+      '--patch-dir', resourcesDir,
+      '--proxy-port', '18888',
+      '--proxy-type', 'socks5',
+      '--min-asar-size', '500',
+      '--dev-bundle', mockDevBundleFile,
+      '--no-gui'
+    ], { encoding: 'utf8' });
+    const preservedCfg = JSON.parse(fs.readFileSync(deployedConfig, 'utf8'));
+    assert(preservedCfg.proxy?.type === 'socks5' && preservedCfg.proxy?.port === 18888, 'C# re-patch must update proxy endpoint');
+    assert(preservedCfg.log_level === 'debug', 'C# ProxyInstaller must preserve custom log_level');
+    assert(preservedCfg.proxy_rules?.routing?.rules?.[0]?.name === 'keep-me', 'C# ProxyInstaller must preserve custom routing rules');
+
     // 2. Patch idempotency
     execFileSync(isolatedExe, [
       '--patch-dir', resourcesDir,
@@ -610,6 +628,40 @@ test('Standalone C# .exe installer: detects local IPv4/IPv6 SOCKS5/HTTP proxy po
     ], { encoding: 'utf8' });
     const tunnelRes = JSON.parse(outTunnel.trim());
     assert(tunnelRes.ok === true, `IPv6 ::1 --test-proxy must succeed, got: ${tunnelRes.message}`);
+
+    const runFailingTestProxy = async (args) => {
+      try {
+        const res = await execFileAsync(builtExe, args, { encoding: 'utf8' });
+        return JSON.parse(res.stdout.trim());
+      } catch (err) {
+        assert(err.code === 1 && err.stdout, `Expected exit code 1 with JSON stdout, got code=${err.code}: ${err.message}`);
+        return JSON.parse(err.stdout.trim());
+      }
+    };
+
+    const mismatchHttpRes = await runFailingTestProxy([
+      '--test-proxy', '--proxy-host', '127.0.0.1', '--proxy-port', String(httpPort), '--proxy-type', 'socks5'
+    ]);
+    assert(mismatchHttpRes.ok === false && /HTTP/i.test(mismatchHttpRes.message),
+      `C# --test-proxy must flag HTTP mismatch when probing HTTP port as SOCKS5, got: ${mismatchHttpRes.message}`);
+
+    const socksRejectServer = net.createServer((socket) => {
+      socket.on('error', () => {});
+      socket.once('data', () => {
+        socket.write(Buffer.from([0x05, 0xff]));
+        socket.end();
+      });
+    });
+    await new Promise((resolve) => socksRejectServer.listen(0, '127.0.0.1', resolve));
+    try {
+      const mismatchSocksRes = await runFailingTestProxy([
+        '--test-proxy', '--proxy-host', '127.0.0.1', '--proxy-port', String(socksRejectServer.address().port), '--proxy-type', 'http'
+      ]);
+      assert(mismatchSocksRes.ok === false && /SOCKS5/i.test(mismatchSocksRes.message),
+        `C# --test-proxy must flag SOCKS5 mismatch when probing SOCKS5 port as HTTP, got: ${mismatchSocksRes.message}`);
+    } finally {
+      socksRejectServer.close();
+    }
   } finally {
     socksServer.close();
     httpServer.close();
